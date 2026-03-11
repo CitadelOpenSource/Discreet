@@ -739,9 +739,28 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <button onClick={() => { ['60', '250', '1k', '4k', '16k'].forEach(f => { localStorage.setItem('d_eq_' + f, '0'); voice.setEQ(f, 0); }); }} className="pill-btn" style={{ marginTop: 6, fontSize: 10, color: T.mt, background: T.sf, border: `1px solid ${T.bd}`, padding: '4px 10px' }}>Reset EQ</button>
             </div>
           </div>
+          {/* E2EE Voice Encryption */}
+          <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}><I.Shield s={11} /> End-to-End Voice Encryption</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>End-to-End Voice Encryption</div>
+                <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Encrypts every audio and video frame with SFrame (RFC 9605). Requires browser support for Insertable Streams.</div>
+              </div>
+              <div onClick={() => { const v = localStorage.getItem('d_sframe_enabled') !== 'false'; localStorage.setItem('d_sframe_enabled', String(!v)); }}
+                style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_sframe_enabled') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_sframe_enabled') !== 'false' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: T.mt, padding: '6px 8px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}` }}>
+              <span style={{ fontWeight: 600, color: T.tx }}>Cipher Suite:</span>
+              <span style={{ fontFamily: 'monospace', color: T.ac }}>AES-256-GCM</span>
+            </div>
+          </div>
+
           <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>How Discreet Voice Works</div>
-            <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>Voice uses peer-to-peer WebRTC with echo cancellation and noise suppression. Audio goes directly between participants — it never touches our servers. In production, SFrame (RFC 9605) will encrypt every audio frame.</div>
+            <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>Voice uses peer-to-peer WebRTC with echo cancellation and noise suppression. Audio goes directly between participants — it never touches our servers. SFrame (RFC 9605) encrypts every audio frame end-to-end when enabled.</div>
           </div>
         </>)}
 

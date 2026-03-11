@@ -7,6 +7,7 @@ import { api } from './api/CitadelAPI';
 import { T, getInp, btn, setTheme } from './theme';
 import { I } from './icons';
 import { initCrypto, isMlsAvailable, encryptMessage, decryptMessage } from './crypto/mls';
+import { sframeService } from './services/SFrameService';
 import { AuthScreen } from './components/AuthScreen';
 import { Av } from './components/Av';
 import { Modal } from './components/Modal';
@@ -1334,6 +1335,8 @@ export default function App() {
               mutedChannels={{}}
               videoStreams={{}}
               streamStatus={streamStatus}
+              sframeActive={vc.sframeActive}
+              sframeSupported={sframeService.isSupported()}
               isOwner={hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)}
               canMoveMember={false}
               userMaxRolePos={0}
@@ -1383,7 +1386,18 @@ export default function App() {
               <div style={{ width: 8, height: 8, borderRadius: 4, background: T.ac, animation: vc.speaking ? 'none' : undefined, boxShadow: vc.speaking ? `0 0 6px ${T.ac}` : 'none' }} />
               <span style={{ fontSize: 11, color: T.ac, fontWeight: 600 }}>Voice Connected</span>
             </div>
-            <div style={{ fontSize: 10, color: T.mt, marginBottom: 6 }}># {voiceChannel.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: T.mt, marginBottom: 6 }}>
+              <span># {voiceChannel.name}</span>
+              {vc.sframeActive ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(67,181,129,0.15)', color: '#43b581', fontWeight: 700 }}>
+                  <I.ShieldCheck s={9} /> E2EE Voice
+                </span>
+              ) : (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#faa61a', fontWeight: 700 }}>
+                  <I.ShieldAlert s={9} /> Encrypted
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 4 }}>
               <div onClick={() => vc.toggleMute()} style={{ flex: 1, padding: '5px 0', textAlign: 'center', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: vc.muted ? 'rgba(255,71,87,0.15)' : T.sf2, color: vc.muted ? T.err : T.mt, border: `1px solid ${vc.muted ? 'rgba(255,71,87,0.3)' : T.bd}` }}>
                 {vc.muted ? '🔇 Muted' : '🎤 Mic'}

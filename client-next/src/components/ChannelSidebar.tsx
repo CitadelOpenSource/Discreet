@@ -61,6 +61,10 @@ export interface ChannelSidebarProps {
   videoStreams:   Record<string, MediaStream | null>;
   /** Per-channel live stream status */
   streamStatus:   Record<string, StreamInfo>;
+  /** Whether SFrame E2EE is active on the voice connection */
+  sframeActive:   boolean;
+  /** Whether the browser supports SFrame insertable streams */
+  sframeSupported: boolean;
   /** True when the current user owns the server */
   isOwner:        boolean;
   /** True when the user has the MOVE_MEMBERS permission */
@@ -104,12 +108,14 @@ interface VoiceUserListProps {
   voicePresence: Record<string, string[]>;
   memberMap:     Record<string, { name: string; isBot: boolean }>;
   videoStreams:  Record<string, MediaStream | null>;
+  sframeActive:  boolean;
+  sframeSupported: boolean;
   canDrag:       boolean;
   onDragStart:   (peer: VoicePeer) => void;
   onDragEnd:     () => void;
 }
 
-function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap, videoStreams, canDrag, onDragStart, onDragEnd }: VoiceUserListProps) {
+function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap, videoStreams, sframeActive, sframeSupported, canDrag, onDragStart, onDragEnd }: VoiceUserListProps) {
   // Merge presence list (all users incl. bots) with WebRTC peers (speaking indicators)
   const presenceIds = voicePresence[ch.id] || [];
   const peerMap = Object.fromEntries(voicePeers.map(p => [p.id, p]));
@@ -162,6 +168,15 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
               <I.Camera s={10} />
             </span>
           )}
+          {sframeActive ? (
+            <span title="End-to-end encrypted" style={{ color: '#43b581', display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+              <I.ShieldCheck s={10} />
+            </span>
+          ) : !sframeSupported ? (
+            <span title="Transport encrypted only (browser does not support E2EE)" style={{ color: '#faa61a', display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+              <I.ShieldAlert s={10} />
+            </span>
+          ) : null}
         </div>
       ))}
     </div>
@@ -357,6 +372,8 @@ function ChannelRow({
           voicePresence={voicePresence}
           memberMap={memberMap}
           videoStreams={videoStreams}
+          sframeActive={sframeActive}
+          sframeSupported={sframeSupported}
           canDrag={isOwner || canMoveMember}
           onDragStart={onVoicePeerDragStart}
           onDragEnd={onVoicePeerDragEnd}
@@ -371,6 +388,7 @@ function ChannelRow({
 export function ChannelSidebar({
   channels, catData, curChannel, voiceChannel, voicePeers, voicePresence, memberMap,
   unreadCounts, mutedChannels, videoStreams, streamStatus,
+  sframeActive, sframeSupported,
   isOwner, canMoveMember, userMaxRolePos,
   onClick, onVoiceClick, onWatchStream, onReorder, onMoveUserToVoice, onChannelCtx, onChannelSettings,
 }: ChannelSidebarProps) {
