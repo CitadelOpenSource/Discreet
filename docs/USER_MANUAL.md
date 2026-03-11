@@ -1,7 +1,7 @@
 # CITADEL USER MANUAL
 ## v0.23.1-alpha — Complete Guide
 
-> **For setup/deployment instructions, see [`LAUNCH_NOW.md`](../LAUNCH_NOW.md)**
+> **For setup instructions, see [`GUIDE/QUICKSTART.md`](../GUIDE/QUICKSTART.md). For deployment, see [`GUIDE/DEPLOYMENT.md`](../GUIDE/DEPLOYMENT.md).**
 
 ---
 

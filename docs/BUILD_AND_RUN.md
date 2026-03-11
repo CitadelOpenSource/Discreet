@@ -1,5 +1,1 @@
-# ⚠️ This document has been superseded
-
-**See [`LAUNCH_NOW.md`](../LAUNCH_NOW.md) for current build and run instructions.**
-
-This file is kept for historical reference only. All instructions in LAUNCH_NOW.md are current as of Session 34 (March 8, 2026).
+See [GUIDE/QUICKSTART.md](../GUIDE/QUICKSTART.md) for current build and run instructions.

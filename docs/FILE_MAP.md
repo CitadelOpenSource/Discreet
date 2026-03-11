@@ -1,11 +1,12 @@
 # Discreet — File Map
-**Last updated: March 8, 2026**
+**Last updated: March 10, 2026**
 
 ## Key Documents (Start Here)
 | File | Purpose |
 |------|---------|
-| `LAUNCH_NOW.md` | **Master launch checklist** — setup, login, deploy, everything |
-| `docs/internal/CITADEL_STATUS.md` | Full project history and timeline |
+| `GUIDE/QUICKSTART.md` | **Local setup** — get running in 5 minutes |
+| `GUIDE/DEPLOYMENT.md` | **Production deployment** — Oracle Cloud, Docker, SSL |
+| `GUIDE/CONTRIBUTING.md` | **Contributing** — workflow, code standards, PRs |
 | `.env.example` | All server configuration variables |
 | `README.md` | Public-facing project overview |
 
@@ -17,21 +18,22 @@
 | `mobile/src/` | React Native mobile (16 files, 5,000+ lines) |
 | `desktop/src-tauri/` | Tauri desktop wrapper |
 | `discreet-crypto/` | WASM MLS crypto module |
-| `migrations/` | PostgreSQL migrations (001-026) |
+| `migrations/` | PostgreSQL migrations (001-027) |
 
 ## Documentation
 | File | Status |
 |------|--------|
-| `LAUNCH_NOW.md` | ✅ Current — single source of truth for launch |
-| `docs/USER_MANUAL.md` | ✅ Current — end-user guide |
-| `docs/API_REFERENCE.md` | ✅ Current — all 184 endpoints |
-| `SECURITY.md` | ✅ Current — security architecture |
-| `SETUP.md` | ⚠️ Superseded by LAUNCH_NOW.md |
-| `docs/SETUP_GUIDE.md` | ⚠️ Superseded by LAUNCH_NOW.md |
-| `docs/BUILD_AND_RUN.md` | ⚠️ Superseded by LAUNCH_NOW.md |
-| `TROUBLESHOOTING.md` | ⚠️ Mostly resolved issues |
-| `DEVELOPER_GUIDE.md` | ℹ️ Contributor reference |
-| `SELF_HOSTING_GUIDE.md` | ⚠️ See LAUNCH_NOW.md Step 4 |
+| `GUIDE/QUICKSTART.md` | Primary setup guide |
+| `GUIDE/DEPLOYMENT.md` | Primary deployment guide |
+| `GUIDE/CONTRIBUTING.md` | Primary contributor guide |
+| `docs/USER_MANUAL.md` | End-user guide |
+| `docs/API_REFERENCE.md` | All 184 endpoints |
+| `SECURITY.md` | Security architecture |
+| `DEVELOPER_GUIDE.md` | Architecture and code style reference |
+| `BUILD_MLS.md` | MLS crypto layer build instructions |
+| `DEPLOY_RASPBERRY_PI.md` | Raspberry Pi deployment |
+| `TROUBLESHOOTING.md` | Common errors and fixes |
+| `ROADMAP.md` | Project roadmap |
 
 ## Configuration
 | File | Purpose |
