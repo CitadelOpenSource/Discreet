@@ -602,6 +602,7 @@ class VoiceEngine {
     this.echoCancellation = localStorage.getItem("d_echoCan")!=="false";
     this.autoGainControl = localStorage.getItem("d_agc")!=="false";
     this.sframeActive = false;
+    this.peerKeyIds = new Map();
     this._sframeCrypto = new CryptoEngine();
     this._sframeKey = null;
     this._sframePrevKey = null;
@@ -771,6 +772,11 @@ class VoiceEngine {
     return pc;
   }
   _removePeer(pid) { const pc=this.peers.get(pid);if(pc)pc.close();this.peers.delete(pid);this.streams.delete(pid);const el=document.getElementById(`voice-${pid}`);if(el)el.remove();this.emit("peer_left",{peerId:pid}); }
+  handleSFrameKeyUpdate(userId, keyId, epoch) {
+    const MAX_U64 = 0xFFFFFFFFFFFFFFFF;
+    if(epoch===MAX_U64||epoch===-1){this.peerKeyIds.delete(userId);}
+    else{this.peerKeyIds.set(userId,keyId);}
+  }
   // ── SFrame (RFC 9605) integration ──────────────────────
   _sframeIsSupported() {
     if(this._sframeSupportMode!==null) return this._sframeSupportMode;
@@ -876,7 +882,7 @@ class VoiceEngine {
     this._sframePCs.clear();
     if(this._sframeOverlapTimer){clearTimeout(this._sframeOverlapTimer);this._sframeOverlapTimer=null;}
     if(this._sframeWorker){this._sframeWorker.terminate();this._sframeWorker=null;}
-    this._sframeKey=null;this._sframePrevKey=null;this._sframeCounter=0;this.sframeActive=false;
+    this._sframeKey=null;this._sframePrevKey=null;this._sframeCounter=0;this.sframeActive=false;this.peerKeyIds.clear();
   }
 }
 const voice = new VoiceEngine();
@@ -4914,6 +4920,9 @@ function App() {
       if (evt.type === "voice_leave" && evt.channel_id === voiceChannel?.id) {
         voice._removePeer(evt.user_id);
         setVoicePeers(p => p.filter(x=>x.id!==evt.user_id));
+      }
+      if (evt.type === "voice_sframe_key_update" && evt.user_id && evt.channel_id === voiceChannel?.id) {
+        voice.handleSFrameKeyUpdate(evt.user_id, evt.key_id ?? 0, evt.epoch ?? 0);
       }
       // Watch party events
       if (evt.type === "watch_party" && evt.channel_id === voiceChannel?.id) {
