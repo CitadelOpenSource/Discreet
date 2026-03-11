@@ -422,6 +422,12 @@ class CryptoEngine {
   async decrypt(b64, cid, ep = 0) {
     try { let key = this.keys.get(`${cid}:${ep}`) || await this.deriveKey(cid, ep); const data = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: data.slice(0, 12), tagLength: 128 }, key, data.slice(12)); return new TextDecoder().decode(pt); } catch { return null; }
   }
+  async deriveKeyBytes(cid, ep = 0) {
+    const enc = new TextEncoder();
+    const mat = await crypto.subtle.importKey("raw", enc.encode(`discreet:${cid}:${ep}`), { name: "PBKDF2" }, false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode("mls-group-secret"), iterations: 100000, hash: "SHA-256" }, mat, 256);
+    return new Uint8Array(bits);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -595,6 +601,15 @@ class VoiceEngine {
     this.noiseSuppression = localStorage.getItem("d_noiseSup")!=="false";
     this.echoCancellation = localStorage.getItem("d_echoCan")!=="false";
     this.autoGainControl = localStorage.getItem("d_agc")!=="false";
+    this.sframeActive = false;
+    this._sframeCrypto = new CryptoEngine();
+    this._sframeKey = null;
+    this._sframePrevKey = null;
+    this._sframeOverlapTimer = null;
+    this._sframeCounter = 0;
+    this._sframeWorker = null;
+    this._sframePCs = new Map();
+    this._sframeSupportMode = null;
     this.pttKey = localStorage.getItem("d_pttkey")||"`";
     this.pttDown = false;
     this.listeners = new Set();
@@ -640,6 +655,7 @@ class VoiceEngine {
     } catch(err) { console.error("Mic denied:",err); this.emit("error",{message:"Microphone access denied"}); return false; }
   }
   leave() {
+    this._sframeCleanup();
     this.peers.forEach(pc=>pc.close()); this.peers.clear(); this.streams.clear();
     if(this.localStream){this.localStream.getTracks().forEach(t=>t.stop());this.localStream=null;}
     if(this.videoStream){this.videoStream.getTracks().forEach(t=>t.stop());this.videoStream=null;this.videoEnabled=false;}
@@ -750,9 +766,118 @@ class VoiceEngine {
     };
     pc.onicecandidate=(e)=>{if(e.candidate)this.emit("ice_candidate",{peerId:pid,candidate:e.candidate});};
     pc.onconnectionstatechange=()=>{if(pc.connectionState==="disconnected"||pc.connectionState==="failed")this._removePeer(pid);};
-    this.peers.set(pid,pc); return pc;
+    this.peers.set(pid,pc);
+    this._setupSFrame(pc);
+    return pc;
   }
   _removePeer(pid) { const pc=this.peers.get(pid);if(pc)pc.close();this.peers.delete(pid);this.streams.delete(pid);const el=document.getElementById(`voice-${pid}`);if(el)el.remove();this.emit("peer_left",{peerId:pid}); }
+  // ── SFrame (RFC 9605) integration ──────────────────────
+  _sframeIsSupported() {
+    if(this._sframeSupportMode!==null) return this._sframeSupportMode;
+    if(typeof RTCRtpScriptTransform!=="undefined") this._sframeSupportMode="script-transform";
+    else if(typeof RTCRtpSender!=="undefined"&&"createEncodedStreams" in RTCRtpSender.prototype) this._sframeSupportMode="encoded-streams";
+    else this._sframeSupportMode="none";
+    return this._sframeSupportMode;
+  }
+  async _sframeImportKey(raw) {
+    return crypto.subtle.importKey("raw",raw,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+  }
+  async _sframeRotateKey(rawBytes) {
+    const newKey = await this._sframeImportKey(rawBytes);
+    if(this._sframeKey){
+      this._sframePrevKey=this._sframeKey;
+      if(this._sframeOverlapTimer) clearTimeout(this._sframeOverlapTimer);
+      this._sframeOverlapTimer=setTimeout(()=>{this._sframePrevKey=null;this._sframeOverlapTimer=null;},2000);
+    }
+    this._sframeKey=newKey;
+    this._sframeCounter=0;
+    if(this._sframeWorker&&this._sframeSupportMode==="script-transform"){
+      const copy=rawBytes.slice();
+      this._sframeWorker.postMessage({type:"key",key:copy.buffer},[copy.buffer]);
+    }
+  }
+  async _sframeEncryptFrame(frame,controller) {
+    if(!this._sframeKey){controller.enqueue(frame);return;}
+    try{
+      const data=new Uint8Array(frame.data);
+      const iv=new Uint8Array(12);
+      crypto.getRandomValues(iv.subarray(0,8));
+      new DataView(iv.buffer).setUint32(8,this._sframeCounter++);
+      const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:new Uint8Array(0)},this._sframeKey,data));
+      const out=new Uint8Array(12+ct.byteLength);
+      out.set(iv,0);out.set(ct,12);
+      frame.data=out.buffer;
+      controller.enqueue(frame);
+    }catch{controller.enqueue(frame);}
+  }
+  async _sframeDecryptFrame(frame,controller) {
+    if(!this._sframeKey){controller.enqueue(frame);return;}
+    const data=new Uint8Array(frame.data);
+    if(data.byteLength<28){controller.enqueue(frame);return;}
+    const iv=data.slice(0,12),ct=data.slice(12);
+    for(const key of [this._sframeKey,this._sframePrevKey]){
+      if(!key) continue;
+      try{frame.data=await crypto.subtle.decrypt({name:"AES-GCM",iv,additionalData:new Uint8Array(0)},key,ct);controller.enqueue(frame);return;}catch{}
+    }
+  }
+  _sframeInstallSender(sender,state) {
+    if(state.senders.has(sender)) return;
+    if(this._sframeSupportMode==="encoded-streams"){
+      const{readable,writable}=sender.createEncodedStreams();
+      const t=new TransformStream({transform:(f,c)=>this._sframeEncryptFrame(f,c)});
+      readable.pipeThrough(t).pipeTo(writable);
+      state.senders.set(sender,t);
+    } else {
+      const t=new RTCRtpScriptTransform(this._sframeGetWorker(),{operation:"encrypt",id:crypto.randomUUID()});
+      sender.transform=t;
+      state.senders.set(sender,t);
+    }
+  }
+  _sframeInstallReceiver(receiver,state) {
+    if(state.receivers.has(receiver)) return;
+    if(this._sframeSupportMode==="encoded-streams"){
+      const{readable,writable}=receiver.createEncodedStreams();
+      const t=new TransformStream({transform:(f,c)=>this._sframeDecryptFrame(f,c)});
+      readable.pipeThrough(t).pipeTo(writable);
+      state.receivers.set(receiver,t);
+    } else {
+      const t=new RTCRtpScriptTransform(this._sframeGetWorker(),{operation:"decrypt",id:crypto.randomUUID()});
+      receiver.transform=t;
+      state.receivers.set(receiver,t);
+    }
+  }
+  _sframeGetWorker() {
+    if(this._sframeWorker) return this._sframeWorker;
+    const code=`self.onrtctransform=(event)=>{const{readable,writable}=event.transformer;const{operation}=event.transformer.options;let ck=null,pk=null,ctr=0;self.onmessage=async(e)=>{if(e.data.type==="key"){pk=ck;ck=await crypto.subtle.importKey("raw",e.data.key,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);ctr=0;if(pk)setTimeout(()=>{pk=null;},2000);}};const t=new TransformStream({async transform(frame,ctrl){if(!ck){ctrl.enqueue(frame);return;}if(operation==="encrypt"){try{const d=new Uint8Array(frame.data);const iv=new Uint8Array(12);crypto.getRandomValues(iv.subarray(0,8));new DataView(iv.buffer).setUint32(8,ctr++);const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:new Uint8Array(0)},ck,d));const o=new Uint8Array(12+ct.byteLength);o.set(iv,0);o.set(ct,12);frame.data=o.buffer;}catch{}ctrl.enqueue(frame);}else{const d=new Uint8Array(frame.data);if(d.byteLength<28){ctrl.enqueue(frame);return;}const iv=d.slice(0,12),ct=d.slice(12);let ok=false;for(const k of[ck,pk]){if(!k)continue;try{frame.data=await crypto.subtle.decrypt({name:"AES-GCM",iv,additionalData:new Uint8Array(0)},k,ct);ok=true;break;}catch{}}if(ok)ctrl.enqueue(frame);}}});readable.pipeThrough(t).pipeTo(writable);};`;
+    const blob=new Blob([code],{type:"application/javascript"});
+    this._sframeWorker=new Worker(URL.createObjectURL(blob),{type:"module"});
+    return this._sframeWorker;
+  }
+  _setupSFrame(pc) {
+    if(!this.channelId||this._sframeIsSupported()==="none") return;
+    const cid=this.channelId;
+    this._sframeCrypto.deriveKeyBytes(cid).then(keyBytes=>{
+      return this._sframeRotateKey(keyBytes).then(()=>{
+        const state={pc,senders:new Map(),receivers:new Map(),trackListener:(e)=>{this._sframeInstallReceiver(e.receiver,state);}};
+        for(const s of pc.getSenders()) if(s.track) this._sframeInstallSender(s,state);
+        for(const r of pc.getReceivers()) this._sframeInstallReceiver(r,state);
+        pc.addEventListener("track",state.trackListener);
+        this._sframePCs.set(pc,state);
+        this.sframeActive=true;
+      });
+    }).catch(err=>{console.error("[voice] SFrame setup failed:",err);this.sframeActive=false;});
+  }
+  _sframeCleanup() {
+    for(const[pc,state]of this._sframePCs){
+      pc.removeEventListener("track",state.trackListener);
+      for(const[s]of state.senders) try{s.transform=null;}catch{}
+      for(const[r]of state.receivers) try{r.transform=null;}catch{}
+    }
+    this._sframePCs.clear();
+    if(this._sframeOverlapTimer){clearTimeout(this._sframeOverlapTimer);this._sframeOverlapTimer=null;}
+    if(this._sframeWorker){this._sframeWorker.terminate();this._sframeWorker=null;}
+    this._sframeKey=null;this._sframePrevKey=null;this._sframeCounter=0;this.sframeActive=false;
+  }
 }
 const voice = new VoiceEngine();
 
