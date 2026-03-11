@@ -1,51 +1,61 @@
 # Deployment Guide
 
-Deploy Discreet to Oracle Cloud (free tier) with Cloudflare DNS and Resend email.
+Deploy your own Discreet instance. Zero-knowledge architecture means even you (the host) cannot read encrypted messages.
 
-## Overview
+## Requirements
 
-- **Compute:** Oracle Cloud Always Free VM (ARM64, 4 OCPU, 24GB RAM)
-- **Domain:** discreetai.net via Cloudflare
-- **HTTPS:** Caddy (automatic Let's Encrypt)
-- **Email:** Resend SMTP for transactional email
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 2 cores | 4 cores |
+| RAM | 2 GB | 4 GB |
+| Storage | 10 GB | 50 GB |
+| OS | Ubuntu 22.04+ / Debian 12+ | Ubuntu 24.04 |
+| Docker | 24.0+ | Latest |
+
+Discreet runs on x86_64 and ARM64 (Raspberry Pi 4/5, Oracle Cloud Ampere).
 
 ---
 
-## 1. Oracle Cloud VCN Setup
+## Quick Deploy (Docker Compose)
+
+On any Linux server:
+
+```bash
+git clone https://github.com/CitadelOpenSource/Discreet.git
+cd Discreet
+cp .env.example .env              # Edit with your domain and secrets
+docker compose up -d               # Starts Postgres, Redis, and Discreet server
+```
+
+Generate a secure JWT secret: `openssl rand -hex 64`
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| DATABASE_URL | postgres://citadel:citadel@localhost/citadel | PostgreSQL connection |
+| REDIS_URL | redis://127.0.0.1:6379 | Redis connection |
+| JWT_SECRET | (generate) | 64+ char random string |
+| BIND_ADDR | 0.0.0.0:3000 | Listen address |
+| CORS_ORIGINS | (your domain) | Allowed CORS origins |
+| SMTP_HOST | (optional) | Email verification (Resend, SendGrid, etc.) |
+| SMTP_FROM | (optional) | From address for emails |
+
+---
+
+## Oracle Cloud Free Tier
+
+Oracle offers an always-free ARM instance (4 OCPU, 24GB RAM) — ideal for Discreet.
+
+### 1. VCN Setup
 
 The Always Free tier wizard may not be available. Create networking manually:
 
-### Create VCN
-
-1. Go to **Networking > Virtual Cloud Networks > Create VCN**
-2. Name: `discreet-vcn`
-3. CIDR block: `10.0.0.0/16`
-
-### Create Internet Gateway
-
-1. Inside your VCN, go to **Internet Gateways > Create Internet Gateway**
-2. Name: `discreet-igw`
-
-### Add Route Rule
-
-1. Go to **Route Tables > Default Route Table**
-2. Add route rule:
-   - Destination: `0.0.0.0/0`
-   - Target type: Internet Gateway
-   - Target: `discreet-igw`
-
-### Create Public Subnet
-
-1. Go to **Subnets > Create Subnet**
-2. Name: `discreet-public`
-3. CIDR block: `10.0.0.0/24`
-4. Subnet type: Public
-5. Route table: Default (with the internet gateway rule)
-
-### Add Security List Rules
-
-1. Go to **Security Lists > Default Security List**
-2. Add **Ingress Rules**:
+1. **Create VCN:** Networking > Virtual Cloud Networks > Create VCN. Name: `discreet-vcn`, CIDR: `10.0.0.0/16`
+2. **Create Internet Gateway:** Inside VCN > Internet Gateways. Name: `discreet-igw`
+3. **Add Route Rule:** Route Tables > Default. Destination: `0.0.0.0/0`, Target: `discreet-igw`
+4. **Create Public Subnet:** Subnets > Create. Name: `discreet-public`, CIDR: `10.0.0.0/24`, Type: Public
+5. **Security List Ingress Rules:**
 
 | Source CIDR | Protocol | Dest Port | Description |
 |-------------|----------|-----------|-------------|
@@ -53,73 +63,66 @@ The Always Free tier wizard may not be available. Create networking manually:
 | `0.0.0.0/0` | TCP | 80 | HTTP |
 | `0.0.0.0/0` | TCP | 443 | HTTPS |
 
----
+### 2. Create VM Instance
 
-## 2. Create VM Instance
-
-1. Go to **Compute > Instances > Create Instance**
+1. Compute > Instances > Create Instance
 2. Image: Ubuntu 22.04 (or 24.04)
 3. Shape: Ampere A1.Flex (4 OCPU, 24GB RAM — free tier)
 4. Networking: Select `discreet-vcn` and `discreet-public` subnet
 5. Add your SSH public key
-6. Under **Advanced > Cloud-init script**, paste:
+6. Under Advanced > Cloud-init script, paste:
 
 ```bash
 #!/bin/bash
 set -e
-
-# System packages
 apt-get update && apt-get upgrade -y
 apt-get install -y build-essential pkg-config libssl-dev \
   docker.io docker-compose-plugin git curl
 
-# Enable Docker
 systemctl enable docker && systemctl start docker
 
-# Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source "$HOME/.cargo/env"
 
-# Install Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt-get install -y nodejs
 
-# Install Caddy
+# Install Caddy for automatic HTTPS
 apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt-get update && apt-get install -y caddy
 ```
 
----
+### 3. Open VM Firewall
 
-## 3. SSH In and Deploy
+Oracle VMs have iptables rules that block traffic even after security list changes:
+
+```bash
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+```
+
+### 4. SSH In and Deploy
 
 ```bash
 ssh ubuntu@<YOUR_VM_PUBLIC_IP>
 
-# Clone and build
 git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
 
-# Start databases
 docker compose up -d
 
-# Apply migrations
 for f in migrations/*.sql; do
   cat "$f" | docker compose exec -T postgres psql -U citadel -d citadel
 done
 
-# Build client
 cd client-next && npm install && npm run build && cd ..
-
-# Build server (release mode)
 cargo build --release
 ```
 
----
-
-## 4. Environment Configuration
+### 5. Environment Configuration
 
 Create `/home/ubuntu/Discreet/.env`:
 
@@ -127,17 +130,15 @@ Create `/home/ubuntu/Discreet/.env`:
 DATABASE_URL=postgres://citadel:citadel@localhost:5432/citadel
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=<run: openssl rand -hex 64>
-CORS_ORIGINS=https://discreetai.net
+CORS_ORIGINS=https://yourdomain.com
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
 SMTP_PASSWORD=<your Resend API key>
-SMTP_FROM=noreply@discreetai.net
+SMTP_FROM=noreply@yourdomain.com
 ```
 
----
-
-## 5. Systemd Service
+### 6. Systemd Service
 
 Create `/etc/systemd/system/discreet.service`:
 
@@ -155,6 +156,7 @@ EnvironmentFile=/home/ubuntu/Discreet/.env
 ExecStart=/home/ubuntu/Discreet/target/release/discreet
 Restart=always
 RestartSec=5
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
@@ -166,14 +168,12 @@ sudo systemctl enable discreet
 sudo systemctl start discreet
 ```
 
----
-
-## 6. Caddy HTTPS
+### 7. HTTPS with Caddy
 
 Create `/etc/caddy/Caddyfile`:
 
 ```
-discreetai.net {
+yourdomain.com {
     reverse_proxy localhost:3000
 }
 ```
@@ -184,37 +184,57 @@ sudo systemctl restart caddy
 
 Caddy automatically obtains and renews Let's Encrypt certificates.
 
----
+#### Alternative: Nginx + Certbot
 
-## 7. Cloudflare DNS
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
 
-1. Add your domain `discreetai.net` to Cloudflare
-2. Update nameservers at your registrar to Cloudflare's
-3. Add DNS records:
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
 
-| Type | Name | Value | Proxy |
-|------|------|-------|-------|
-| A | `@` | `<VM_PUBLIC_IP>` | DNS only (grey cloud) |
-| A | `www` | `<VM_PUBLIC_IP>` | DNS only (grey cloud) |
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;  # WebSocket keepalive
+    }
+}
+```
 
-Use "DNS only" (not proxied) so Caddy can obtain certificates directly.
+Get SSL: `certbot --nginx -d yourdomain.com`
 
----
+### 8. DNS
 
-## 8. Resend Email Setup
+Point your domain's A record to your VM's public IP. If using Cloudflare, set to "DNS only" (grey cloud) so Caddy can obtain certificates directly.
 
-1. Sign up at [resend.com](https://resend.com)
-2. Add and verify domain `discreetai.net` (add the DNS records Resend provides)
+### 9. Email Setup (Resend)
+
+1. Sign up at [resend.com](https://resend.com) (free — 3,000 emails/month)
+2. Add and verify your domain (add the DNS records Resend provides)
 3. Create an API key
 4. Set `SMTP_PASSWORD` in your `.env` to the API key
-5. Restart the service: `sudo systemctl restart discreet`
+5. Restart: `sudo systemctl restart discreet`
+
+Discreet sends email verification, password reset links, and optional server invites. Message content is never sent via email.
+
+---
+
+## Raspberry Pi
+
+Discreet runs on Raspberry Pi 4/5 (4GB+ RAM recommended). See [DEPLOY_RASPBERRY_PI.md](../DEPLOY_RASPBERRY_PI.md) for Pi-specific setup and optimizations.
 
 ---
 
 ## Verify
 
 ```bash
-curl https://discreetai.net/health
+curl https://yourdomain.com/health
+# {"status":"ok","postgres":"connected","redis":"connected"}
 ```
 
 ## Maintenance
@@ -230,3 +250,23 @@ cd client-next && npm run build && cd ..
 cargo build --release
 sudo systemctl restart discreet
 ```
+
+## Backup
+
+```bash
+# Database backup
+docker compose exec postgres pg_dump -U citadel citadel > backup_$(date +%Y%m%d).sql
+
+# Restore
+cat backup_20260307.sql | docker compose exec -T postgres psql -U citadel -d citadel
+```
+
+## Security Considerations
+
+- Change `JWT_SECRET` from default before deploying
+- Use SSL/TLS in production (Let's Encrypt via Caddy or Certbot)
+- Keep Docker and OS updated
+- The server is zero-knowledge — encrypted messages are opaque blobs
+- File uploads stored on disk — consider encrypted filesystem (LUKS)
+- Enable 2FA for admin accounts
+- See [SECURITY.md](../SECURITY.md) for full security architecture

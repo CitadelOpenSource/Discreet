@@ -150,7 +150,7 @@ The server is a relay, not an oracle. All cryptographic operations happen client
 
 ```
 Discreet/
-├── SETUP.md                    Setup guide
+├── GUIDE/                      Setup, deployment, contributing guides
 ├── ROADMAP.md                  Project roadmap
 ├── CONTRIBUTING.md             Contributor guide
 ├── Cargo.toml                  Dependencies + feature flags

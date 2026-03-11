@@ -250,7 +250,7 @@ export OPENSSL_DIR=$(brew --prefix openssl)
 
 ### Why this happens
 
-Messages created before the base64 encoding fix (Session 11) were encrypted
+Messages created before the base64 encoding fix were encrypted
 with a different key derivation. New messages encrypt/decrypt correctly.
 
 ### Fix
@@ -478,7 +478,7 @@ uuid = { version = "1", features = ["v4", "serde", "js"] }
 expected `&[u8]`, found `MlsMessageIn`
 ```
 
-**Cause:** The core API functions (`join_from_welcome`, `process_commit`) were updated to take `&[u8]` bytes in Session 30, but the WASM bindings still deserialized to `MlsMessageIn` first.
+**Cause:** The core API functions (`join_from_welcome`, `process_commit`) were updated to take `&[u8]` bytes, but the WASM bindings still deserialized to `MlsMessageIn` first.
 
 **Fix:** Pass `&welcome_bytes` / `&commit_bytes` directly. Don't deserialize to `MlsMessageIn` in the bindings — the core functions handle deserialization internally.
 
