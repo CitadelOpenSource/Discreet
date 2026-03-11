@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use openmls::prelude::*;
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_basic_credential::SignatureKeyPair;
-use crate::{identity, keypackage, group, message};
+use crate::{identity, keypackage, group, message, sframe_voice};
 use base64::Engine;
 
 // ── Global State ──────────────────────────────────────────────────────────
@@ -246,4 +246,31 @@ pub fn is_initialized() -> bool {
 #[wasm_bindgen]
 pub fn mls_version() -> String {
     format!("OpenMLS {} / MLS RFC 9420 / Cipher: MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519", crate::VERSION)
+}
+
+// ── SFrame Voice Bindings ───────────────────────────────────────────────
+
+#[wasm_bindgen]
+pub fn sframe_derive_key(channel_id: &str, epoch: u64, base_secret_b64: &str) -> Result<String, JsValue> {
+    let base_secret = b64_decode(base_secret_b64)?;
+    let key = sframe_voice::derive_sframe_key(channel_id, epoch, &base_secret);
+    Ok(b64_encode(&key))
+}
+
+#[wasm_bindgen]
+pub fn sframe_encrypt(plaintext_b64: &str, key_b64: &str, key_id: u64) -> Result<String, JsValue> {
+    let plaintext = b64_decode(plaintext_b64)?;
+    let key = b64_decode(key_b64)?;
+    let ciphertext = sframe_voice::sframe_encrypt(&plaintext, &key, key_id)
+        .map_err(|e| JsValue::from_str(&e))?;
+    Ok(b64_encode(&ciphertext))
+}
+
+#[wasm_bindgen]
+pub fn sframe_decrypt(ciphertext_b64: &str, key_b64: &str, key_id: u64) -> Result<String, JsValue> {
+    let ciphertext = b64_decode(ciphertext_b64)?;
+    let key = b64_decode(key_b64)?;
+    let decrypted = sframe_voice::sframe_decrypt(&ciphertext, &key, key_id)
+        .map_err(|e| JsValue::from_str(&e))?;
+    Ok(b64_encode(&decrypted))
 }

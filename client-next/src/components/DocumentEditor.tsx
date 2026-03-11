@@ -55,13 +55,13 @@ function makeId(): string {
 // ── Crypto ────────────────────────────────────────────────
 
 async function deriveKey(channelId: string): Promise<CryptoKey> {
-  const pw   = `discreet-channel-${channelId}`;
-  const salt = new TextEncoder().encode('discreet-salt-v1');
+  const pw   = `citadel:${channelId}:0`;
+  const salt = new TextEncoder().encode('mls-group-secret');
   const km   = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
     km,
-    { name: 'AES-GCM', length: 128 },
+    { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt'],
   );

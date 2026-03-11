@@ -9,6 +9,7 @@ pub mod identity;
 pub mod keypackage;
 pub mod group;
 pub mod message;
+pub mod sframe_voice;
 
 #[cfg(feature = "wasm")]
 pub mod wasm_bindings;

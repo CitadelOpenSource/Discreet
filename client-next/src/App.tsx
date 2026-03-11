@@ -59,9 +59,9 @@ async function enc(cid: string, text: string): Promise<string> {
     try { return await encryptMessage(cid, text); } catch { /* MLS group not set up — fall back */ }
   }
   // PBKDF2 fallback (same as monolith)
-  const pw = `discreet-channel-${cid}`, salt = new TextEncoder().encode('discreet-salt-v1');
+  const pw = `citadel:${cid}:0`, salt = new TextEncoder().encode('mls-group-secret');
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 128 }, false, ['encrypt']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
   const c = new Uint8Array(iv.length + new Uint8Array(ct).length); c.set(iv); c.set(new Uint8Array(ct), iv.length);
@@ -72,7 +72,7 @@ async function dec(cid: string, b64: string): Promise<string> {
   if (isMlsAvailable()) {
     try { return await decryptMessage(cid, b64); } catch { /* fall back */ }
   }
-  try { const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const pw = `discreet-channel-${cid}`, salt = new TextEncoder().encode('discreet-salt-v1'); const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']); const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 128 }, false, ['decrypt']); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, key, d.slice(12)); return new TextDecoder().decode(pt); } catch { return b64; }
+  try { const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const pw = `citadel:${cid}:0`, salt = new TextEncoder().encode('mls-group-secret'); const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']); const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, key, d.slice(12)); return new TextDecoder().decode(pt); } catch { return b64; }
 }
 
 // ── Quick Emojis ──────────────────────────────────────────
