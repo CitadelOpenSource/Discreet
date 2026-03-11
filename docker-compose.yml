@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: citadel
+      POSTGRES_PASSWORD: citadel
+      POSTGRES_DB: citadel
+    ports:
+      - "5432:5432"
+    volumes:
+      - citadel_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citadel -d citadel"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - citadel_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional: run the full server in Docker (requires `cargo sqlx prepare` first)
+  # Uncomment when you want to deploy via Docker instead of running locally.
+  #
+  # server:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   environment:
+  #     HOST: 0.0.0.0
+  #     PORT: 3000
+  #     DATABASE_URL: postgres://citadel:citadel@postgres:5432/citadel
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     AGENTS_ENABLED: "true"
+  #     PQ_ENABLED: "false"
+  #     FEDERATION_ENABLED: "false"
+  #   ports:
+  #     - "3000:3000"
+
+volumes:
+  citadel_pg:
+  citadel_redis:

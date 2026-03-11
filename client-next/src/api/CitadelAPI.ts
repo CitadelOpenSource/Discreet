@@ -1,0 +1,359 @@
+/**
+ * CitadelAPI — REST + WebSocket client for the Discreet backend.
+ * 
+ * Extracted from client/index.html monolith for the Vite migration.
+ * This is the single source of truth for all API communication.
+ */
+
+const API_BASE = window.location.origin + '/api/v1';
+const WS_BASE = window.location.origin.replace(/^http/, 'ws');
+
+type WsListener = (data: any) => void;
+
+export class CitadelAPI {
+  token: string | null;
+  refreshToken: string | null; // kept for mobile compat; web uses HttpOnly cookie
+  userId: string | null;
+  username: string | null;
+  ws: WebSocket | null;
+  wsListeners: Set<WsListener>;
+  private _userCache: Record<string, any>;
+
+  constructor() {
+    // Access token is memory-only (NOT persisted) for XSS protection.
+    // Refresh token lives in an HttpOnly cookie set by the server.
+    this.token = null;
+    this.refreshToken = null;
+    this.userId = localStorage.getItem('d_uid') || null;
+    this.username = localStorage.getItem('d_uname') || null;
+    this.ws = null;
+    this.wsListeners = new Set();
+    this._userCache = {};
+  }
+
+  setAuth(access: string, refresh: string, userId: string, username?: string) {
+    this.token = access;
+    this.refreshToken = null; // web ignores body refresh token; cookie handles it
+    this.userId = userId;
+    this.username = username || userId;
+    // Only persist non-secret identifiers.
+    localStorage.setItem('d_uid', userId);
+    if (username) localStorage.setItem('d_uname', username);
+    // Clean up legacy localStorage tokens from older versions.
+    localStorage.removeItem('d_tok');
+    localStorage.removeItem('d_ref');
+  }
+
+  clearAuth() {
+    this.token = null;
+    this.refreshToken = null;
+    this.userId = null;
+    this.username = null;
+    ['d_tok', 'd_ref', 'd_uid', 'd_uname'].forEach(k => localStorage.removeItem(k));
+    this.disconnectWs();
+  }
+
+  private getCsrfToken(): string | null {
+    const entry = document.cookie.split(';').find(c => c.trim().startsWith('csrf_token='));
+    return entry ? entry.trim().slice('csrf_token='.length) : null;
+  }
+
+  async fetch(path: string, opts: RequestInit & { headers?: Record<string, string> } = {}) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...opts.headers };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const method = (opts.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const csrf = this.getCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+    }
+    const res = await fetch(`${API_BASE}${path}`, { ...opts, headers, credentials: 'same-origin' });
+    if (res.status === 401 && this.userId) {
+      const ok = await this.tryRefresh();
+      if (ok) {
+        headers['Authorization'] = `Bearer ${this.token}`;
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+          const csrf = this.getCsrfToken();
+          if (csrf) headers['X-CSRF-Token'] = csrf;
+        }
+        return fetch(`${API_BASE}${path}`, { ...opts, headers, credentials: 'same-origin' });
+      }
+    }
+    return res;
+  }
+
+  private async tryRefresh(): Promise<boolean> {
+    try {
+      // Refresh token is in HttpOnly cookie — sent automatically with credentials.
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const d = await res.json();
+        this.token = d.access_token;
+        return true;
+      }
+    } catch {}
+    this.clearAuth();
+    return false;
+  }
+
+  // ── Auth ──
+  async register(u: string, p: string, e?: string) {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p, email: e || undefined, device_name: 'web' }),
+    });
+    const d = await res.json();
+    if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
+    return { ok: res.ok, data: d };
+  }
+
+  async login(u: string, p: string) {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: u, password: p, device_name: 'web' }),
+    });
+    const d = await res.json();
+    if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
+    return { ok: res.ok, data: d };
+  }
+
+  async logout() { await this.fetch('/auth/logout', { method: 'POST' }); this.clearAuth(); }
+
+  async registerGuest() {
+    const res = await fetch(`${API_BASE}/auth/guest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    });
+    const d = await res.json();
+    if (res.ok && d.access_token) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
+    return { ok: res.ok, data: d };
+  }
+
+  // ── Servers ──
+  async listServers() { return (await this.fetch('/servers')).json(); }
+  async createServer(name: string) { return (await this.fetch('/servers', { method: 'POST', body: JSON.stringify({ name }) })).json(); }
+  async createInvite(sid: string, opts?: { expires_at?: string | null; max_uses?: number | null; temporary?: boolean }) {
+    const body: any = { temporary: opts?.temporary ?? false };
+    if (opts && 'expires_at' in opts) body.expires_at = opts.expires_at;  // send null explicitly for "Never"
+    if (opts?.max_uses != null) body.max_uses = opts.max_uses;
+    return (await this.fetch(`/servers/${sid}/invites`, { method: 'POST', body: JSON.stringify(body) })).json();
+  }
+  async listInvites(sid: string) { try { const r = await this.fetch(`/servers/${sid}/invites`); return r.ok ? r.json() : []; } catch { return []; } }
+  async revokeInvite(sid: string, code: string) { return this.fetch(`/servers/${sid}/invites/${code}`, { method: 'DELETE' }); }
+  async joinServer(sid: string, code: string) { return this.fetch(`/servers/${sid}/join`, { method: 'POST', body: JSON.stringify({ invite_code: code }) }); }
+  async listMembers(sid: string) { return (await this.fetch(`/servers/${sid}/members`)).json(); }
+  async updateServer(sid: string, data: any) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async deleteServer(sid: string) { return this.fetch(`/servers/${sid}`, { method: 'DELETE' }); }
+  async leaveServer(sid: string) { return this.fetch(`/servers/${sid}/leave`, { method: 'POST' }); }
+
+  // ── Channels + Categories ──
+  async listChannels(sid: string) { return (await this.fetch(`/servers/${sid}/channels`)).json(); }
+  async createChannel(sid: string, name: string, catId?: string | null, chType?: string) { return (await this.fetch(`/servers/${sid}/channels`, { method: 'POST', body: JSON.stringify({ name, channel_type: chType || 'text', category_id: catId || undefined }) })).json(); }
+  async listCategories(sid: string) { try { const r = await this.fetch(`/servers/${sid}/categories`); if (!r.ok) return []; return r.json(); } catch { return []; } }
+  async updateChannel(cid: string, data: any) { return this.fetch(`/channels/${cid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async deleteChannel(cid: string) { return this.fetch(`/channels/${cid}`, { method: 'DELETE' }); }
+
+  // ── Messages ──
+  async sendMessage(cid: string, ct: string, ep: number, replyId?: string) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined }) })).json(); }
+  async getMessages(cid: string, limit = 50) { return (await this.fetch(`/channels/${cid}/messages?limit=${limit}`)).json(); }
+  async editMessage(mid: string, content: string, epoch: number) { return this.fetch(`/messages/${mid}`, { method: 'PATCH', body: JSON.stringify({ content_ciphertext: content, mls_epoch: epoch }) }); }
+  async deleteMessage(mid: string) { return this.fetch(`/messages/${mid}`, { method: 'DELETE' }); }
+  async bulkDeleteMessages(cid: string, ids: string[], reason?: string) { return (await this.fetch(`/channels/${cid}/messages/bulk-delete`, { method: 'POST', body: JSON.stringify({ message_ids: ids, reason }) })).json(); }
+  async getMessagesBatch(cid: string, limit = 200, before?: string) { const params = [`limit=${limit}`]; if (before) params.push(`before=${before}`); try { const r = await this.fetch(`/channels/${cid}/messages?${params.join('&')}`); return r.ok ? r.json() : []; } catch { return []; } }
+
+  // ── Roles ──
+  async listRoles(sid: string) { try { const r = await this.fetch(`/servers/${sid}/roles`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createRole(sid: string, name: string, color: string, permissions: number) { return this.fetch(`/servers/${sid}/roles`, { method: 'POST', body: JSON.stringify({ name, color, permissions }) }); }
+  async updateRole(rid: string, data: any) { return this.fetch(`/roles/${rid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async deleteRole(sid: string, rid: string) { return this.fetch(`/roles/${rid}`, { method: 'DELETE' }); }
+  async assignRole(sid: string, uid: string, rid: string) { return this.fetch(`/servers/${sid}/members/${uid}/roles/${rid}`, { method: 'PUT' }); }
+  async unassignRole(sid: string, uid: string, rid: string) { return this.fetch(`/servers/${sid}/members/${uid}/roles/${rid}`, { method: 'DELETE' }); }
+  async listMemberRoles(sid: string, uid: string) { try { const r = await this.fetch(`/servers/${sid}/members/${uid}/roles`); return r.ok ? r.json() : []; } catch { return []; } }
+
+  // ── Pins ──
+  async listPins(sid: string, cid: string) { try { const r = await this.fetch(`/servers/${sid}/channels/${cid}/pins`); return r.ok ? r.json() : []; } catch { return []; } }
+  async pinMessage(sid: string, cid: string, mid: string) { return this.fetch(`/servers/${sid}/channels/${cid}/pins/${mid}`, { method: 'POST' }); }
+  async unpinMessage(sid: string, cid: string, mid: string) { return this.fetch(`/servers/${sid}/channels/${cid}/pins/${mid}`, { method: 'DELETE' }); }
+
+  // ── Bans ──
+  async listBans(sid: string) { try { const r = await this.fetch(`/servers/${sid}/bans`); return r.ok ? r.json() : []; } catch { return []; } }
+  async banUser(sid: string, uid: string, reason?: string) { return this.fetch(`/servers/${sid}/bans`, { method: 'POST', body: JSON.stringify({ user_id: uid, reason: reason || null }) }); }
+  async unbanUser(sid: string, uid: string) { return this.fetch(`/servers/${sid}/bans/${uid}`, { method: 'DELETE' }); }
+
+  // ── Audit ──
+  async getAuditLog(sid: string, limit = 50) { try { const r = await this.fetch(`/servers/${sid}/audit-log?limit=${limit}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async verifyAuditChain(sid: string) { try { const r = await this.fetch(`/servers/${sid}/audit-log/verify`); return r.ok ? r.json() : null; } catch { return null; } }
+
+  // ── Emoji ──
+  async listEmojis(sid: string) { try { const r = await this.fetch(`/servers/${sid}/emojis`); return r.ok ? r.json() : []; } catch { return []; } }
+  async uploadEmoji(sid: string, name: string, imageData: string, animated = false) { return (await this.fetch(`/servers/${sid}/emojis`, { method: 'POST', body: JSON.stringify({ name, image_data: imageData, animated }) })).json(); }
+  async deleteEmoji(sid: string, eid: string) { return this.fetch(`/servers/${sid}/emojis/${eid}`, { method: 'DELETE' }); }
+
+  // ── DMs ──
+  async listDms() { try { const r = await this.fetch('/dms'); return r.ok ? r.json() : []; } catch { return []; } }
+  async createDm(uid: string) { return (await this.fetch('/dms', { method: 'POST', body: JSON.stringify({ recipient_id: uid }) })).json(); }
+  async sendDm(dmId: string, ct: string, ep: number) { return (await this.fetch(`/dms/${dmId}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep }) })).json(); }
+  async getDmMessages(dmId: string, limit = 50) { return (await this.fetch(`/dms/${dmId}/messages?limit=${limit}`)).json(); }
+  async sendDmMessage(dmId: string, text: string) { return (await this.fetch(`/dms/${dmId}/messages`, { method: 'POST', body: JSON.stringify({ content: text }) })).json(); }
+  async sendTyping(sid: string, cid: string) { return this.fetch(`/servers/${sid}/channels/${cid}/typing`, { method: 'POST' }); }
+  async kickMember(sid: string, uid: string) { return this.fetch(`/servers/${sid}/members/${uid}`, { method: 'DELETE' }); }
+  async timeoutMember(sid: string, uid: string, durationSecs: number) { return this.fetch(`/servers/${sid}/members/${uid}/timeout`, { method: 'POST', body: JSON.stringify({ duration: durationSecs }) }); }
+
+  // ── Group DMs ──
+  async listGroupDms() { try { const r = await this.fetch('/group-dms'); return r.ok ? r.json() : []; } catch { return []; } }
+  async createGroupDm(name: string, memberIds: string[]) { return (await this.fetch('/group-dms', { method: 'POST', body: JSON.stringify({ name, member_ids: memberIds }) })).json(); }
+  async sendGroupDm(gid: string, ct: string, replyId?: string) { return (await this.fetch(`/group-dms/${gid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, reply_to_id: replyId || undefined }) })).json(); }
+  async getGroupDmMessages(gid: string, limit = 50, before?: string) { let q = `limit=${limit}`; if (before) q += `&before=${before}`; return (await this.fetch(`/group-dms/${gid}/messages?${q}`)).json(); }
+  async addGroupDmMember(gid: string, uid: string) { return (await this.fetch(`/group-dms/${gid}/members`, { method: 'POST', body: JSON.stringify({ user_id: uid }) })).json(); }
+
+  // ── Friends ──
+  async listFriends() { try { const r = await this.fetch('/friends'); return r.ok ? r.json() : []; } catch { return []; } }
+  async listIncomingRequests() { try { const r = await this.fetch('/friends/requests'); return r.ok ? r.json() : []; } catch { return []; } }
+  async listOutgoingRequests() { try { const r = await this.fetch('/friends/outgoing'); return r.ok ? r.json() : []; } catch { return []; } }
+  async sendFriendRequest(uid: string) { return this.fetch('/friends/request', { method: 'POST', body: JSON.stringify({ user_id: uid }) }); }
+  async blockUser(uid: string) { return this.fetch(`/users/${uid}/block`, { method: 'POST' }); }
+  async unblockUser(uid: string) { return this.fetch(`/users/${uid}/block`, { method: 'DELETE' }); }
+  async closeDm(dmId: string) { return this.fetch(`/dms/${dmId}`, { method: 'DELETE' }); }
+  async createPoll(cid: string, question: string, options: string[], duration?: number) { return (await this.fetch(`/channels/${cid}/polls`, { method: 'POST', body: JSON.stringify({ question, options, duration_seconds: duration || 86400 }) })).json(); }
+  async votePoll(pollId: string, optionIndex: number) { return this.fetch(`/polls/${pollId}/vote`, { method: 'POST', body: JSON.stringify({ option_index: optionIndex }) }); }
+  async getPoll(pollId: string) { try { return (await this.fetch(`/polls/${pollId}`)).json(); } catch { return null; } }
+  async spawnBot(sid: string, opts: { persona: string; display_name?: string; system_prompt?: string }) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(opts) })).json(); }
+  async listBots(sid: string) { try { const r = await this.fetch(`/servers/${sid}/ai-bots`); return r.ok ? r.json() : []; } catch { return []; } }
+  async updateBot(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async getPinnedMessages(sid: string, cid: string) { try { return (await this.fetch(`/servers/${sid}/channels/${cid}/pins`)).json(); } catch { return []; } }
+  async acceptFriend(id: string) { return this.fetch(`/friends/${id}/accept`, { method: 'POST' }); }
+  async declineFriend(id: string) { return this.fetch(`/friends/${id}/decline`, { method: 'POST' }); }
+  async removeFriend(id: string) { return this.fetch(`/friends/${id}`, { method: 'DELETE' }); }
+  async searchUsers(q: string) { try { const r = await this.fetch(`/users/search?q=${encodeURIComponent(q)}`); return r.ok ? r.json() : []; } catch { return []; } }
+
+  // ── Files ──
+  async uploadFile(channelId: string, file: File): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const r = await this.fetch(`/channels/${channelId}/files`, {
+            method: 'POST',
+            body: JSON.stringify({ encrypted_blob: base64, mime_type_hint: file.type || 'application/octet-stream', filename: file.name }),
+          });
+          if (!r.ok) { const err = await r.text().catch(() => ''); reject(new Error(`Upload failed (${r.status}): ${err}`)); return; }
+          resolve(await r.json());
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async uploadDmFile(dmId: string, file: File): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const r = await this.fetch(`/dms/${dmId}/files`, {
+            method: 'POST',
+            body: JSON.stringify({ encrypted_blob: base64, mime_type_hint: file.type || 'application/octet-stream', filename: file.name }),
+          });
+          resolve(await r.json());
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async downloadFile(fid: string) { return (await this.fetch(`/files/${fid}`)).json(); }
+  async deleteFile(fileId: string) { return this.fetch(`/files/${fileId}`, { method: 'DELETE' }); }
+
+  // ── User / Profile ──
+  async getUser(id: string) { if (this._userCache[id]) return this._userCache[id]; try { const d = await (await this.fetch(`/users/${id}`)).json(); this._userCache[id] = d; return d; } catch { return null; } }
+  async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
+  async getMe() { try { return (await this.fetch('/users/@me')).json(); } catch { return null; } }
+  async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
+  async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PATCH', body: JSON.stringify(s) }); }
+  async deleteAccount() { return this.fetch('/users/@me', { method: 'DELETE' }); }
+
+  // ── Bots ──
+  async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async updateBotConfig(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async removeBotFromServer(sid: string, bid: string) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'DELETE' }); }
+
+  // ── Reactions ──
+  async addReaction(cid: string, mid: string, emoji: string) { return this.fetch(`/channels/${cid}/messages/${mid}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' }); }
+  async removeReaction(cid: string, mid: string, emoji: string) { return this.fetch(`/channels/${cid}/messages/${mid}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); }
+
+  // ── Typing ──
+  async startTyping(sid: string, cid: string) { try { await this.fetch(`/servers/${sid}/channels/${cid}/typing`, { method: 'POST' }); } catch {} }
+
+  // ── Events ──
+  async listEvents(sid: string) { try { const r = await this.fetch(`/servers/${sid}/events`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createEvent(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/events`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async rsvpEvent(eid: string, status: string) { return (await this.fetch(`/events/${eid}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) })).json(); }
+
+  // ── Discovery ──
+  async discoverServers(query?: string, category?: string) { try { const params = new URLSearchParams(); if (query) params.set('q', query); if (category && category !== 'all') params.set('category', category); const r = await this.fetch(`/discover?${params}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async publishServer(serverId: string, category: string, tags: string[]) { return this.fetch(`/servers/${serverId}/publish`, { method: 'POST', body: JSON.stringify({ category, tags }) }); }
+  async unpublishServer(serverId: string) { return this.fetch(`/servers/${serverId}/publish`, { method: 'DELETE' }); }
+
+  // ── Threads ──
+  async createThread(channelId: string, parentMessageId: string, title?: string) { return (await this.fetch(`/channels/${channelId}/threads`, { method: 'POST', body: JSON.stringify({ parent_message_id: parentMessageId, title: title || undefined }) })).json(); }
+  async listThreads(channelId: string) { try { const r = await this.fetch(`/channels/${channelId}/threads`); return r.ok ? r.json() : []; } catch { return []; } }
+  async listThreadMessages(threadId: string) { try { const r = await this.fetch(`/threads/${threadId}/messages`); return r.ok ? r.json() : []; } catch { return []; } }
+  async sendThreadMessage(threadId: string, content: string) { return (await this.fetch(`/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ content }) })).json(); }
+
+  // ── Meetings ──
+  async createMeeting(title: string, password?: string) { return (await this.fetch('/meetings', { method: 'POST', body: JSON.stringify({ title, password: password || undefined }) })).json(); }
+  async getMeeting(code: string) { try { const r = await this.fetch(`/meetings/${code}`); return r.ok ? r.json() : null; } catch { return null; } }
+  async joinMeeting(code: string, password?: string) { return (await this.fetch(`/meetings/${code}/join`, { method: 'POST', body: JSON.stringify({ password: password || undefined }) })).json(); }
+
+  // ── MLS Key Distribution (RFC 9420) ──
+  async uploadKeyPackages(packages: string[]) { return (await this.fetch('/key-packages', { method: 'POST', body: JSON.stringify({ key_packages: packages }) })).json(); }
+  async claimKeyPackage(userId: string) { return (await this.fetch(`/key-packages/${userId}`)).json(); }
+  async submitMlsCommit(channelId: string, commit: string, epoch: number) { return this.fetch(`/channels/${channelId}/mls/commit`, { method: 'POST', body: JSON.stringify({ commit, epoch }) }); }
+  async relayMlsWelcome(channelId: string, welcome: string, targetUserId: string) { return this.fetch(`/channels/${channelId}/mls/welcome`, { method: 'POST', body: JSON.stringify({ welcome, target_user_id: targetUserId }) }); }
+  async getMlsInfo(channelId: string) { try { const r = await this.fetch(`/channels/${channelId}/mls/info`); return r.ok ? r.json() : null; } catch { return null; } }
+  async uploadIdentityKey(signingKey: string, identityKey: string, deviceId?: string) { return this.fetch('/identity-keys', { method: 'POST', body: JSON.stringify({ signing_key: signingKey, identity_key: identityKey, device_id: deviceId || 'primary' }) }); }
+
+  // ── Streaming ──
+  async startStream(channelId: string, title?: string, quality?: string) { try { const r = await this.fetch(`/channels/${channelId}/stream/start`, { method: 'POST', body: JSON.stringify({ title, quality: quality || '1080p' }) }); return r.ok ? r.json() : null; } catch { return null; } }
+  async stopStream(channelId: string) { try { await this.fetch(`/channels/${channelId}/stream`, { method: 'DELETE' }); } catch {} }
+  async getStreamStatus(channelId: string) { try { const r = await this.fetch(`/channels/${channelId}/stream`); return r.ok ? r.json() : null; } catch { return null; } }
+
+  // ── Bot Prompting ──
+  /** Send a user message to a bot for an AI response. Response arrives via WebSocket as message_create. */
+  async promptBot(sid: string, bid: string, prompt: string, channelId?: string) { try { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/prompt`, { method: 'POST', body: JSON.stringify({ prompt, channel_id: channelId || undefined }) }); return r.ok ? r.json() : null; } catch { return null; } }
+
+  // ── Gamification ──
+  async getLeaderboard(sid: string) { try { const r = await this.fetch(`/servers/${sid}/gamification/leaderboard`); return r.ok ? r.json() : []; } catch { return []; } }
+  async getPoints(sid: string, uid: string) { try { const r = await this.fetch(`/servers/${sid}/gamification/points/${uid}`); return r.ok ? r.json() : null; } catch { return null; } }
+  async awardPoints(sid: string, uid: string, amount: number, reason: string) { try { const r = await this.fetch(`/servers/${sid}/gamification/points`, { method: 'POST', body: JSON.stringify({ user_id: uid, amount, reason }) }); return r.ok ? r.json() : null; } catch { return null; } }
+
+  // ── WebSocket ──
+  connectWs(sid: string) {
+    if (this.ws) this.ws.close();
+    // Pass token as query param — most reliable for browser WebSocket auth
+    const wsUrl = `${WS_BASE}/ws?server_id=${sid}&token=${encodeURIComponent(this.token || '')}`;
+    this.ws = new WebSocket(wsUrl);
+    this.ws.onopen = () => { console.log('[ws] connected to', sid); };
+    this.ws.onmessage = (e) => { try { this.wsListeners.forEach(fn => fn(JSON.parse(e.data))); } catch (err) { console.error('[ws] parse error:', err); } };
+    this.ws.onerror = (e) => { console.error('[ws] error:', e); };
+    this.ws.onclose = (e) => { console.log('[ws] closed:', e.code, e.reason); this.ws = null; };
+  }
+
+  disconnectWs() {
+    if (this.ws) { this.ws.close(); this.ws = null; }
+  }
+
+  onWsEvent(fn: WsListener): () => void {
+    this.wsListeners.add(fn);
+    return () => this.wsListeners.delete(fn);
+  }
+}
+
+// Singleton instance
+export const api = new CitadelAPI();

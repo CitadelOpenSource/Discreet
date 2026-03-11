@@ -1,0 +1,2043 @@
+/**
+ * ServerSettingsModal — Full server administration panel.
+ * Tabs: Overview, Channels, Roles, Members, Bots, Emoji, Events, Moderation, Bans, Audit Log.
+ */
+import React, { useState, useEffect } from 'react';
+import { T, getInp, btn } from '../theme';
+import * as I from '../icons';
+import { api } from '../api/CitadelAPI';
+import { Modal } from './Modal';
+import { Av } from './Av';
+import { type FilterLevel, getProfanityLevel, setProfanityLevel } from '../utils/profanityFilter';
+import { BotConfigModal, PRESETS } from './BotConfigModal';
+
+// ─── Types ───────────────────────────────────────────────
+
+export interface Server {
+  id: string;
+  name: string;
+  description?: string;
+  member_tab_label?: string;
+  icon_url?: string;
+  is_public?: boolean;
+}
+
+interface Channel {
+  id: string;
+  name: string;
+  topic?: string;
+  channel_type?: string;
+  locked?: boolean;
+  min_role_position?: number;
+  message_ttl_seconds?: number;
+  slowmode_seconds?: number;
+  nsfw?: boolean;
+  position?: number;
+  category_id?: string | null;
+  is_archived?: boolean;
+  is_announcement?: boolean;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  position?: number;
+}
+
+interface Role {
+  id: string;
+  name: string;
+  color?: string;
+  permissions?: number;
+}
+
+interface Member {
+  user_id: string;
+  username: string;
+  display_name?: string;
+  is_bot?: boolean;
+  joined_at?: string;
+  last_active_at?: string;
+  online?: boolean;
+  nickname?: string;
+}
+
+interface BanEntry {
+  id?: string;
+  user_id: string;
+  username?: string;
+  reason?: string;
+}
+
+interface AuditEntry {
+  id: string;
+  action: string;
+  actor_username?: string;
+  reason?: string;
+  created_at: string;
+  chain_hash?: string;
+  sequence_num?: number;
+}
+
+interface SearchMessage {
+  id: string;
+  text: string;
+  author_id: string;
+  created_at: string;
+}
+
+interface BotEntry {
+  bot_user_id:     string;
+  username?:       string;
+  display_name?:   string;
+  persona?:        string;
+  system_prompt?:  string;
+  temperature?:    number;
+  enabled?:        boolean;
+  description?:    string;
+  greeting_message?: string;
+  response_prefix?:  string;
+  voice_style?:    string;
+  max_tokens?:     number;
+  response_mode?:  string;
+  dm_auto_respond?: boolean;
+  blocked_topics?: string;
+  rate_limit_per_min?: number;
+  persistent?:     boolean;
+  typing_delay?:   number;
+  context_memory?: boolean;
+  context_window?: number;
+  auto_thread?:    boolean;
+  dm_greeting?:    string;
+  emoji_reactions?: boolean;
+  language?:       string;
+  knowledge_base?: string;
+}
+
+interface EmojiEntry {
+  id: string;
+  name: string;
+  image_url: string;
+}
+
+interface Event {
+  id: string;
+  title: string;
+  description?: string;
+  location?: string;
+  start_time: string;
+  end_time?: string;
+  going_count: number;
+  interested_count: number;
+  creator_username: string;
+}
+
+// ─── Permission Labels ────────────────────────────────────
+
+const PERM_LABELS = [
+  { bit: 1 << 0,  label: 'View Channels',      cat: 'General' },
+  { bit: 1 << 1,  label: 'Send Messages',       cat: 'General' },
+  { bit: 1 << 2,  label: 'Read History',        cat: 'General' },
+  { bit: 1 << 3,  label: 'Attach Files',        cat: 'General' },
+  { bit: 1 << 4,  label: 'Create Invites',      cat: 'General' },
+  { bit: 1 << 5,  label: 'Change Nickname',     cat: 'General' },
+  { bit: 1 << 10, label: 'Manage Messages',     cat: 'Moderation' },
+  { bit: 1 << 11, label: 'Kick Members',        cat: 'Moderation' },
+  { bit: 1 << 12, label: 'Ban Members',         cat: 'Moderation' },
+  { bit: 1 << 13, label: 'Manage Nicknames',    cat: 'Moderation' },
+  { bit: 1 << 20, label: 'Manage Channels',     cat: 'Admin' },
+  { bit: 1 << 21, label: 'Manage Roles',        cat: 'Admin' },
+  { bit: 1 << 22, label: 'Manage Server',       cat: 'Admin' },
+  { bit: 1 << 23, label: 'Manage Invites',      cat: 'Admin' },
+  { bit: 1 << 24, label: 'Manage AI Agents',    cat: 'Admin' },
+  { bit: 1 << 30, label: 'Connect Voice',       cat: 'Voice' },
+  { bit: 1 << 31, label: 'Speak',               cat: 'Voice' },
+  { bit: 1 << 32, label: 'Mute Members',        cat: 'Voice' },
+  { bit: 1 << 33, label: 'Move Members',        cat: 'Voice' },
+  { bit: 1 << 34, label: 'Priority Speaker',    cat: 'Voice' },
+  { bit: 2 ** 40, label: 'Administrator',       cat: 'Dangerous' },
+  { bit: 2 ** 41, label: 'Delete Server',       cat: 'Dangerous' },
+];
+
+// ─── ChannelManagerRow ───────────────────────────────────
+
+function chTypeIcon(type?: string): string {
+  if (type === 'voice')        return '🔊';
+  if (type === 'announcement') return '📢';
+  return '#';
+}
+
+interface ChannelManagerRowProps {
+  ch: Channel;
+  index: number;
+  total: number;
+  categories: Category[];
+  serverId: string;
+  onRefresh: () => void;
+  onMove: (id: string, dir: -1 | 1) => void;
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+}
+
+function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, showConfirm }: ChannelManagerRowProps) {
+  const [editing, setEditing]   = useState(false);
+  const [chName, setChName]     = useState(ch.name);
+  const [saving, setSaving]     = useState(false);
+  const [hovered, setHovered]   = useState(false);
+
+  const saveRename = async () => {
+    const trimmed = chName.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!trimmed || trimmed === ch.name) { setEditing(false); return; }
+    setSaving(true);
+    await api.updateChannel(ch.id, { name: trimmed });
+    setSaving(false);
+    setEditing(false);
+    onRefresh();
+  };
+
+  const moveCat = async (catId: string) => {
+    await api.updateChannel(ch.id, { category_id: catId || null });
+    onRefresh();
+  };
+
+  const toggleArchive = async () => {
+    await api.updateChannel(ch.id, { is_archived: !ch.is_archived });
+    onRefresh();
+  };
+
+  const typeColor = ch.channel_type === 'voice' ? '#5865f2' : ch.channel_type === 'announcement' ? '#f0b132' : T.mt;
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+        borderRadius: 7, marginBottom: 3,
+        background: hovered ? 'rgba(255,255,255,0.04)' : T.sf2,
+        border: `1px solid ${hovered ? T.bd : 'transparent'}`,
+        transition: 'background .12s, border-color .12s',
+      }}
+    >
+      {/* position controls */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+        <button
+          onClick={() => onMove(ch.id, -1)} disabled={index === 0}
+          style={{ background: 'none', border: 'none', color: index === 0 ? T.bd : T.mt, cursor: index === 0 ? 'default' : 'pointer', padding: '0 2px', fontSize: 9, lineHeight: 1 }}
+          title="Move up"
+        >▲</button>
+        <button
+          onClick={() => onMove(ch.id, 1)} disabled={index === total - 1}
+          style={{ background: 'none', border: 'none', color: index === total - 1 ? T.bd : T.mt, cursor: index === total - 1 ? 'default' : 'pointer', padding: '0 2px', fontSize: 9, lineHeight: 1 }}
+          title="Move down"
+        >▼</button>
+      </div>
+
+      {/* type icon */}
+      <span style={{ fontSize: 15, flexShrink: 0, color: typeColor, minWidth: 18, textAlign: 'center' }}>{chTypeIcon(ch.channel_type)}</span>
+
+      {/* name / inline edit */}
+      {editing ? (
+        <input
+          autoFocus
+          value={chName}
+          onChange={e => setChName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { setEditing(false); setChName(ch.name); } }}
+          style={{ ...getInp(), flex: 1, padding: '3px 7px', fontSize: 13 }}
+        />
+      ) : (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: ch.is_archived ? T.mt : T.tx }}>
+            {ch.name}
+            {ch.is_archived && <span style={{ marginLeft: 6, fontSize: 10, color: T.mt, fontWeight: 400 }}>[archived]</span>}
+          </div>
+          {ch.topic && <div style={{ fontSize: 11, color: T.mt, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ch.topic}</div>}
+        </div>
+      )}
+
+      {/* type badge */}
+      <span style={{ fontSize: 10, color: typeColor, fontFamily: "'JetBrains Mono',monospace", background: T.bg, padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+        {ch.channel_type || 'text'}
+      </span>
+
+      {/* category move */}
+      {categories.length > 0 && (
+        <select
+          value={ch.category_id || ''}
+          onChange={e => moveCat(e.target.value)}
+          title="Move to category"
+          style={{ ...getInp(), padding: '3px 6px', fontSize: 11, maxWidth: 110, flexShrink: 0 }}
+        >
+          <option value="">No category</option>
+          {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+        </select>
+      )}
+
+      {/* action buttons */}
+      {editing ? (<>
+        <button onClick={saveRename} disabled={saving} style={{ background: 'none', border: 'none', color: T.ac, cursor: 'pointer', padding: 4, fontSize: 14 }} title="Save"><I.Check /></button>
+        <button onClick={() => { setEditing(false); setChName(ch.name); }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: 4, fontSize: 14 }} title="Cancel"><I.X /></button>
+      </>) : (<>
+        <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: 4, fontSize: 13, opacity: hovered ? 1 : 0.5, transition: 'opacity .12s' }} title="Rename"><I.Edit /></button>
+        <button
+          onClick={toggleArchive}
+          title={ch.is_archived ? 'Unarchive' : 'Archive'}
+          style={{ background: 'none', border: 'none', color: ch.is_archived ? T.ac : T.mt, cursor: 'pointer', padding: 4, fontSize: 13, opacity: hovered ? 1 : 0.5, transition: 'opacity .12s' }}
+        >📦</button>
+        <button
+          onClick={async () => {
+            if (await showConfirm('Delete Channel', `Delete #${ch.name}? All messages will be lost. This cannot be undone.`, true)) {
+              await api.deleteChannel(ch.id);
+              onRefresh();
+            }
+          }}
+          style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', padding: 4, fontSize: 13, opacity: hovered ? 1 : 0.5, transition: 'opacity .12s' }}
+          title="Delete channel"
+        ><I.Trash /></button>
+      </>)}
+    </div>
+  );
+}
+
+// ─── MemberManagerRow ─────────────────────────────────────
+
+const TIMEOUT_OPTS = [
+  { label: '60s',  secs: 60 },
+  { label: '5m',   secs: 300 },
+  { label: '10m',  secs: 600 },
+  { label: '1h',   secs: 3600 },
+  { label: '1d',   secs: 86400 },
+  { label: '1w',   secs: 604800 },
+];
+
+function fmtDate(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+interface MemberManagerRowProps {
+  member: Member;
+  userRoles: Role[];
+  allRoles: Role[];
+  serverId: string;
+  onRolesChange: (uid: string, newRoles: Role[]) => void;
+  onKicked: (uid: string) => void;
+  onBanned: (uid: string) => void;
+  showConfirm: (title: string, msg: string, danger?: boolean) => Promise<boolean>;
+}
+
+function MemberManagerRow({ member: m, userRoles, allRoles, serverId, onRolesChange, onKicked, onBanned, showConfirm }: MemberManagerRowProps) {
+  const [expanded, setExpanded]       = useState(false);
+  const [editingNick, setEditingNick] = useState(false);
+  const [nick, setNick]               = useState(m.nickname || m.display_name || '');
+  const [showTimeout, setShowTimeout] = useState(false);
+  const [hovered, setHovered]         = useState(false);
+
+  const assignableRoles = allRoles.filter(r => r.name !== '@everyone');
+
+  const toggleRole = async (role: Role) => {
+    const has = userRoles.some(ur => ((ur as any).id || (ur as any).role_id) === role.id);
+    if (has) {
+      await api.unassignRole(serverId, m.user_id, role.id);
+      onRolesChange(m.user_id, userRoles.filter(r => ((r as any).id || (r as any).role_id) !== role.id));
+    } else {
+      await api.assignRole(serverId, m.user_id, role.id);
+      onRolesChange(m.user_id, [...userRoles, role]);
+    }
+  };
+
+  const saveNick = async () => {
+    await api.updateChannel; // placeholder — updateMember would go here if API supports it
+    // nickname update via PATCH /servers/:sid/members/:uid
+    try { await (api as any).fetch(`/servers/${serverId}/members/${m.user_id}`, { method: 'PATCH', body: JSON.stringify({ nickname: nick.trim() || null }) }); }
+    catch { /* ignore */ }
+    setEditingNick(false);
+  };
+
+  const doTimeout = async (secs: number) => {
+    await api.timeoutMember(serverId, m.user_id, secs);
+    // persist locally so Moderation tab can read it
+    const store: Record<string, number> = JSON.parse(localStorage.getItem('d_timeouts') || '{}');
+    store[m.user_id] = Date.now() + secs * 1000;
+    localStorage.setItem('d_timeouts', JSON.stringify(store));
+    setShowTimeout(false);
+  };
+
+  const doKick = async () => {
+    if (!await showConfirm('Kick Member', `Kick @${m.username}? They can rejoin with an invite link.`, true)) return;
+    await api.kickMember(serverId, m.user_id);
+    onKicked(m.user_id);
+  };
+
+  const doBan = async () => {
+    if (!await showConfirm('Ban Member', `Ban @${m.username}? They will not be able to rejoin.`, true)) return;
+    await api.banUser(serverId, m.user_id, 'Banned by admin');
+    onBanned(m.user_id);
+  };
+
+  const isTimedOut = (() => {
+    try {
+      const store: Record<string, number> = JSON.parse(localStorage.getItem('d_timeouts') || '{}');
+      return (store[m.user_id] || 0) > Date.now();
+    } catch { return false; }
+  })();
+
+  const topRole = userRoles.length > 0 ? (userRoles[0] as any) : null;
+  const nameColor = topRole?.color || T.tx;
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ borderRadius: 8, marginBottom: 4, border: `1px solid ${expanded || hovered ? T.bd : 'transparent'}`, background: expanded ? T.bg : hovered ? 'rgba(255,255,255,0.03)' : 'transparent', transition: 'background .12s, border-color .12s' }}
+    >
+      {/* summary row */}
+      <div
+        onClick={() => setExpanded(p => !p)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}
+      >
+        {/* avatar + online dot */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <Av name={m.display_name || m.username || '?'} size={34} url={null} />
+          {m.online !== undefined && (
+            <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, background: m.online ? '#3ba55d' : '#747f8d', border: '2px solid ' + T.bg }} />
+          )}
+        </div>
+
+        {/* name block */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: nameColor, whiteSpace: 'nowrap' }}>
+              {m.display_name || m.username}
+            </span>
+            {m.display_name && m.display_name !== m.username && (
+              <span style={{ fontSize: 11, color: T.mt }}>@{m.username}</span>
+            )}
+            {m.is_bot && (
+              <span style={{ fontSize: 9, background: 'rgba(114,137,218,0.2)', color: '#7289da', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>BOT</span>
+            )}
+            {isTimedOut && (
+              <span style={{ fontSize: 9, background: 'rgba(240,178,50,0.15)', color: '#f0b232', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>TIMEOUT</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+            {userRoles.slice(0, 3).map(r => (
+              <span key={(r as any).id || (r as any).role_id} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: `${(r as any).color || T.ac}22`, color: (r as any).color || T.ac, border: `1px solid ${(r as any).color || T.ac}44` }}>
+                {(r as any).name}
+              </span>
+            ))}
+            {userRoles.length > 3 && <span style={{ fontSize: 10, color: T.mt }}>+{userRoles.length - 3}</span>}
+          </div>
+        </div>
+
+        {/* dates */}
+        <div style={{ textAlign: 'right', flexShrink: 0, display: 'none' }} className="member-dates">
+          <div style={{ fontSize: 10, color: T.mt }}>Joined {fmtDate(m.joined_at)}</div>
+          {m.last_active_at && <div style={{ fontSize: 10, color: T.mt }}>Active {fmtDate(m.last_active_at)}</div>}
+        </div>
+
+        {/* quick actions (hover) */}
+        <div style={{ display: 'flex', gap: 2, opacity: hovered ? 1 : 0, transition: 'opacity .12s', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => { setShowTimeout(p => !p); setExpanded(true); }} title="Timeout" style={{ background: 'none', border: 'none', color: '#f0b232', cursor: 'pointer', padding: '4px 6px', fontSize: 14, borderRadius: 5 }}>⏱</button>
+          <button onClick={doKick} title="Kick" style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: '4px 6px', fontSize: 13, borderRadius: 5 }}>👢</button>
+          <button onClick={doBan} title="Ban" style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', padding: '4px 6px', fontSize: 13, borderRadius: 5 }}>🔨</button>
+        </div>
+
+        <span style={{ color: T.mt, fontSize: 10, transition: 'transform .15s', transform: expanded ? 'rotate(0)' : 'rotate(-90deg)', flexShrink: 0 }}>▼</span>
+      </div>
+
+      {/* expanded detail */}
+      {expanded && (
+        <div style={{ padding: '0 12px 14px', borderTop: `1px solid ${T.bd}` }}>
+
+          {/* dates row */}
+          <div style={{ display: 'flex', gap: 20, marginBottom: 12, marginTop: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Joined</div>
+              <div style={{ fontSize: 12, color: T.tx }}>{fmtDate(m.joined_at)}</div>
+            </div>
+            {m.last_active_at && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Last Active</div>
+                <div style={{ fontSize: 12, color: T.tx }}>{fmtDate(m.last_active_at)}</div>
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>User ID</div>
+              <div style={{ fontSize: 11, color: T.mt, fontFamily: "'JetBrains Mono',monospace" }}>{m.user_id.slice(0, 16)}…</div>
+            </div>
+          </div>
+
+          {/* nickname edit */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Nickname</div>
+            {editingNick ? (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  autoFocus
+                  value={nick}
+                  onChange={e => setNick(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveNick(); if (e.key === 'Escape') { setEditingNick(false); setNick(m.nickname || m.display_name || ''); } }}
+                  placeholder="Enter nickname (blank to clear)"
+                  style={{ ...getInp(), flex: 1, padding: '5px 9px', fontSize: 12 }}
+                />
+                <button onClick={saveNick} style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                <button onClick={() => { setEditingNick(false); setNick(m.nickname || m.display_name || ''); }} style={{ ...btn(), padding: '5px 10px', fontSize: 12 }}>Cancel</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: (m.nickname || m.display_name) ? T.tx : T.mt, fontStyle: (m.nickname || m.display_name) ? 'normal' : 'italic' }}>
+                  {m.nickname || m.display_name || 'No nickname set'}
+                </span>
+                <button onClick={() => setEditingNick(true)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4, textDecoration: 'underline' }}>Edit</button>
+              </div>
+            )}
+          </div>
+
+          {/* timeout picker */}
+          {showTimeout && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Timeout Duration</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {TIMEOUT_OPTS.map(opt => (
+                  <button
+                    key={opt.secs}
+                    onClick={() => doTimeout(opt.secs)}
+                    style={{ background: 'rgba(240,178,50,0.12)', color: '#f0b232', border: '1px solid rgba(240,178,50,0.3)', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'background .1s' }}
+                    onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = 'rgba(240,178,50,0.25)'; }}
+                    onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = 'rgba(240,178,50,0.12)'; }}
+                  >{opt.label}</button>
+                ))}
+                <button onClick={() => setShowTimeout(false)} style={{ background: 'none', border: `1px solid ${T.bd}`, borderRadius: 6, padding: '5px 10px', fontSize: 12, color: T.mt, cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* roles */}
+          {assignableRoles.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Roles</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {assignableRoles.map(role => {
+                  const has = userRoles.some(ur => ((ur as any).id || (ur as any).role_id) === role.id);
+                  return (
+                    <button
+                      key={role.id}
+                      onClick={() => toggleRole(role)}
+                      style={{ padding: '4px 11px', borderRadius: 12, fontSize: 11, cursor: 'pointer', fontWeight: has ? 700 : 400, background: has ? `${role.color || T.ac}22` : 'rgba(255,255,255,0.05)', color: has ? (role.color || T.ac) : T.mt, border: `1px solid ${has ? (role.color || T.ac) + '55' : T.bd}`, transition: 'all .15s' }}
+                    >{has ? '✓ ' : '+ '}{role.name}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* moderation actions */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.bd}` }}>
+            <button onClick={() => setShowTimeout(p => !p)} style={{ background: 'rgba(240,178,50,0.1)', color: '#f0b232', border: '1px solid rgba(240,178,50,0.25)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              ⏱ {isTimedOut ? 'Update Timeout' : 'Timeout'}
+            </button>
+            <button onClick={doKick} style={{ background: 'rgba(255,255,255,0.05)', color: T.mt, border: `1px solid ${T.bd}`, borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              👢 Kick
+            </button>
+            <button onClick={doBan} style={{ background: 'rgba(237,66,69,0.1)', color: T.err, border: '1px solid rgba(237,66,69,0.25)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              🔨 Ban
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── RoleEditorCard ───────────────────────────────────────
+
+/** The 11 permissions surfaced in the visual role editor. */
+const ROLE_EDITOR_PERMS = [
+  { bit: 1 << 22, label: 'Manage Server',   group: 'Server' },
+  { bit: 1 << 20, label: 'Manage Channels', group: 'Server' },
+  { bit: 1 << 21, label: 'Manage Roles',    group: 'Server' },
+  { bit: 1 << 11, label: 'Kick Members',    group: 'Moderation' },
+  { bit: 1 << 12, label: 'Ban Members',     group: 'Moderation' },
+  { bit: 1 << 10, label: 'Manage Messages', group: 'Moderation' },
+  { bit: 1 << 3,  label: 'Attach Files',    group: 'Text' },
+  { bit: 1 << 6,  label: 'Add Reactions',   group: 'Text' },
+  { bit: 1 << 30, label: 'Connect Voice',   group: 'Voice' },
+  { bit: 1 << 31, label: 'Speak',           group: 'Voice' },
+  { bit: 1 << 9,  label: 'Stream',          group: 'Voice' },
+] as const;
+
+const ROLE_PERM_GROUPS = ['Server', 'Moderation', 'Text', 'Voice'] as const;
+
+interface ToggleSwitchProps { on: boolean; onChange: () => void; color?: string; }
+function ToggleSwitch({ on, onChange, color }: ToggleSwitchProps) {
+  return (
+    <div
+      onClick={onChange}
+      style={{ position: 'relative', width: 34, height: 18, borderRadius: 9, background: on ? (color || T.ac) : T.bd, cursor: 'pointer', flexShrink: 0, transition: 'background .18s' }}
+    >
+      <div style={{ position: 'absolute', top: 2, left: on ? 18 : 2, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .18s', boxShadow: '0 1px 3px rgba(0,0,0,0.35)' }} />
+    </div>
+  );
+}
+
+interface RoleEditorCardProps {
+  r: Role;
+  index: number;
+  total: number;
+  memberCount: number;
+  onDelete: () => void;
+  onUpdate: (data: Partial<Role>) => void;
+  onMove: (id: string, dir: -1 | 1) => void;
+}
+
+function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMove }: RoleEditorCardProps) {
+  const [name, setName]       = useState(r.name);
+  const [color, setColor]     = useState(r.color || '#5a6080');
+  const [hexInput, setHexInput] = useState(r.color || '#5a6080');
+  const [perms, setPerms]     = useState(r.permissions || 0);
+  const [dirty, setDirty]     = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const isEveryone = r.name === '@everyone';
+  const colorRef = React.useRef<HTMLInputElement>(null);
+
+  const markDirty = () => setDirty(true);
+
+  const handleColorChange = (hex: string) => {
+    setColor(hex);
+    setHexInput(hex);
+    markDirty();
+  };
+
+  const handleHexInput = (val: string) => {
+    setHexInput(val);
+    if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+      setColor(val);
+      markDirty();
+    }
+  };
+
+  const handlePermToggle = (bit: number) => {
+    setPerms(p => p & bit ? p & ~bit : p | bit);
+    markDirty();
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const data: Partial<Role> & { permissions?: number } = { permissions: perms };
+    if (name.trim() && name !== r.name) data.name = name.trim();
+    if (color !== r.color) data.color = color;
+    await api.updateRole(r.id, data);
+    onUpdate(data);
+    setDirty(false);
+    setSaving(false);
+  };
+
+  const saveNameInline = () => {
+    if (name.trim() && name !== r.name) {
+      api.updateRole(r.id, { name: name.trim() });
+      onUpdate({ name: name.trim() });
+    }
+    setEditingName(false);
+  };
+
+  return (
+    <div style={{ marginBottom: 10, borderRadius: 10, border: `1px solid ${dirty ? color + '88' : T.bd}`, background: T.bg, overflow: 'hidden', borderLeft: `4px solid ${color}`, transition: 'border-color .2s' }}>
+      {/* ── header row ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
+        {/* position controls */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+          <button onClick={() => onMove(r.id, -1)} disabled={index === 0 || isEveryone}
+            style={{ background: 'none', border: 'none', color: (index === 0 || isEveryone) ? T.bd : T.mt, cursor: (index === 0 || isEveryone) ? 'default' : 'pointer', padding: '0 2px', fontSize: 9, lineHeight: 1 }}>▲</button>
+          <button onClick={() => onMove(r.id, 1)} disabled={index === total - 1}
+            style={{ background: 'none', border: 'none', color: index === total - 1 ? T.bd : T.mt, cursor: index === total - 1 ? 'default' : 'pointer', padding: '0 2px', fontSize: 9, lineHeight: 1 }}>▼</button>
+        </div>
+
+        {/* color swatch → opens native picker */}
+        <div
+          onClick={() => colorRef.current?.click()}
+          style={{ width: 20, height: 20, borderRadius: 10, background: color, border: `2px solid ${T.bd}`, cursor: 'pointer', flexShrink: 0, transition: 'box-shadow .15s', boxShadow: '0 0 0 0 ' + color }}
+          onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 0 0 3px ${color}44`)}
+          onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 0 0 ' + color)}
+          title="Click to change color"
+        />
+        <input ref={colorRef} type="color" value={color} onChange={e => handleColorChange(e.target.value)}
+          style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+
+        {/* position badge */}
+        <span style={{ fontSize: 10, color: T.mt, fontFamily: "'JetBrains Mono',monospace", background: T.sf2, padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>#{index + 1}</span>
+
+        {/* name */}
+        {editingName && !isEveryone ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onBlur={saveNameInline}
+            onKeyDown={e => { if (e.key === 'Enter') saveNameInline(); if (e.key === 'Escape') { setName(r.name); setEditingName(false); } }}
+            style={{ ...getInp(), flex: 1, padding: '3px 7px', fontSize: 14, fontWeight: 600 }}
+          />
+        ) : (
+          <span
+            onDoubleClick={() => !isEveryone && setEditingName(true)}
+            title={isEveryone ? undefined : 'Double-click to rename'}
+            style={{ flex: 1, fontSize: 14, fontWeight: 700, color: color, cursor: isEveryone ? 'default' : 'text', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >{name}</span>
+        )}
+
+        {/* hex color input */}
+        <input
+          value={hexInput}
+          onChange={e => handleHexInput(e.target.value)}
+          maxLength={7}
+          style={{ ...getInp(), width: 78, padding: '3px 7px', fontSize: 11, fontFamily: "'JetBrains Mono',monospace", flexShrink: 0 }}
+          title="Hex color"
+        />
+
+        {/* member count */}
+        <span style={{ fontSize: 11, color: T.mt, flexShrink: 0 }}>{memberCount} member{memberCount !== 1 ? 's' : ''}</span>
+
+        {/* delete */}
+        {!isEveryone && (
+          <button onClick={onDelete} style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', padding: '3px 6px', fontSize: 13, borderRadius: 5 }} title="Delete role"><I.Trash /></button>
+        )}
+      </div>
+
+      {/* ── permissions grid ── */}
+      <div style={{ padding: '0 12px 12px', borderTop: `1px solid ${T.bd}` }}>
+        {ROLE_PERM_GROUPS.map(group => {
+          const groupPerms = ROLE_EDITOR_PERMS.filter(p => p.group === group);
+          return (
+            <div key={group} style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 7 }}>{group}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px' }}>
+                {groupPerms.map(p => {
+                  const on = !!(perms & p.bit);
+                  return (
+                    <div key={p.bit} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '4px 0' }}>
+                      <span style={{ fontSize: 12, color: on ? T.tx : T.mt, transition: 'color .15s', userSelect: 'none' }}>{p.label}</span>
+                      <ToggleSwitch on={on} onChange={() => handlePermToggle(p.bit)} color={color} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* save / status row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.bd}` }}>
+          <span style={{ flex: 1, fontSize: 11, color: dirty ? '#f0b232' : T.mt }}>
+            {dirty ? '● Unsaved changes' : `${ROLE_EDITOR_PERMS.filter(p => perms & p.bit).length} / ${ROLE_EDITOR_PERMS.length} permissions enabled`}
+          </span>
+          <button
+            onClick={save}
+            disabled={!dirty || saving}
+            style={{ background: dirty ? color : T.sf2, color: dirty ? '#fff' : T.mt, border: `1px solid ${dirty ? color : T.bd}`, borderRadius: 7, padding: '6px 16px', fontSize: 12, fontWeight: 700, cursor: dirty ? 'pointer' : 'not-allowed', opacity: saving ? 0.6 : 1, transition: 'all .18s' }}
+          >{saving ? 'Saving…' : 'Save Role'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EmojiManager (tab sub-panel) ────────────────────────
+
+interface EmojiManagerProps {
+  serverId: string;
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+}
+
+function EmojiManager({ serverId, showConfirm }: EmojiManagerProps) {
+  const [emojis, setEmojis] = useState<EmojiEntry[]>([]);
+  const [newName, setNewName] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => { api.listEmojis(serverId).then(e => setEmojis(Array.isArray(e) ? e : [])); }, [serverId]);
+
+  const handleUpload = () => {
+    if (!newName.trim()) return;
+    const f = document.createElement('input');
+    f.type = 'file';
+    f.accept = 'image/png,image/gif,image/webp';
+    f.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      if (file.size > 256 * 1024) { alert('Emoji must be under 256KB'); return; }
+      setUploading(true);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const result = await api.uploadEmoji(serverId, newName.trim(), reader.result as string, file.name.endsWith('.gif'));
+          if (result?.id) { setEmojis(p => [...p, result]); setNewName(''); }
+        } catch (err) { console.error('Emoji upload failed:', err); }
+        setUploading(false);
+      };
+      reader.readAsDataURL(file);
+    };
+    f.click();
+  };
+
+  const handleDelete = async (eid: string, ename: string) => {
+    if (await showConfirm('Delete Emoji', `Delete :${ename}:? This cannot be undone.`, true)) {
+      await api.deleteEmoji(serverId, eid);
+      setEmojis(p => p.filter(e => e.id !== eid));
+    }
+  };
+
+  return (<>
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Custom Emoji — {emojis.length}/50</div>
+    <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.5 }}>Upload custom emoji for your server. Members can use them in messages with :name: syntax. Max 50 emoji, 256KB each. PNG, GIF, or WebP.</div>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <input value={newName} onChange={e => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="emoji_name" style={{ ...getInp(), flex: 1 }} />
+      <button onClick={handleUpload} disabled={uploading || !newName.trim()} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 18px' }}>{uploading ? '...' : 'Upload'}</button>
+    </div>
+    {emojis.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: T.mt }}>No custom emoji yet. Upload one to get started!</div>}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+      {emojis.map(e => (
+        <div key={e.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: 8, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, position: 'relative' }}>
+          <img src={e.image_url} style={{ width: 32, height: 32, objectFit: 'contain' }} alt={e.name} />
+          <span style={{ fontSize: 10, color: T.mt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>:{e.name}:</span>
+          <div onClick={() => handleDelete(e.id, e.name)} style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: 8, background: 'rgba(255,71,87,0.15)', color: T.err, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10 }}>×</div>
+        </div>
+      ))}
+    </div>
+  </>);
+}
+
+// ─── EventsManager (tab sub-panel) ───────────────────────
+
+interface EventsManagerProps {
+  serverId: string;
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+}
+
+function EventsManager({ serverId, showConfirm }: EventsManagerProps) {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [location, setLocation] = useState('');
+
+  useEffect(() => { api.listEvents(serverId).then(e => setEvents(Array.isArray(e) ? e : [])); }, [serverId]);
+
+  const handleCreate = async () => {
+    if (!title.trim() || !startTime) return;
+    const result = await api.createEvent(serverId, {
+      title: title.trim(),
+      description: desc || undefined,
+      location: location || undefined,
+      start_time: new Date(startTime).toISOString(),
+      end_time: endTime ? new Date(endTime).toISOString() : undefined,
+    });
+    if (result?.id) {
+      setCreating(false); setTitle(''); setDesc(''); setStartTime(''); setEndTime(''); setLocation('');
+      api.listEvents(serverId).then(e => setEvents(Array.isArray(e) ? e : []));
+    }
+  };
+
+  const handleRsvp = async (eid: string, status: string) => {
+    await api.rsvpEvent(eid, status);
+    api.listEvents(serverId).then(e => setEvents(Array.isArray(e) ? e : []));
+  };
+
+  const handleDelete = async (eid: string, ename: string) => {
+    if (await showConfirm('Delete Event', `Delete "${ename}"? This cannot be undone.`, true)) {
+      await api.deleteEvent(eid);
+      setEvents(p => p.filter(e => e.id !== eid));
+    }
+  };
+
+  const upcoming = events.filter(e => new Date(e.start_time) >= new Date());
+  const past = events.filter(e => new Date(e.start_time) < new Date());
+
+  return (<>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Events — {events.length}</div>
+      <button onClick={() => setCreating(true)} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '5px 12px', fontSize: 11 }}><I.Plus /> New Event</button>
+    </div>
+    {creating && (
+      <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12 }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Event title" style={{ ...getInp(), marginBottom: 6, fontWeight: 600 }} autoFocus />
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" rows={2} style={{ ...getInp(), marginBottom: 6, resize: 'vertical' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+          <div><label style={{ fontSize: 10, color: T.mt }}>Start</label><input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...getInp(), fontSize: 12 }} /></div>
+          <div><label style={{ fontSize: 10, color: T.mt }}>End (optional)</label><input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...getInp(), fontSize: 12 }} /></div>
+        </div>
+        <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Location (optional)" style={{ ...getInp(), marginBottom: 8 }} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={handleCreate} disabled={!title.trim() || !startTime} style={{ ...btn(!!title.trim() && !!startTime), fontSize: 12 }}>Create Event</button>
+          <button onClick={() => setCreating(false)} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 12px', fontSize: 12 }}>Cancel</button>
+        </div>
+      </div>
+    )}
+    {upcoming.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: T.ac, textTransform: 'uppercase', marginBottom: 6 }}>Upcoming</div>}
+    {upcoming.map(evt => (
+      <div key={evt.id} style={{ padding: 10, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.tx }}>{evt.title}</div>
+          <div onClick={() => handleDelete(evt.id, evt.title)} style={{ cursor: 'pointer', color: T.mt, fontSize: 10, padding: 2 }}>×</div>
+        </div>
+        {evt.description && <div style={{ fontSize: 12, color: T.mt, marginTop: 4 }}>{evt.description}</div>}
+        <div style={{ fontSize: 11, color: T.ac, marginTop: 4 }}>📅 {new Date(evt.start_time).toLocaleString()}{evt.end_time ? ' — ' + new Date(evt.end_time).toLocaleTimeString() : ''}</div>
+        {evt.location && <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>📍 {evt.location}</div>}
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          {(['going', 'interested', 'not_going'] as const).map(st => (
+            <button key={st} onClick={() => handleRsvp(evt.id, st)} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '4px 10px', fontSize: 10, textTransform: 'capitalize' }}>
+              {st === 'going' ? '✅ Going' : st === 'interested' ? '⭐ Interested' : '❌ Not Going'}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>{evt.going_count} going · {evt.interested_count} interested · by {evt.creator_username}</div>
+      </div>
+    ))}
+    {past.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Past</div>}
+    {past.map(evt => (
+      <div key={evt.id} style={{ padding: 8, background: T.bg, borderRadius: 6, marginBottom: 4, opacity: 0.6 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{evt.title}</div>
+        <div style={{ fontSize: 10, color: T.mt }}>{new Date(evt.start_time).toLocaleString()} · {evt.going_count} went</div>
+      </div>
+    ))}
+    {events.length === 0 && !creating && <div style={{ textAlign: 'center', padding: 20, color: T.mt }}>No events yet. Create one to get started!</div>}
+  </>);
+}
+
+// ─── ModerationPanel (tab sub-panel) ─────────────────────
+
+interface ModerationPanelProps {
+  serverId: string;
+  getName: (userId: string) => string;
+  decrypt: (ciphertext: string, channelId: string, epoch: number) => Promise<string>;
+}
+
+function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
+  const [modTab, setModTab] = useState('search');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchChannel, setSearchChannel] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchMessage[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [deleted, setDeleted] = useState<number | null>(null);
+  const [modChannels, setModChannels] = useState<Channel[]>([]);
+
+  useEffect(() => {
+    api.listChannels(serverId).then(c => setModChannels(Array.isArray(c) ? c.filter((ch: Channel) => ch.channel_type === 'text') : []));
+  }, [serverId]);
+
+  const doSearch = async () => {
+    if (!searchTerm.trim() || !searchChannel) return;
+    setSearching(true); setDeleted(null);
+    try {
+      const data = await api.getMessagesBatch(searchChannel, 500);
+      const arr = Array.isArray(data) ? data : (data?.messages || []);
+      const found: SearchMessage[] = [];
+      for (const m of arr) {
+        try {
+          const text = await decrypt(m.content_ciphertext, searchChannel, m.mls_epoch);
+          if (text && text.toLowerCase().includes(searchTerm.toLowerCase())) {
+            found.push({ id: m.id, text, author_id: m.author_id, created_at: m.created_at });
+          }
+        } catch { /* skip undecryptable */ }
+      }
+      setSearchResults(found);
+    } catch { /* ignore */ }
+    setSearching(false);
+  };
+
+  const doBulkDelete = async () => {
+    if (!searchResults.length || !searchChannel) return;
+    try {
+      const result = await api.bulkDeleteMessages(searchChannel, searchResults.map(m => m.id), `Mod search: "${searchTerm}"`);
+      setDeleted(result.deleted || searchResults.length);
+      setSearchResults([]);
+    } catch { /* ignore */ }
+  };
+
+  const modTabs = [
+    { id: 'search',      label: 'Search & Delete',   icon: <I.Search /> },
+    { id: 'automod',     label: 'Auto-Moderation',    icon: <I.Shield /> },
+    { id: 'permissions', label: 'Channel Mods',        icon: <I.Users /> },
+    { id: 'timeout',     label: 'Timeouts',            icon: <I.Clock /> },
+  ];
+
+  return (<>
+    <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+      {modTabs.map(t => (
+        <div key={t.id} onClick={() => setModTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: modTab === t.id ? T.ac : T.mt, background: modTab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', border: `1px solid ${modTab === t.id ? T.ac + '44' : T.bd}` }}>
+          {t.icon} {t.label}
+        </div>
+      ))}
+    </div>
+
+    {modTab === 'search' && (<>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Search Messages & Bulk Delete</div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.5 }}>Search decrypted messages in a channel for a word or phrase. Zero-knowledge: the search runs on your device. The server never sees the search term.</div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <select value={searchChannel} onChange={e => setSearchChannel(e.target.value)} style={{ ...getInp(), flex: 1 }}>
+          <option value="">Select channel...</option>
+          {modChannels.map(ch => <option key={ch.id} value={ch.id}>#{ch.name}</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doSearch(); }} placeholder="Enter word or phrase..." style={{ ...getInp(), flex: 1 }} />
+        <button onClick={doSearch} disabled={searching || !searchTerm.trim() || !searchChannel} style={{ ...btn(!!searchTerm.trim() && !!searchChannel), width: 90 }}>{searching ? '...' : 'Search'}</button>
+      </div>
+      {deleted !== null && (
+        <div style={{ padding: 16, textAlign: 'center', color: T.ac, background: T.sf2, borderRadius: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 20, marginBottom: 6 }}>✓</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{deleted} message{deleted !== 1 ? 's' : ''} deleted</div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 4 }}>Recorded in the audit log as BULK_DELETE_MESSAGES.</div>
+        </div>
+      )}
+      {searchResults.length > 0 && (<>
+        <div style={{ fontSize: 12, color: T.warn, fontWeight: 600, marginBottom: 8 }}>Found {searchResults.length} message{searchResults.length !== 1 ? 's' : ''} containing "{searchTerm}"</div>
+        <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          {searchResults.map(m => (
+            <div key={m.id} style={{ padding: '6px 10px', borderBottom: `1px solid ${T.bd}`, fontSize: 12 }}>
+              <span style={{ color: T.ac, fontWeight: 600 }}>{getName(m.author_id)}</span>
+              <span style={{ color: T.mt, marginLeft: 6, fontSize: 10 }}>{new Date(m.created_at).toLocaleString()}</span>
+              <div style={{ color: T.tx, marginTop: 2, wordBreak: 'break-word' }}>{m.text?.length > 120 ? m.text.slice(0, 120) + '...' : m.text}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={doBulkDelete} style={{ ...btn(true), background: `linear-gradient(135deg,${T.err},#ff6b6b)`, color: '#fff' }}>Delete All {searchResults.length} Messages</button>
+      </>)}
+      {searching && <div style={{ textAlign: 'center', padding: 16, color: T.mt }}>Searching decrypted messages...</div>}
+      {!searching && searchTerm && searchResults.length === 0 && deleted === null && <div style={{ textAlign: 'center', padding: 16, color: T.mt }}>No matches found.</div>}
+    </>)}
+
+    {modTab === 'automod' && (<>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Auto-Moderation Rules</div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>Set up automatic moderation rules. Because Citadel is zero-knowledge, auto-mod runs on each client — not the server. Rules are synced via encrypted server settings.</div>
+      {[
+        { key: 'spam_detect',          label: 'Spam Detection',          desc: 'Flag rapid-fire duplicate messages (5+ in 10s)',                       default: true },
+        { key: 'invite_filter',        label: 'Invite Link Filter',       desc: 'Block invite links from other platforms (Discord, Slack, etc.)',       default: false },
+        { key: 'caps_filter',          label: 'Excessive Caps Filter',    desc: 'Flag messages that are >70% uppercase (10+ chars)',                    default: false },
+        { key: 'mention_spam',         label: 'Mass Mention Protection',  desc: 'Block messages with 5+ @mentions',                                     default: true },
+        { key: 'new_account_slowmode', label: 'New Member Slowmode',      desc: 'Auto-apply 30s slowmode to accounts <24h old',                        default: false },
+      ].map(rule => {
+        const storageKey = `mod_${serverId}_${rule.key}`;
+        const isOn = JSON.parse(localStorage.getItem(storageKey) ?? (rule.default ? 'true' : 'false'));
+        return (
+          <div key={rule.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{rule.label}</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>{rule.desc}</div>
+            </div>
+            <div onClick={() => { localStorage.setItem(storageKey, JSON.stringify(!isOn)); setModTab('automod'); }} style={{ width: 40, height: 22, borderRadius: 11, background: isOn ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+              <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: isOn ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+            </div>
+          </div>
+        );
+      })}
+    </>)}
+
+    {modTab === 'permissions' && (<>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Channel Moderators</div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>Assign moderator roles to specific channels. Channel mods can delete messages, manage pins, and timeout users within their assigned channels — even if they don't have server-wide permissions.</div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, fontStyle: 'italic' }}>Tip: Create a "Channel Mod" role in the Roles tab with MANAGE_MESSAGES permission, then assign it to users. Use per-channel overrides for fine-grained control.</div>
+      {modChannels.map(ch => (
+        <div key={ch.id} style={{ padding: '10px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <I.Hash s={14} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{ch.name}</span>
+            <span style={{ fontSize: 11, color: T.mt, marginLeft: 'auto' }}>
+              {ch.locked ? '🔒 Locked' : (ch.min_role_position ?? 0) > 0 ? '🔐 Restricted' : '🌐 Public'}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: T.mt }}>
+            TTL: {(ch.message_ttl_seconds ?? 0) > 0 ? ((ch.message_ttl_seconds ?? 0) >= 86400 ? Math.round((ch.message_ttl_seconds ?? 0) / 86400) + 'd' : (ch.message_ttl_seconds ?? 0) >= 3600 ? Math.round((ch.message_ttl_seconds ?? 0) / 3600) + 'h' : (ch.message_ttl_seconds ?? 0) + 's') : 'Forever'}
+            {(ch.slowmode_seconds ?? 0) > 0 && ` · Slowmode: ${ch.slowmode_seconds}s`}
+            {ch.nsfw && ' · NSFW'}
+          </div>
+        </div>
+      ))}
+    </>)}
+
+    {modTab === 'timeout' && (<>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Active Timeouts</div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.5 }}>Manage users currently timed out. Timed-out users can read messages but cannot send, react, or join voice channels.</div>
+      {(() => {
+        try {
+          const tos: Record<string, number> = JSON.parse(localStorage.getItem('d_timeouts') || '{}');
+          const active = Object.entries(tos).filter(([, exp]) => exp > Date.now());
+          if (active.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: T.mt }}>No active timeouts.</div>;
+          return active.map(([uid, exp]) => (
+            <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>
+              <Av name={getName(uid) || '?'} size={28} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{getName(uid) || uid.slice(0, 8)}</div>
+                <div style={{ fontSize: 11, color: T.warn }}>Expires {new Date(exp).toLocaleTimeString()}</div>
+              </div>
+              <button onClick={() => {
+                const t: Record<string, number> = JSON.parse(localStorage.getItem('d_timeouts') || '{}');
+                delete t[uid];
+                localStorage.setItem('d_timeouts', JSON.stringify(t));
+                setModTab('timeout');
+              }} className="pill-btn" style={{ background: T.sf, color: T.ac, border: `1px solid ${T.bd}`, fontSize: 11 }}>Remove</button>
+            </div>
+          ));
+        } catch { return <div style={{ color: T.mt }}>No active timeouts.</div>; }
+      })()}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Timeout Durations</div>
+        <div style={{ fontSize: 12, color: T.mt, marginBottom: 8 }}>Right-click a member → Timeout to apply. Available durations:</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {['60s', '5m', '10m', '1h', '6h', '24h', '7d'].map(d => (
+            <span key={d} style={{ padding: '4px 10px', background: T.sf2, borderRadius: 6, fontSize: 11, fontWeight: 600, color: T.mt }}>{d}</span>
+          ))}
+        </div>
+      </div>
+    </>)}
+  </>);
+}
+
+// ─── ServerSettingsModal ──────────────────────────────────
+
+export interface ServerSettingsModalProps {
+  server: Server;
+  onClose: () => void;
+  onUpdate?: () => void;
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  getName: (userId: string) => string;
+  decrypt: (ciphertext: string, channelId: string, epoch: number) => Promise<string>;
+  onCreateInvite?: () => void;
+}
+
+export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, getName, decrypt, onCreateInvite }: ServerSettingsModalProps) {
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [newChName, setNewChName] = useState('');
+  const [newChType, setNewChType] = useState('text');
+  const [newChCat, setNewChCat] = useState('');
+  const [newCatName, setNewCatName] = useState('');
+  const [showCreateCh, setShowCreateCh] = useState(false);
+  const [showCreateCat, setShowCreateCat] = useState(false);
+  const [tab, setTab] = useState('overview');
+  const [name, setName] = useState(server?.name || '');
+  const [memberTabLabel, setMemberTabLabel] = useState(server?.member_tab_label || 'Users');
+  const [inviteCode, setInviteCode] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [profanityLevel, setProfanityLevelState] = useState<FilterLevel>(() => getProfanityLevel(server.id));
+  const [serverBotTags, setServerBotTagsState] = useState<boolean>(() => localStorage.getItem('d_server_bot_tags_' + server.id) !== 'false');
+  const [serverDefaultChannel, setServerDefaultChannelState] = useState<string>(() => localStorage.getItem('d_server_default_channel_' + server.id) || '');
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [bans, setBans] = useState<BanEntry[]>([]);
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [chainVerify, setChainVerify] = useState<{ chain_intact: boolean; verified_entries?: number; first_broken_at?: number; first_broken_reason?: string } | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [newRole, setNewRole] = useState('');
+  const [newRoleColor, setNewRoleColor] = useState('#00d4aa');
+  const [saved, setSaved] = useState('');
+  const [mgmtMembers, setMgmtMembers] = useState<Member[]>([]);
+  const [mgmtMemberRoles, setMgmtMemberRoles] = useState<Record<string, Role[]>>({});
+  const [memberSearch, setMemberSearch] = useState('');
+  const [roleMemberCounts, setRoleMemberCounts] = useState<Record<string, number>>({});
+  const [serverBots, setServerBots]       = useState<BotEntry[]>([]);
+  const [spawnName, setSpawnName]         = useState('');
+  const [spawnPersona, setSpawnPersona]   = useState(PRESETS[0]?.id || 'general');
+  const [spawning, setSpawning]           = useState(false);
+  const [activeBotConfig, setActiveBotConfig] = useState<BotEntry | null>(null);
+  const [memberFilter, setMemberFilter] = useState<'all' | 'online' | 'offline' | 'bots' | string>('all');
+  const [memberSort, setMemberSort] = useState<'name' | 'joined' | 'active'>('name');
+  const [memberPage, setMemberPage] = useState(0);
+  const MEMBER_PAGE_SIZE = 50;
+
+  useEffect(() => {
+    if (tab === 'roles') {
+      api.listRoles(server.id).then(r => setRoles(Array.isArray(r) ? r : []));
+      // compute member counts from already-loaded mgmtMemberRoles (best-effort)
+      const counts: Record<string, number> = {};
+      Object.values(mgmtMemberRoles).forEach(rList => {
+        rList.forEach(role => {
+          const rid = (role as any).id || (role as any).role_id;
+          if (rid) counts[rid] = (counts[rid] || 0) + 1;
+        });
+      });
+      setRoleMemberCounts(counts);
+    }
+    if (tab === 'channels') {
+      api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : []));
+      api.listCategories(server.id).then(c => setCategories(Array.isArray(c) ? c : []));
+    }
+    if (tab === 'bots')     api.listBots(server.id).then(b => setServerBots(Array.isArray(b) ? b : []));
+    if (tab === 'bans')     api.listBans(server.id).then(b => setBans(Array.isArray(b) ? b : []));
+    if (tab === 'audit')    api.getAuditLog(server.id).then(a => setAuditLog(Array.isArray(a) ? a : []));
+    if (tab === 'invites') { setInvitesLoading(true); api.listInvites(server.id).then(inv => { setInvites(Array.isArray(inv) ? inv : []); setInvitesLoading(false); }).catch(() => setInvitesLoading(false)); }
+    if (tab === 'members') {
+      setMemberPage(0);
+      api.listRoles(server.id).then(r => setRoles(Array.isArray(r) ? r : []));
+      api.listMembers(server.id).then(async (m: Member[]) => {
+        if (!Array.isArray(m)) return;
+        setMgmtMembers(m);
+        const roleMap: Record<string, Role[]> = {};
+        // load roles for first page eagerly, rest lazily
+        await Promise.all(m.slice(0, MEMBER_PAGE_SIZE).map(async u => {
+          try { const r = await api.listMemberRoles(server.id, u.user_id); roleMap[u.user_id] = Array.isArray(r) ? r : []; }
+          catch { roleMap[u.user_id] = []; }
+        }));
+        setMgmtMemberRoles(roleMap);
+        // load remaining in background
+        if (m.length > MEMBER_PAGE_SIZE) {
+          Promise.all(m.slice(MEMBER_PAGE_SIZE).map(async u => {
+            try { const r = await api.listMemberRoles(server.id, u.user_id); roleMap[u.user_id] = Array.isArray(r) ? r : []; }
+            catch { roleMap[u.user_id] = []; }
+          })).then(() => setMgmtMemberRoles({ ...roleMap }));
+        }
+      });
+    }
+  }, [tab]);
+
+  const handleInvite = async () => { const inv = await api.createInvite(server.id); if (inv.code) setInviteCode(inv.code); };
+  const copyInv = () => { navigator.clipboard.writeText(`Server ID: ${server.id}\nInvite Code: ${inviteCode}`); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const saveName = async () => { await api.updateServer(server.id, { name: name.trim() }); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); };
+  const handleCreateRole = async () => {
+    if (!newRole.trim()) return;
+    await api.createRole(server.id, newRole.trim(), newRoleColor, 0);
+    setNewRole('');
+    api.listRoles(server.id).then(r => setRoles(Array.isArray(r) ? r : []));
+    onUpdate && onUpdate();
+  };
+  const handleDeleteRole = async (rid: string) => {
+    const role = roles.find(r => r.id === rid);
+    const roleName = role?.name || 'this role';
+    if (await showConfirm('Delete Role', `Are you sure you want to delete "${roleName}"? Members with this role will lose its permissions.`, true)) {
+      await api.deleteRole(server.id, rid);
+      setRoles(p => p.filter(r => r.id !== rid));
+    }
+  };
+  const refreshChannels = () => {
+    api.listChannels(server.id).then(c => { if (Array.isArray(c)) setChannels(c); });
+  };
+
+  const handleCreateChannel = async () => {
+    const name = newChName.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!name) return;
+    await api.createChannel(server.id, name, newChCat || null, newChType);
+    setNewChName('');
+    setShowCreateCh(false);
+    refreshChannels();
+  };
+
+  const handleCreateCategory = async () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    try {
+      await (api as any).fetch(`/servers/${server.id}/categories`, { method: 'POST', body: JSON.stringify({ name }) });
+    } catch { /* ignore if endpoint not available */ }
+    setNewCatName('');
+    setShowCreateCat(false);
+    api.listCategories(server.id).then(c => setCategories(Array.isArray(c) ? c : []));
+  };
+
+  const handleMoveChannel = (id: string, dir: -1 | 1) => {
+    setChannels(prev => {
+      const idx = prev.findIndex(c => c.id === id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      // persist new positions
+      next.forEach((ch, i) => api.updateChannel(ch.id, { position: i }));
+      return next;
+    });
+  };
+
+  const handleMoveRole = (id: string, dir: -1 | 1) => {
+    setRoles(prev => {
+      const idx = prev.findIndex(r => r.id === id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      next.forEach((r, i) => api.updateRole(r.id, { position: i }));
+      return next;
+    });
+  };
+
+  const handleSpawnBot = async () => {
+    const name = spawnName.trim();
+    if (!name) return;
+    setSpawning(true);
+    try {
+      const preset = PRESETS.find(p => p.id === spawnPersona);
+      const result = await api.createBot(server.id, {
+        username:        name.toLowerCase().replace(/\s+/g, '_') + '_bot',
+        display_name:    name,
+        persona:         spawnPersona,
+        system_prompt:   preset?.cfg.system_prompt || '',
+        temperature:     preset?.cfg.temperature ?? 0.7,
+        voice_style:     preset?.cfg.voice_style || 'default',
+        greeting_message: preset?.cfg.greeting_message || '',
+        response_prefix: preset?.cfg.response_prefix || '',
+        enabled:         true,
+      });
+      if (result?.bot_user_id || result?.id) {
+        setSpawnName('');
+        api.listBots(server.id).then(b => setServerBots(Array.isArray(b) ? b : []));
+        setSaved('Bot created!'); setTimeout(() => setSaved(''), 1500);
+        onUpdate?.();
+      }
+    } catch (e: any) { setSaved('Failed: ' + (e.message || 'unknown error')); setTimeout(() => setSaved(''), 2500); }
+    finally { setSpawning(false); }
+  };
+
+  const handleRemoveBot = async (bot: BotEntry) => {
+    if (!await showConfirm('Remove Bot', `Remove ${bot.display_name || bot.username} from this server? All bot config will be lost.`, true)) return;
+    await api.removeBotFromServer(server.id, bot.bot_user_id);
+    setServerBots(p => p.filter(b => b.bot_user_id !== bot.bot_user_id));
+    onUpdate?.();
+  };
+
+  const handleToggleBot = async (bot: BotEntry) => {
+    const next = !bot.enabled;
+    await api.updateBot(server.id, bot.bot_user_id, { enabled: next });
+    setServerBots(p => p.map(b => b.bot_user_id === bot.bot_user_id ? { ...b, enabled: next } : b));
+  };
+
+  const handleUnban = async (uid: string) => {
+    if (await showConfirm('Unban User', 'Unban this user? They will be able to rejoin the server.', false)) {
+      await api.unbanUser(server.id, uid);
+      setBans(p => p.filter(b => b.user_id !== uid));
+    }
+  };
+
+  const tabs = [
+    { id: 'overview',    label: 'Overview' },
+    { id: 'channels',    label: channels.length ? `Channels (${channels.length})` : 'Channels' },
+    { id: 'roles',       label: roles.length ? `Roles (${roles.length})` : 'Roles' },
+    { id: 'members',     label: mgmtMembers.length ? `Members (${mgmtMembers.length})` : 'Members' },
+    { id: 'bots',        label: serverBots.length ? `Bots (${serverBots.length})` : 'Bots' },
+    { id: 'emoji',       label: 'Emoji' },
+    { id: 'events',      label: 'Events' },
+    { id: 'invites',     label: 'Invites' },
+    { id: 'moderation',  label: 'Moderation' },
+    { id: 'bans',        label: 'Bans' },
+    { id: 'audit',       label: 'Audit Log' },
+  ];
+
+  const actionLabels: Record<string, string> = {
+    MEMBER_BAN: 'Banned member', MEMBER_UNBAN: 'Unbanned member',
+    ROLE_CREATE: 'Created role', ROLE_UPDATE: 'Updated role', ROLE_DELETE: 'Deleted role',
+    CHANNEL_CREATE: 'Created channel', CHANNEL_DELETE: 'Deleted channel',
+    SERVER_UPDATE: 'Updated server', UPDATE_SERVER: 'Updated server settings',
+    UPDATE_CHANNEL: 'Updated channel', CREATE_INVITE: 'Created invite',
+    ASSIGN_ROLE: 'Assigned role', UNASSIGN_ROLE: 'Unassigned role',
+    BULK_DELETE_MESSAGES: 'Bulk deleted messages',
+  };
+
+  return (
+    <Modal title={server?.name || 'Server Settings'} onClose={onClose} wide>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${T.bd}`, paddingBottom: 10 }}>
+        {tabs.map(t => (
+          <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent' }}>{t.label}</div>
+        ))}
+      </div>
+
+      {tab === 'overview' && (<>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server Name</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={{ ...getInp(), flex: 1 }} value={name} onChange={e => setName(e.target.value)} />
+            <button onClick={saveName} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 18px' }}>Save</button>
+          </div>
+          {saved && <div style={{ color: T.ac, fontSize: 12, marginTop: 6 }}>{saved}</div>}
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server Icon</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: server.icon_url ? 'transparent' : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: `2px dashed ${T.bd}`, flexShrink: 0 }}>
+              {server.icon_url ? <img src={server.icon_url} alt="" style={{ width: 64, height: 64, objectFit: 'cover' }} /> : <span style={{ fontSize: 24, color: T.mt }}>{server.name?.[0]?.toUpperCase() || '?'}</span>}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <label style={{ padding: '6px 14px', background: T.ac, color: '#000', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'inline-block' }}>
+                  Upload
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                      await api.updateServer(server.id, { icon_url: reader.result as string });
+                      setSaved('Icon updated!'); setTimeout(() => setSaved(''), 1500);
+                      if (onUpdate) onUpdate();
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+                {server.icon_url && <button onClick={async () => { await api.updateServer(server.id, { icon_url: '' }); setSaved('Icon removed'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} className="pill-btn" style={{ background: T.sf2, color: T.err, padding: '6px 14px', fontSize: 12, border: `1px solid ${T.bd}` }}>Remove</button>}
+              </div>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Recommended: 256×256 or larger. JPG, PNG, GIF, or WebP.</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Member Panel Label</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={{ ...getInp(), flex: 1 }} value={memberTabLabel} onChange={e => setMemberTabLabel(e.target.value)} placeholder="Users" />
+            <button onClick={async () => { await api.updateServer(server.id, { member_tab_label: memberTabLabel.trim() || 'Users' }); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 18px' }}>Save</button>
+          </div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 4 }}>Customize what the member panel is called (e.g. "Users", "Members", "Crew", "Team")</div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server ID</label>
+          <div style={{ padding: '10px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: T.tx, wordBreak: 'break-all', cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(server.id)}>
+            {server?.id} <span style={{ color: T.mt, fontSize: 10 }}>(click to copy)</span>
+          </div>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 8, textTransform: 'uppercase' }}>Invite Friends</label>
+          {!inviteCode ? (
+            <button onClick={handleInvite} style={{ ...btn(true), display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><I.Link /> Generate Invite Code</button>
+          ) : (
+            <div>
+              <div style={{ padding: 12, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: T.mt, marginBottom: 4 }}>Server ID:</div>
+                <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: T.ac, marginBottom: 8, wordBreak: 'break-all' }}>{server?.id}</div>
+                <div style={{ fontSize: 11, color: T.mt, marginBottom: 4 }}>Invite Code:</div>
+                <div style={{ fontSize: 16, fontFamily: "'JetBrains Mono',monospace", color: T.ac, fontWeight: 700 }}>{inviteCode}</div>
+              </div>
+              <button onClick={copyInv} style={{ ...btn(true), display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><I.Copy /> {copied ? 'Copied!' : 'Copy Invite Info'}</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 16, padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 8 }}>Server Discovery</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>List in Public Discovery</div>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>Allow anyone to find and join this server from the Explore tab.</div>
+            </div>
+            <div onClick={async () => {
+              if (server?.is_public) { await api.unpublishServer(server.id); setSaved('Unpublished!'); }
+              else { await api.publishServer(server.id, 'Community', []); setSaved('Published!'); }
+              setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate();
+            }} style={{ width: 36, height: 20, borderRadius: 10, background: server?.is_public ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: server?.is_public ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16, padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 8 }}>Profanity Filter</div>
+          <div style={{ fontSize: 12, color: T.mt, marginBottom: 10, lineHeight: 1.5 }}>
+            Filters incoming messages for your view of this server. Stored locally — each member sets their own preference.
+          </div>
+          <select
+            value={profanityLevel}
+            onChange={e => {
+              const level = e.target.value as FilterLevel;
+              setProfanityLevelState(level);
+              setProfanityLevel(server.id, level);
+            }}
+            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13 }}
+          >
+            <option value="off">Off — no filtering</option>
+            <option value="light">Light — slurs only</option>
+            <option value="medium">Medium — common profanity</option>
+            <option value="strict">Strict — all profanity</option>
+          </select>
+        </div>
+
+        <div style={{ marginTop: 16, padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Default Channel</div>
+          <div style={{ fontSize: 12, color: T.mt, marginBottom: 10, lineHeight: 1.5 }}>
+            New members will land in this channel when they join your server. Choose a welcoming channel.
+          </div>
+          <select
+            value={serverDefaultChannel}
+            onChange={e => {
+              const val = e.target.value;
+              setServerDefaultChannelState(val);
+              localStorage.setItem('d_server_default_channel_' + server.id, val);
+            }}
+            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: serverDefaultChannel ? T.tx : T.mt, fontSize: 13 }}
+          >
+            <option value="">— No preference (auto-select) —</option>
+            {channels.filter(c => c.channel_type !== 'voice').map(ch => (
+              <option key={ch.id} value={ch.id}># {ch.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginTop: 16, padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 8 }}>Bot Appearance</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ flex: 1, paddingRight: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Show BOT tags by default</div>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>When disabled, bots in this server won't show the BOT badge. Members can override this in their personal settings. Bot identity is always visible to admins.</div>
+            </div>
+            <div onClick={() => {
+              const next = !serverBotTags;
+              setServerBotTagsState(next);
+              localStorage.setItem('d_server_bot_tags_' + server.id, String(next));
+            }} style={{ width: 36, height: 20, borderRadius: 10, background: serverBotTags ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: serverBotTags ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+            </div>
+          </div>
+        </div>
+      </>)}
+
+      {tab === 'channels' && (() => {
+        // group channels by category
+        const byCat: Record<string, Channel[]> = { '': [] };
+        categories.forEach(cat => { byCat[cat.id] = []; });
+        channels.forEach(ch => {
+          const key = ch.category_id && byCat[ch.category_id] !== undefined ? ch.category_id : '';
+          byCat[key].push(ch);
+        });
+        const catOrder = ['', ...categories.map(c => c.id)];
+
+        return (
+          <>
+            {/* toolbar */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>
+                Channel Management — {channels.length} channel{channels.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={() => { setShowCreateCat(p => !p); setShowCreateCh(false); }}
+                style={{ ...btn(), padding: '6px 12px', fontSize: 12 }}
+              >+ Category</button>
+              <button
+                onClick={() => { setShowCreateCh(p => !p); setShowCreateCat(false); }}
+                style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >+ Channel</button>
+            </div>
+
+            {/* create category inline form */}
+            {showCreateCat && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                <input
+                  autoFocus
+                  value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateCategory(); if (e.key === 'Escape') setShowCreateCat(false); }}
+                  placeholder="Category name (e.g. GENERAL)"
+                  style={{ ...getInp(), flex: 1, padding: '6px 10px', fontSize: 13 }}
+                />
+                <button onClick={handleCreateCategory} style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Create</button>
+                <button onClick={() => setShowCreateCat(false)} style={{ ...btn(), padding: '6px 10px', fontSize: 12 }}>Cancel</button>
+              </div>
+            )}
+
+            {/* create channel inline form */}
+            {showCreateCh && (
+              <div style={{ marginBottom: 14, padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>New Channel</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    autoFocus
+                    value={newChName}
+                    onChange={e => setNewChName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleCreateChannel(); if (e.key === 'Escape') setShowCreateCh(false); }}
+                    placeholder="channel-name"
+                    style={{ ...getInp(), flex: 2, minWidth: 140, padding: '7px 10px', fontSize: 13 }}
+                  />
+                  <select value={newChType} onChange={e => setNewChType(e.target.value)} style={{ ...getInp(), flex: 1, minWidth: 100, padding: '7px 8px', fontSize: 13 }}>
+                    <option value="text">Text</option>
+                    <option value="voice">Voice</option>
+                    <option value="announcement">Announcement</option>
+                  </select>
+                  {categories.length > 0 && (
+                    <select value={newChCat} onChange={e => setNewChCat(e.target.value)} style={{ ...getInp(), flex: 1, minWidth: 110, padding: '7px 8px', fontSize: 13 }}>
+                      <option value="">No category</option>
+                      {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button onClick={handleCreateChannel} style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Create Channel</button>
+                  <button onClick={() => setShowCreateCh(false)} style={{ ...btn(), padding: '7px 14px', fontSize: 13 }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* channel list grouped by category */}
+            {channels.length === 0 && (
+              <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '32px 0' }}>No channels yet — create one above</div>
+            )}
+            {catOrder.map(catId => {
+              const list = byCat[catId];
+              if (!list || list.length === 0) return null;
+              const catLabel = catId ? categories.find(c => c.id === catId)?.name || 'Unknown' : 'Uncategorized';
+              const showHeader = catId || categories.length > 0;
+              return (
+                <div key={catId || '__none__'} style={{ marginBottom: 16 }}>
+                  {showHeader && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                        {catLabel}
+                      </span>
+                      <span style={{ fontSize: 10, color: T.bd }}>— {list.length}</span>
+                      <div style={{ flex: 1, height: 1, background: T.bd }} />
+                    </div>
+                  )}
+                  {list.map((ch, idx) => (
+                    <ChannelManagerRow
+                      key={ch.id}
+                      ch={ch}
+                      index={idx}
+                      total={list.length}
+                      categories={categories}
+                      serverId={server.id}
+                      showConfirm={showConfirm}
+                      onRefresh={refreshChannels}
+                      onMove={handleMoveChannel}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </>
+        );
+      })()}
+
+      {tab === 'roles' && (<>
+        {/* ── Create Role ── */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: '12px 14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', width: '100%', marginBottom: 4 }}>Create Role</span>
+          <input
+            style={{ ...getInp(), flex: 1, minWidth: 140 }}
+            value={newRole}
+            onChange={e => setNewRole(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleCreateRole()}
+            placeholder="Role name…"
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <div
+              onClick={() => document.getElementById('new-role-color-picker')?.click()}
+              style={{ width: 32, height: 32, borderRadius: 8, background: newRoleColor, border: `2px solid ${T.bd}`, cursor: 'pointer', transition: 'box-shadow .15s' }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 0 0 3px ${newRoleColor}44`)}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+              title="Choose color"
+            />
+            <input id="new-role-color-picker" type="color" value={newRoleColor} onChange={e => setNewRoleColor(e.target.value)}
+              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+            <input
+              value={newRoleColor}
+              onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) setNewRoleColor(e.target.value); }}
+              maxLength={7}
+              style={{ ...getInp(), width: 78, padding: '6px 8px', fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}
+            />
+          </div>
+          <button
+            onClick={handleCreateRole}
+            disabled={!newRole.trim()}
+            style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: newRole.trim() ? 'pointer' : 'not-allowed', opacity: newRole.trim() ? 1 : 0.5, flexShrink: 0 }}
+          >+ Create</button>
+        </div>
+
+        {/* ── Role cards ── */}
+        {roles.length === 0 && (
+          <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '32px 0' }}>No roles yet — create one above</div>
+        )}
+        {roles.map((r, idx) => (
+          <RoleEditorCard
+            key={r.id}
+            r={r}
+            index={idx}
+            total={roles.length}
+            memberCount={roleMemberCounts[r.id] || 0}
+            onDelete={() => handleDeleteRole(r.id)}
+            onUpdate={data => setRoles(p => p.map(x => x.id === r.id ? { ...x, ...data } : x))}
+            onMove={handleMoveRole}
+          />
+        ))}
+      </>)}
+
+      {tab === 'members' && (() => {
+        // ── filter ──
+        const q = memberSearch.toLowerCase();
+        let filtered = mgmtMembers.filter(m => {
+          if (q && !m.username?.toLowerCase().includes(q) && !m.display_name?.toLowerCase().includes(q)) return false;
+          if (memberFilter === 'bots')    return m.is_bot;
+          if (memberFilter === 'online')  return m.online === true;
+          if (memberFilter === 'offline') return m.online === false;
+          if (memberFilter !== 'all') {
+            // filter by role id
+            const ur = mgmtMemberRoles[m.user_id] || [];
+            return ur.some(r => ((r as any).id || (r as any).role_id) === memberFilter);
+          }
+          return true;
+        });
+
+        // ── sort ──
+        filtered = [...filtered].sort((a, b) => {
+          if (memberSort === 'joined') return (a.joined_at || '').localeCompare(b.joined_at || '');
+          if (memberSort === 'active') return (b.last_active_at || '').localeCompare(a.last_active_at || '');
+          return (a.display_name || a.username || '').localeCompare(b.display_name || b.username || '');
+        });
+
+        const totalPages = Math.ceil(filtered.length / MEMBER_PAGE_SIZE);
+        const page = Math.min(memberPage, Math.max(0, totalPages - 1));
+        const pageSlice = filtered.slice(page * MEMBER_PAGE_SIZE, (page + 1) * MEMBER_PAGE_SIZE);
+        const assignableRoles = roles.filter(r => r.name !== '@everyone');
+
+        return (
+          <>
+            {/* search + sort */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <input
+                value={memberSearch}
+                onChange={e => { setMemberSearch(e.target.value); setMemberPage(0); }}
+                placeholder={`Search ${mgmtMembers.length} members…`}
+                style={{ ...getInp(), flex: 1, minWidth: 160, padding: '7px 10px', fontSize: 13 }}
+              />
+              <select
+                value={memberSort}
+                onChange={e => setMemberSort(e.target.value as 'name' | 'joined' | 'active')}
+                style={{ ...getInp(), padding: '7px 8px', fontSize: 12, flexShrink: 0 }}
+              >
+                <option value="name">Sort: Name</option>
+                <option value="joined">Sort: Join Date</option>
+                <option value="active">Sort: Last Active</option>
+              </select>
+            </div>
+
+            {/* filter pills */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              {(['all', 'online', 'offline', 'bots'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => { setMemberFilter(f); setMemberPage(0); }}
+                  style={{ padding: '4px 12px', borderRadius: 12, fontSize: 11, fontWeight: memberFilter === f ? 700 : 400, background: memberFilter === f ? T.ac + '22' : 'rgba(255,255,255,0.05)', color: memberFilter === f ? T.ac : T.mt, border: `1px solid ${memberFilter === f ? T.ac + '55' : T.bd}`, cursor: 'pointer', transition: 'all .12s', textTransform: 'capitalize' }}
+                >{f === 'all' ? `All (${mgmtMembers.length})` : f.charAt(0).toUpperCase() + f.slice(1)}</button>
+              ))}
+              {assignableRoles.map(role => (
+                <button
+                  key={role.id}
+                  onClick={() => { setMemberFilter(memberFilter === role.id ? 'all' : role.id); setMemberPage(0); }}
+                  style={{ padding: '4px 12px', borderRadius: 12, fontSize: 11, fontWeight: memberFilter === role.id ? 700 : 400, background: memberFilter === role.id ? `${role.color || T.ac}22` : 'rgba(255,255,255,0.05)', color: memberFilter === role.id ? (role.color || T.ac) : T.mt, border: `1px solid ${memberFilter === role.id ? (role.color || T.ac) + '55' : T.bd}`, cursor: 'pointer', transition: 'all .12s' }}
+                >{role.name}</button>
+              ))}
+            </div>
+
+            {/* result count */}
+            <div style={{ fontSize: 11, color: T.mt, marginBottom: 8 }}>
+              {filtered.length === 0 ? 'No members match' : `Showing ${page * MEMBER_PAGE_SIZE + 1}–${Math.min((page + 1) * MEMBER_PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+            </div>
+
+            {/* member rows */}
+            {pageSlice.map(m => (
+              <MemberManagerRow
+                key={m.user_id}
+                member={m}
+                userRoles={mgmtMemberRoles[m.user_id] || []}
+                allRoles={roles}
+                serverId={server.id}
+                showConfirm={showConfirm}
+                onRolesChange={(uid, newRoles) => { setMgmtMemberRoles(p => ({ ...p, [uid]: newRoles })); onUpdate?.(); }}
+                onKicked={uid => setMgmtMembers(p => p.filter(x => x.user_id !== uid))}
+                onBanned={uid => setMgmtMembers(p => p.filter(x => x.user_id !== uid))}
+              />
+            ))}
+
+            {/* pagination */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.bd}` }}>
+                <button
+                  onClick={() => setMemberPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                  style={{ ...btn(), padding: '5px 14px', fontSize: 12, opacity: page === 0 ? 0.4 : 1 }}
+                >← Prev</button>
+                <span style={{ fontSize: 12, color: T.mt }}>Page {page + 1} / {totalPages}</span>
+                <button
+                  onClick={() => setMemberPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                  style={{ ...btn(), padding: '5px 14px', fontSize: 12, opacity: page >= totalPages - 1 ? 0.4 : 1 }}
+                >Next →</button>
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {tab === 'bots' && (<>
+        {/* BotConfigModal overlay — rendered on top of the settings panel */}
+        {activeBotConfig && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: T.bg, borderRadius: 12, overflow: 'hidden' }}>
+            <BotConfigModal
+              bot={activeBotConfig}
+              serverId={server.id}
+              onClose={() => {
+                setActiveBotConfig(null);
+                api.listBots(server.id).then(b => setServerBots(Array.isArray(b) ? b : []));
+              }}
+              onSave={async cfg => {
+                await api.updateBotConfig(server.id, activeBotConfig.bot_user_id, cfg);
+                setServerBots(p => p.map(b => b.bot_user_id === activeBotConfig.bot_user_id ? { ...b, ...cfg } : b));
+              }}
+              showConfirm={showConfirm}
+            />
+          </div>
+        )}
+
+        {/* ── Spawn Bot ── */}
+        <div style={{ marginBottom: 18, padding: '14px 16px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
+            Spawn New Bot
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={spawnName}
+              onChange={e => setSpawnName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSpawnBot()}
+              placeholder="Bot display name…"
+              style={{ ...getInp(), flex: 2, minWidth: 140, padding: '8px 10px', fontSize: 13 }}
+            />
+            <select
+              value={spawnPersona}
+              onChange={e => setSpawnPersona(e.target.value)}
+              style={{ ...getInp(), flex: 1, minWidth: 140, padding: '8px 8px', fontSize: 13 }}
+            >
+              {PRESETS.map(p => (
+                <option key={p.id} value={p.id}>{p.icon} {p.name} — {p.tagline}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleSpawnBot}
+              disabled={spawning || !spawnName.trim()}
+              style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: spawning || !spawnName.trim() ? 'not-allowed' : 'pointer', opacity: spawning || !spawnName.trim() ? 0.5 : 1, flexShrink: 0 }}
+            >{spawning ? 'Creating…' : '+ Create Bot'}</button>
+          </div>
+          {/* persona preview */}
+          {(() => {
+            const p = PRESETS.find(x => x.id === spawnPersona);
+            return p ? (
+              <div style={{ marginTop: 10, padding: '8px 10px', background: T.bg, borderRadius: 7, borderLeft: `3px solid ${p.color}` }}>
+                <div style={{ fontSize: 11, color: p.color, fontWeight: 700, marginBottom: 3 }}>{p.icon} {p.name}</div>
+                <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.45 }}>{p.cfg.system_prompt.slice(0, 120)}…</div>
+                <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Temp: {p.cfg.temperature} · Style: {p.cfg.voice_style}</div>
+              </div>
+            ) : null;
+          })()}
+        </div>
+
+        {/* ── Bot Fleet ── */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
+          Active Bots — {serverBots.length}
+        </div>
+
+        {serverBots.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: T.mt, fontSize: 13 }}>
+            No bots yet — spawn one above
+          </div>
+        )}
+
+        {serverBots.map(bot => {
+          const preset     = PRESETS.find(p => p.id === bot.persona);
+          const accentColor = preset?.color || T.ac;
+          const msgsToday  = (() => {
+            try {
+              const logs = JSON.parse(localStorage.getItem(`d_bot_logs_${bot.bot_user_id}`) || '[]');
+              const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0);
+              return logs.filter((l: { ts: number }) => l.ts >= cutoff.getTime()).length;
+            } catch { return 0; }
+          })();
+          const promptPreview = (bot.system_prompt || '').slice(0, 100) || (preset?.cfg.system_prompt || '').slice(0, 100);
+          const temp = bot.temperature ?? preset?.cfg.temperature ?? 0.7;
+
+          return (
+            <div
+              key={bot.bot_user_id}
+              style={{ marginBottom: 8, borderRadius: 10, border: `1px solid ${T.bd}`, background: T.bg, overflow: 'hidden' }}
+            >
+              {/* main row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px' }}>
+                {/* avatar with color accent ring */}
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 20, overflow: 'hidden', border: `2px solid ${accentColor}` }}>
+                    <Av name={bot.display_name || bot.username || '?'} size={40} url={null} />
+                  </div>
+                  {/* online/offline dot */}
+                  <div style={{ position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, borderRadius: 6, background: bot.enabled !== false ? '#3ba55d' : '#747f8d', border: `2px solid ${T.bg}` }} />
+                </div>
+
+                {/* info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.tx }}>{bot.display_name || bot.username}</span>
+                    <span style={{ fontSize: 9, background: 'rgba(114,137,218,0.2)', color: '#7289da', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>BOT</span>
+                    {preset && (
+                      <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: `${accentColor}20`, color: accentColor, border: `1px solid ${accentColor}40`, fontWeight: 600 }}>
+                        {preset.icon} {preset.name}
+                      </span>
+                    )}
+                    {msgsToday > 0 && (
+                      <span style={{ fontSize: 10, color: T.mt }}>· {msgsToday} msg{msgsToday !== 1 ? 's' : ''} today</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.mt }}>@{bot.username} · temp {temp.toFixed(1)}</div>
+                </div>
+
+                {/* enabled toggle */}
+                <div
+                  onClick={() => handleToggleBot(bot)}
+                  title={bot.enabled !== false ? 'Disable bot' : 'Enable bot'}
+                  style={{ position: 'relative', width: 38, height: 22, borderRadius: 11, background: bot.enabled !== false ? T.ac : T.bd, cursor: 'pointer', flexShrink: 0, transition: 'background .2s' }}
+                >
+                  <div style={{ position: 'absolute', top: 3, left: bot.enabled !== false ? 19 : 3, width: 16, height: 16, borderRadius: 8, background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }} />
+                </div>
+
+                {/* actions */}
+                <button
+                  onClick={() => setActiveBotConfig(bot)}
+                  style={{ background: `${accentColor}18`, color: accentColor, border: `1px solid ${accentColor}40`, borderRadius: 7, padding: '6px 13px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                >Configure</button>
+                <button
+                  onClick={() => handleRemoveBot(bot)}
+                  style={{ background: 'rgba(237,66,69,0.1)', color: T.err, border: '1px solid rgba(237,66,69,0.25)', borderRadius: 7, padding: '6px 10px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}
+                  title="Remove bot"
+                >Remove</button>
+              </div>
+
+              {/* system prompt preview + stats footer */}
+              {promptPreview && (
+                <div style={{ padding: '8px 14px', borderTop: `1px solid ${T.bd}`, background: T.sf2, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>System Prompt</div>
+                    <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {promptPreview}{(bot.system_prompt || '').length > 100 ? '…' : ''}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, color: T.mt }}>Temp <span style={{ color: T.tx, fontWeight: 600 }}>{temp.toFixed(1)}</span></div>
+                    <div style={{ fontSize: 10, color: bot.enabled !== false ? '#3ba55d' : T.mt, fontWeight: 600, marginTop: 2 }}>
+                      {bot.enabled !== false ? 'ONLINE' : 'OFFLINE'}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* permissions note */}
+        <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(114,137,218,0.07)', borderRadius: 8, border: '1px solid rgba(114,137,218,0.18)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#7289da', marginBottom: 3 }}>🔒 Bot Permissions</div>
+          <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5 }}>Bots appear in the member list with a BOT badge. By default they <strong style={{ color: T.tx }}>cannot</strong> delete channels, moderate members, or access server settings. Escalate via Configure → Advanced.</div>
+        </div>
+      </>)}
+
+      {tab === 'emoji' && <EmojiManager serverId={server.id} showConfirm={showConfirm} />}
+
+      {tab === 'events' && <EventsManager serverId={server.id} showConfirm={showConfirm} />}
+
+      {tab === 'invites' && (() => {
+        const now = Date.now();
+        const isExpired = (inv: any) =>
+          (inv.expires_at && new Date(inv.expires_at).getTime() < now) ||
+          (inv.max_uses && inv.uses >= inv.max_uses);
+        return (<>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Invites</div>
+            <button onClick={() => onCreateInvite?.()} style={{ padding: '7px 16px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, border: 'none', borderRadius: 7, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ Create Invite</button>
+          </div>
+          {invitesLoading && <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>Loading…</div>}
+          {!invitesLoading && invites.length === 0 && <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No active invites</div>}
+          {!invitesLoading && invites.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.bd}` }}>
+                    {['Code', 'Creator', 'Uses', 'Expires', 'Status', ''].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {invites.map((inv: any) => {
+                    const expired = isExpired(inv);
+                    const code = inv.code || inv.invite_code || inv.id;
+                    const expiryStr = inv.expires_at
+                      ? new Date(inv.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Never';
+                    const usesStr = inv.max_uses ? `${inv.uses ?? 0} / ${inv.max_uses}` : `${inv.uses ?? 0} / ∞`;
+                    return (
+                      <tr key={code} style={{ borderBottom: `1px solid ${T.bd}20`, opacity: expired ? 0.6 : 1 }}>
+                        <td style={{ padding: '9px 10px' }}>
+                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: expired ? T.mt : T.ac, letterSpacing: 1 }}>{code}</span>
+                        </td>
+                        <td style={{ padding: '9px 10px', color: T.tx }}>{inv.creator_username || getName(inv.creator_id) || '—'}</td>
+                        <td style={{ padding: '9px 10px', color: T.mt }}>{usesStr}</td>
+                        <td style={{ padding: '9px 10px', color: T.mt, whiteSpace: 'nowrap' }}>{expiryStr}</td>
+                        <td style={{ padding: '9px 10px' }}>
+                          {expired
+                            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: `${T.mt}22`, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expired</span>
+                            : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(59,165,93,0.15)', color: '#3ba55d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</span>}
+                        </td>
+                        <td style={{ padding: '9px 10px' }}>
+                          <button onClick={async () => {
+                            if (!await showConfirm('Revoke Invite', `Revoke invite code "${code}"? Anyone with this link will no longer be able to join.`, true)) return;
+                            await api.revokeInvite(server.id, code);
+                            setInvites(p => p.filter(i => (i.code || i.invite_code || i.id) !== code));
+                          }} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 600, background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', borderRadius: 5, color: '#ff4757', cursor: 'pointer' }}>Revoke</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>);
+      })()}
+
+      {tab === 'moderation' && <ModerationPanel serverId={server.id} getName={getName} decrypt={decrypt} />}
+
+      {tab === 'bans' && (<>
+        {bans.length === 0 && <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No banned users</div>}
+        {bans.map(b => (
+          <div key={b.user_id || b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: T.sf2 }}>
+            <Av name={b.username || '?'} size={28} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{b.username || b.user_id?.slice(0, 8)}</div>
+              {b.reason && <div style={{ fontSize: 11, color: T.mt }}>{b.reason}</div>}
+            </div>
+            <button onClick={() => handleUnban(b.user_id)} className="pill-btn" style={{ background: T.sf, color: T.ac, border: `1px solid ${T.bd}` }}>Unban</button>
+          </div>
+        ))}
+      </>)}
+
+      {tab === 'audit' && (<>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={async () => { setVerifying(true); const r = await api.verifyAuditChain(server.id); setChainVerify(r); setVerifying(false); }}
+            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: chainVerify?.chain_intact ? '#00d4aa' : T.ac, color: chainVerify?.chain_intact ? '#000' : '#fff' }}>
+            {verifying ? 'Verifying...' : 'Verify Chain Integrity'}
+          </button>
+          {chainVerify && (
+            <span style={{ fontSize: 12, color: chainVerify.chain_intact ? '#00d4aa' : '#ff4757', fontWeight: 600 }}>
+              {chainVerify.chain_intact
+                ? `Chain intact — ${chainVerify.verified_entries} entries verified`
+                : `CHAIN BROKEN at seq #${chainVerify.first_broken_at}: ${chainVerify.first_broken_reason}`}
+            </span>
+          )}
+        </div>
+        {auditLog.length === 0 && <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No audit log entries</div>}
+        {auditLog.map(e => (
+          <div key={e.id} style={{ padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: T.sf2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Av name={e.actor_username || '?'} size={24} />
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{e.actor_username || '?'}</span>{' '}
+                <span style={{ fontSize: 13, color: T.mt }}>{actionLabels[e.action] || e.action}</span>
+                {e.reason && <span style={{ fontSize: 12, color: T.mt }}> — {e.reason}</span>}
+              </div>
+              <span style={{ fontSize: 11, color: T.mt, whiteSpace: 'nowrap' }}>{new Date(e.created_at).toLocaleDateString()}</span>
+            </div>
+            {e.chain_hash && (
+              <div style={{ marginTop: 4, paddingLeft: 34, fontSize: 10, fontFamily: 'monospace', color: T.mt, opacity: 0.6 }}>
+                #{e.sequence_num} — {e.chain_hash?.slice(0, 16)}...
+              </div>
+            )}
+          </div>
+        ))}
+      </>)}
+    </Modal>
+  );
+}
