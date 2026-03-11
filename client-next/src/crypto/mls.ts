@@ -125,6 +125,28 @@ async function legacyDecrypt(channelId: string, b64: string): Promise<string> {
   }
 }
 
+/**
+ * Derive raw 32-byte key material for a channel (used by SFrame voice encryption).
+ * Same PBKDF2 derivation as text encryption but exports raw bytes.
+ */
+export async function deriveChannelKeyBytes(channelId: string): Promise<Uint8Array> {
+  const password = `citadel:${channelId}:0`;
+  const salt = new TextEncoder().encode('mls-group-secret');
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
 async function deriveChannelKey(channelId: string): Promise<CryptoKey> {
   const password = `citadel:${channelId}:0`;
   const salt = new TextEncoder().encode('mls-group-secret');

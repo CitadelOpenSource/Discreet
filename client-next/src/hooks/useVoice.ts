@@ -3,6 +3,8 @@
  * Handles WebRTC peer connections, Web Audio (5-band EQ, VAD), PTT, video, screen share.
  */
 import { useState, useEffect, useRef } from 'react';
+import { sframeService } from '../services/SFrameService';
+import { deriveChannelKeyBytes } from '../crypto/mls';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -36,6 +38,7 @@ export interface VoiceState {
   speaking: boolean;
   videoEnabled: boolean;
   screenSharing: boolean;
+  sframeActive: boolean;
   audioLevel: number;
   streams: Map<string, MediaStream>;
 }
@@ -65,6 +68,7 @@ export class VoiceEngine {
   noiseSuppression: boolean;
   echoCancellation: boolean;
   autoGainControl: boolean;
+  sframeActive: boolean;
   pttKey: string;
   pttDown: boolean;
   private listeners: Set<(e: VoiceEvent) => void>;
@@ -95,6 +99,7 @@ export class VoiceEngine {
     this.noiseSuppression = localStorage.getItem('d_noiseSup') !== 'false';
     this.echoCancellation = localStorage.getItem('d_echoCan') !== 'false';
     this.autoGainControl = localStorage.getItem('d_agc') !== 'false';
+    this.sframeActive = false;
     this.pttKey = localStorage.getItem('d_pttkey') || '`';
     this.pttDown = false;
     this.listeners = new Set();
@@ -170,6 +175,8 @@ export class VoiceEngine {
   }
 
   leave(): void {
+    sframeService.cleanup();
+    this.sframeActive = false;
     this.peers.forEach(pc => pc.close());
     this.peers.clear();
     this.streams.clear();
@@ -351,7 +358,22 @@ export class VoiceEngine {
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') this._removePeer(pid);
     };
     this.peers.set(pid, pc);
+    this._setupSFrame(pc);
     return pc;
+  }
+
+  private _setupSFrame(pc: RTCPeerConnection): void {
+    if (!this.channelId || !sframeService.isSupported()) return;
+    const channelId = this.channelId;
+    deriveChannelKeyBytes(channelId)
+      .then(keyBytes => sframeService.setupEncryption(pc, keyBytes))
+      .then(() => {
+        this.sframeActive = true;
+      })
+      .catch(err => {
+        console.error('[voice] SFrame setup failed:', err);
+        this.sframeActive = false;
+      });
   }
 
   _removePeer(pid: string): void {
@@ -379,6 +401,7 @@ export function useVoice() {
     speaking: false,
     videoEnabled: false,
     screenSharing: false,
+    sframeActive: false,
     audioLevel: 0,
     streams: new Map(),
   });
@@ -393,7 +416,7 @@ export function useVoice() {
           setState(s => ({ ...s, channelId: e.channelId ?? voice.channelId }));
           break;
         case 'left':
-          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, audioLevel: 0, streams: new Map() }));
+          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, streams: new Map() }));
           break;
         case 'mute_changed':
           setState(s => ({ ...s, muted: e.muted ?? voice.muted }));
