@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "false"
+
+jobs:
+  check:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: citadel
+          POSTGRES_PASSWORD: citadel
+          POSTGRES_DB: citadel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U citadel -d citadel"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://citadel:citadel@localhost:5432/citadel
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret-at-least-32-bytes-long-for-jwt-hmac
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply database schema
+        run: |
+          for f in migrations/*.sql; do
+            echo "Applying $f..."
+            psql "$DATABASE_URL" -f "$f" 2>&1 || true
+          done
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client-next/package-lock.json
+
+      - name: Build client
+        run: cd client-next && npm ci && npm run build
+
+      - name: Build
+        run: cargo build
+
+      - name: Clippy
+        run: cargo clippy -- -W warnings
+        continue-on-error: true
+
+      - name: Start server
+        run: |
+          cargo run &
+          echo "Waiting for server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:3000/health
+          echo ""
+
+      - name: Integration smoke test
+        run: |
+          REGISTER=$(curl -sf -X POST http://localhost:3000/api/v1/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ci_test_user","password":"CiTestPass123!","email":"ci@test.dev"}')
+          echo "Register: $REGISTER"
+
+          LOGIN=$(curl -sf -X POST http://localhost:3000/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"login":"ci_test_user","password":"CiTestPass123!"}')
+          echo "Login: $LOGIN"
+
+          TOKEN=$(echo "$LOGIN" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+          echo "Got token: ${TOKEN:0:20}..."
+
+          SERVER=$(curl -sf -X POST http://localhost:3000/api/v1/servers \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"name":"CI Test Server"}')
+          echo "Server: $SERVER"
+
+          SERVER_ID=$(echo "$SERVER" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "Server ID: $SERVER_ID"
+
+          CHANNELS=$(curl -sf http://localhost:3000/api/v1/servers/$SERVER_ID/channels \
+            -H "Authorization: Bearer $TOKEN")
+          echo "Channels: $CHANNELS"
+
+          echo ""
+          echo "=== CI smoke test passed ==="

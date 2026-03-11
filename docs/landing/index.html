@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Citadel — Encrypted Discord Alternative | Zero-Knowledge Communication</title>
+<meta name="description" content="Citadel is the open-source, end-to-end encrypted community platform. Voice, video, text, forums — your conversations stay private by design.">
+<meta property="og:title" content="Citadel — Your conversations are yours.">
+<meta property="og:description" content="Zero-knowledge encrypted communication. Community-grade UX + Signal-grade crypto + open source.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#04060c;--sf:#0a0e1a;--tx:#e8eaf0;--mt:#6b7394;--ac:#00d4aa;--ac2:#00b894;--err:#ff4757;--bd:#161b2e}
+body{background:var(--bg);color:var(--tx);font-family:'Space Grotesk',system-ui,sans-serif;line-height:1.6;overflow-x:hidden}
+a{color:var(--ac);text-decoration:none}
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+/* Nav */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rgba(4,6,12,0.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.04)}
+nav .container{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:22px;font-weight:700;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+.logo span{background:linear-gradient(135deg,var(--ac),var(--ac2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+nav a.cta{background:var(--ac);color:#000;padding:10px 24px;border-radius:8px;font-weight:700;font-size:14px;transition:all .2s}
+nav a.cta:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,212,170,0.3)}
+/* Hero */
+.hero{padding:140px 0 80px;text-align:center;position:relative}
+.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(0,212,170,0.06) 0%,transparent 70%);pointer-events:none}
+.breach-tag{display:inline-block;background:rgba(255,71,87,0.12);color:var(--err);border:1px solid rgba(255,71,87,0.25);padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:24px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}}
+.hero h1{font-size:clamp(36px,6vw,72px);font-weight:700;line-height:1.05;letter-spacing:-2px;margin-bottom:20px;max-width:900px;margin-left:auto;margin-right:auto}
+.hero h1 em{font-style:normal;background:linear-gradient(135deg,var(--ac),#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{font-size:18px;color:var(--mt);max-width:600px;margin:0 auto 32px;line-height:1.7}
+.hero-cta{display:inline-flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--ac),var(--ac2));color:#000;padding:16px 36px;border-radius:12px;font-size:16px;font-weight:700;transition:all .25s;border:none;cursor:pointer;text-decoration:none}
+.hero-cta:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,212,170,0.35)}
+.hero-sub{font-size:13px;color:var(--mt);margin-top:16px}
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:40px 0;border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);margin:60px 0}
+.stat{text-align:center}
+.stat .num{font-size:36px;font-weight:700;color:var(--ac);font-family:'JetBrains Mono',monospace}
+.stat .label{font-size:13px;color:var(--mt);margin-top:4px}
+/* Problem */
+.problem{padding:80px 0;background:linear-gradient(180deg,rgba(255,71,87,0.03) 0%,transparent 100%)}
+.problem h2{font-size:32px;font-weight:700;text-align:center;margin-bottom:16px}
+.problem .sub{text-align:center;color:var(--mt);font-size:16px;max-width:700px;margin:0 auto 40px}
+.news-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.news-card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:20px;transition:transform .2s}
+.news-card:hover{transform:translateY(-2px)}
+.news-card .src{font-size:11px;color:var(--err);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.news-card .headline{font-size:15px;font-weight:600;line-height:1.4;margin-bottom:8px}
+.news-card .date{font-size:11px;color:var(--mt)}
+/* Solution */
+.solution{padding:80px 0}
+.solution h2{font-size:36px;font-weight:700;text-align:center;margin-bottom:48px}
+.solution h2 em{font-style:normal;color:var(--ac)}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.feature{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:28px;transition:all .25s}
+.feature:hover{border-color:var(--ac);transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,212,170,0.08)}
+.feature .icon{font-size:28px;margin-bottom:12px}
+.feature h3{font-size:17px;font-weight:700;margin-bottom:8px}
+.feature p{font-size:13px;color:var(--mt);line-height:1.6}
+/* Comparison */
+.compare{padding:80px 0}
+.compare h2{font-size:32px;font-weight:700;text-align:center;margin-bottom:40px}
+table{width:100%;border-collapse:collapse;background:var(--sf);border-radius:12px;overflow:hidden;border:1px solid var(--bd)}
+th{text-align:left;padding:14px 16px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--mt);background:rgba(255,255,255,0.02);font-weight:700}
+td{padding:12px 16px;border-top:1px solid var(--bd);font-size:14px}
+td:first-child{font-weight:600}
+.yes{color:var(--ac);font-weight:700}.no{color:var(--err);font-weight:700}.partial{color:#faa61a;font-weight:700}
+/* Enterprise */
+.enterprise{padding:80px 0;background:linear-gradient(180deg,transparent,rgba(0,212,170,0.03))}
+.enterprise h2{font-size:32px;font-weight:700;text-align:center;margin-bottom:16px}
+.enterprise .sub{text-align:center;color:var(--mt);max-width:600px;margin:0 auto 40px;font-size:16px}
+.ent-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.ent-card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:20px;text-align:center}
+.ent-card .icon{font-size:32px;margin-bottom:10px}
+.ent-card h3{font-size:15px;font-weight:700;margin-bottom:6px}
+.ent-card p{font-size:12px;color:var(--mt)}
+/* CTA */
+.final-cta{padding:80px 0;text-align:center}
+.final-cta h2{font-size:36px;font-weight:700;margin-bottom:16px}
+.final-cta p{color:var(--mt);max-width:500px;margin:0 auto 32px;font-size:16px}
+.waitlist-form{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:440px;margin:0 auto}
+.waitlist-fields{display:flex;gap:8px;width:100%}
+.waitlist-form input[type="email"]{flex:1;padding:14px 18px;border-radius:10px;border:1px solid var(--bd);background:var(--sf);color:var(--tx);font-size:15px;font-family:inherit;outline:none;transition:border-color .2s}
+.waitlist-form input[type="email"]:focus{border-color:var(--ac)}
+.waitlist-form button{background:var(--ac);color:#000;padding:14px 28px;border-radius:10px;border:none;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .2s}
+.waitlist-form button:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,212,170,0.3)}
+.waitlist-form button:disabled{opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none}
+/* Turnstile wrapper — centers the iframe widget */
+.turnstile-wrap{width:100%;display:flex;justify-content:center}
+/* Captcha feedback */
+.captcha-error{display:none;width:100%;color:var(--err);font-size:13px;font-weight:600;background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.22);padding:10px 16px;border-radius:8px;text-align:center}
+.captcha-error.show{display:block}
+.waitlist-success{color:var(--ac);font-size:16px;font-weight:600;text-align:center;padding:12px 0}
+/* Footer */
+footer{padding:40px 0;border-top:1px solid var(--bd);text-align:center}
+footer p{font-size:12px;color:var(--mt)}
+footer a{color:var(--ac)}
+/* Responsive */
+@media(max-width:768px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .hero h1{font-size:32px;letter-spacing:-1px}
+  .waitlist-form{flex-direction:column}
+  nav .container{gap:12px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <div class="logo">🏰 <span>Citadel</span></div>
+    <div style="display:flex;align-items:center;gap:20px">
+      <a href="https://github.com/CitadelOpenSource/Discreet" style="color:var(--mt);font-size:14px;font-weight:500">GitHub</a>
+      <a href="#waitlist" class="cta">Join Waitlist</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="breach-tag">🔒 Privacy-first community chat — open source &amp; end-to-end encrypted</div>
+    <h1>Your conversations<br>are <em>yours</em>.</h1>
+    <p>The open-source community platform with end-to-end encryption built in. Voice channels, forums, video, bots — all the features you love, with privacy that's guaranteed by math, not promises.</p>
+    <a href="#waitlist" class="hero-cta">🏰 Get Early Access</a>
+    <div class="hero-sub">Free forever · Open source · Self-hostable · No ads</div>
+  </div>
+</section>
+
+<!-- Stats -->
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="num">124+</div><div class="label">API Endpoints</div></div>
+    <div class="stat"><div class="num">43</div><div class="label">Database Tables</div></div>
+    <div class="stat"><div class="num">AES-256</div><div class="label">Encryption</div></div>
+    <div class="stat"><div class="num">$0</div><div class="label">To Self-Host</div></div>
+  </div>
+</div>
+
+<!-- Problem -->
+<section class="problem">
+  <div class="container">
+    <h2>Privacy matters more than ever.</h2>
+    <div class="sub">Major platforms store your messages in plain text, collect biometric data, and share information with third parties. Recent data breaches across the industry have exposed millions of users. Citadel was built because we believe you deserve better.</div>
+    <div class="news-grid">
+      <div class="news-card">
+        <div class="src">Industry Trend</div>
+        <div class="headline">Major platforms are requiring biometric verification — raising concerns about data security and surveillance</div>
+        <div class="date">2025–2026</div>
+      </div>
+      <div class="news-card">
+        <div class="src">Data Breach Reports</div>
+        <div class="headline">Third-party verification vendors have exposed tens of thousands of government IDs and personal documents</div>
+        <div class="date">2025–2026</div>
+      </div>
+      <div class="news-card">
+        <div class="src">Digital Rights Organizations</div>
+        <div class="headline">Privacy advocates warn that centralized platforms create single points of failure for user data</div>
+        <div class="date">Ongoing</div>
+      </div>
+      <div class="news-card">
+        <div class="src">Security Research</div>
+        <div class="headline">Most popular chat platforms transmit and store messages without end-to-end encryption by default</div>
+        <div class="date">Ongoing</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Solution -->
+<section class="solution">
+  <div class="container">
+    <h2>Full-featured community chat.<br><em>Fully encrypted.</em></h2>
+    <div class="features">
+      <div class="feature">
+        <div class="icon">🔐</div>
+        <h3>Zero-Knowledge Encryption</h3>
+        <p>AES-256-GCM with MLS (RFC 9420) group keys. Messages encrypted in your browser before they leave your device. The server stores ciphertext it literally cannot decrypt.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🎙️</div>
+        <h3>Voice, Video, Screen Share</h3>
+        <p>WebRTC peer-to-peer voice channels with OBS-grade audio processing: noise gate, compressor, expander, 5-band EQ, per-user volume. Screen sharing, camera, soundboard.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">💬</div>
+        <h3>Text, Forums, Threads</h3>
+        <p>Text channels, forum channels with threaded discussions, DMs, group DMs. GIF picker, custom emoji, @mentions, reactions, pins, inline media, URL previews.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">📺</div>
+        <h3>Watch Together</h3>
+        <p>Sync YouTube playback across your entire voice channel. Soundboard with custom clips. Voice messages. Activities and events with RSVP.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🤖</div>
+        <h3>AI Agents (Patent-Pending)</h3>
+        <p>Specialist AI agents auto-spawn as encrypted group members. Legal, medical, security experts — all conversations E2EE. The server never sees what you asked.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🏠</div>
+        <h3>Self-Hostable</h3>
+        <p>One-command deployment. Runs on a Raspberry Pi ($50 hardware, $5/year electricity) or Oracle Cloud free tier. Docker Compose + automatic HTTPS.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">⚙️</div>
+        <h3>60+ Settings</h3>
+        <p>Appearance, audio, video, accessibility, keybinds, privacy, notifications — VLC/OBS level customizability. Dyslexia font, reduce motion, zoom, rebindable shortcuts.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🛡️</div>
+        <h3>Moderation Without Surveillance</h3>
+        <p>Client-side auto-mod rules. Zero-knowledge word search. Audit logging with SHA-256 hash-chain integrity. No message scanning. No AI training on your data.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">📖</div>
+        <h3>Open Source (AGPL-3.0)</h3>
+        <p>Every line of code is auditable. Rust backend. React client. 14,000+ lines of code. No proprietary black boxes. No trust-us-bro security. Verify everything.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison Table -->
+<section class="compare">
+  <div class="container">
+    <h2>Compare your options</h2>
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>Feature</th><th>Citadel</th><th>Discord</th><th>Signal</th><th>Element</th><th>Telegram</th></tr>
+      <tr><td>End-to-End Encryption</td><td class="yes">✓ Always</td><td class="no">✗ Never</td><td class="yes">✓ Always</td><td class="yes">✓ Default</td><td class="partial">◐ Opt-in</td></tr>
+      <tr><td>Voice Channels</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td><td class="partial">◐ Basic</td><td class="partial">◐ Calls only</td></tr>
+      <tr><td>Screen Share</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="partial">◐ Calls</td></tr>
+      <tr><td>Forum Channels</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+      <tr><td>Custom Emoji</td><td class="yes">✓</td><td class="yes">✓ (Nitro)</td><td class="no">✗</td><td class="partial">◐</td><td class="yes">✓</td></tr>
+      <tr><td>Bots / AI Agents</td><td class="yes">✓ E2EE</td><td class="yes">✓</td><td class="no">✗</td><td class="partial">◐</td><td class="yes">✓</td></tr>
+      <tr><td>Self-Hostable</td><td class="yes">✓</td><td class="no">✗</td><td class="partial">◐</td><td class="yes">✓</td><td class="no">✗</td></tr>
+      <tr><td>Open Source</td><td class="yes">✓ AGPL</td><td class="no">✗</td><td class="yes">✓ GPLv3</td><td class="yes">✓ Apache</td><td class="partial">◐ Client</td></tr>
+      <tr><td>No ID/Phone Required</td><td class="yes">✓</td><td class="no">✗ ID</td><td class="no">✗ Phone</td><td class="yes">✓</td><td class="no">✗ Phone</td></tr>
+      <tr><td>Zero-Knowledge Server</td><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="partial">◐</td><td class="no">✗</td></tr>
+    </table>
+    </div>
+  </div>
+</section>
+
+<!-- Enterprise -->
+<section class="enterprise">
+  <div class="container">
+    <h2>Built for everyone. Hardened for organizations.</h2>
+    <div class="sub">From activists to enterprises. From gaming clans to government agencies. Citadel scales from a Raspberry Pi to Oracle Cloud.</div>
+    <div class="ent-grid">
+      <div class="ent-card"><div class="icon">🏛️</div><h3>Government & Public Sector</h3><p>Compliance-ready architecture aligned with HIPAA and SOC 2. Zero-knowledge design means sensitive data stays under your control. Self-hosted on your infrastructure.</p></div>
+      <div class="ent-card"><div class="icon">🏥</div><h3>Healthcare</h3><p>End-to-end encrypted messaging for care teams. Audit trail with hash-chain integrity. No PHI leaves your organization's control.</p></div>
+      <div class="ent-card"><div class="icon">⚖️</div><h3>Legal</h3><p>Protect attorney-client privilege with encryption built into the architecture. Self-hosted deployments keep all data within your firm.</p></div>
+      <div class="ent-card"><div class="icon">📰</div><h3>Journalism & Media</h3><p>Source protection built into the protocol. Self-hostable infrastructure. No metadata logging. Designed for environments where confidentiality is critical.</p></div>
+      <div class="ent-card"><div class="icon">🎮</div><h3>Gaming & Communities</h3><p>Rich community features with real privacy. Voice channels, soundboard, GIF picker, custom emoji, Watch Together, forum channels, bots.</p></div>
+      <div class="ent-card"><div class="icon">🌍</div><h3>NGOs & Nonprofits</h3><p>Secure communication for sensitive work. No phone number required. Self-hosted. End-to-end encrypted. Privacy by design, not by policy.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA / Waitlist -->
+<section class="final-cta" id="waitlist">
+  <div class="container">
+    <h2>Privacy is not a feature.<br>It's a right.</h2>
+    <p>Join the waitlist. Be first to access Citadel when we launch. Invite friends to move up the line.</p>
+    <form class="waitlist-form" id="waitlist-form" novalidate onsubmit="submitWaitlist(event)">
+
+      <!-- Email + submit row -->
+      <div class="waitlist-fields">
+        <input type="email" placeholder="you@email.com" id="email-input"
+               name="email" required autocomplete="email">
+        <button type="submit" id="waitlist-btn">Join Waitlist</button>
+      </div>
+
+      <!-- Cloudflare Turnstile — dark theme matches site palette -->
+      <!-- Replace data-sitekey with your real key from dash.cloudflare.com/turnstile -->
+      <div class="turnstile-wrap">
+        <div class="cf-turnstile"
+             data-sitekey="0x0000000000000000000000"
+             data-theme="dark"
+             data-size="normal"
+             data-callback="onTurnstileSuccess"
+             data-expired-callback="onTurnstileExpired"
+             data-error-callback="onTurnstileError">
+        </div>
+      </div>
+
+      <!-- Hidden field — populated by the Turnstile callback -->
+      <input type="hidden" name="cf-turnstile-response" id="cf-turnstile-response">
+
+      <!-- Validation / error feedback -->
+      <div class="captcha-error" id="captcha-error" role="alert">
+        ⚠ Please complete the security check before joining.
+      </div>
+
+    </form>
+    <div class="hero-sub" style="margin-top:16px">
+      <a href="https://github.com/CitadelOpenSource/Discreet" style="margin-right:16px">⭐ Star on GitHub</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/DEPLOY_RASPBERRY_PI.md">🍓 Deploy on Raspberry Pi</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>🏰 Citadel · Open Source (AGPL-3.0) · <a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a> · Built with Rust, encrypted with love.</p>
+    <p style="margin-top:8px">Security always free. No ads. No tracking. Privacy by design.</p>
+  </div>
+</footer>
+
+<script>
+// ── Turnstile state ─────────────────────────────────────────────────────────
+
+var _turnstileToken = '';
+
+/** Called by Turnstile when the challenge is solved. */
+function onTurnstileSuccess(token) {
+  _turnstileToken = token;
+  document.getElementById('cf-turnstile-response').value = token;
+  // Hide any previous error once the user completes the challenge.
+  showCaptchaError(false);
+}
+
+/** Called when the Turnstile token expires (user took too long). */
+function onTurnstileExpired() {
+  _turnstileToken = '';
+  document.getElementById('cf-turnstile-response').value = '';
+}
+
+/** Called if the Turnstile challenge itself encounters a network / config error. */
+function onTurnstileError() {
+  _turnstileToken = '';
+  document.getElementById('cf-turnstile-response').value = '';
+  showCaptchaError(true, 'Security check failed — please refresh the page and try again.');
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function showCaptchaError(visible, msg) {
+  var el = document.getElementById('captcha-error');
+  if (visible) {
+    el.textContent = msg || '⚠ Please complete the security check before joining.';
+    el.classList.add('show');
+  } else {
+    el.classList.remove('show');
+  }
+}
+
+// ── Form submission ──────────────────────────────────────────────────────────
+
+function submitWaitlist(e) {
+  e.preventDefault();
+
+  var email = document.getElementById('email-input').value.trim();
+  if (!email || !email.includes('@')) {
+    document.getElementById('email-input').focus();
+    return;
+  }
+
+  // Gate on Turnstile completion.
+  if (!_turnstileToken) {
+    showCaptchaError(true, '⚠ Please complete the security check before joining.');
+    return;
+  }
+
+  // Disable button to prevent double-submit.
+  var btn = document.getElementById('waitlist-btn');
+  btn.disabled = true;
+  btn.textContent = 'Joining…';
+
+  // ── POST to your waitlist endpoint ──────────────────────────────────────
+  // Replace '/api/waitlist' with your real backend URL.
+  // The server must verify the token with Cloudflare's siteverify API:
+  //   POST https://challenges.cloudflare.com/turnstile/v0/siteverify
+  //   Body: { secret: SECRET_KEY, response: cf-turnstile-response, remoteip: userIp }
+  fetch('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: email,
+      'cf-turnstile-response': _turnstileToken
+    })
+  })
+  .then(function(res) {
+    if (res.ok) {
+      // Replace form with success message on confirmed signup.
+      document.getElementById('waitlist-form').innerHTML =
+        '<div class="waitlist-success">🏰 You\'re on the waitlist!<br>' +
+        '<span style="font-size:13px;font-weight:400;color:var(--mt)">Share this page with friends to move up the line.</span></div>';
+    } else {
+      return res.json().then(function(data) {
+        throw new Error(data.message || 'Signup failed — please try again.');
+      });
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Join Waitlist';
+    showCaptchaError(true, '⚠ ' + (err.message || 'Something went wrong — please try again.'));
+    // Reset Turnstile so the user can retry.
+    if (window.turnstile) window.turnstile.reset();
+    _turnstileToken = '';
+    document.getElementById('cf-turnstile-response').value = '';
+  });
+}
+</script>
+
+</body>
+</html>

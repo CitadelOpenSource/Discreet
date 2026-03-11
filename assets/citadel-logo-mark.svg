@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <!-- Citadel Logo Mark (SVG)
+       - Uses currentColor so it adapts to light/dark themes
+       - Stroke-based for easy editing in Figma/Illustrator
+  -->
+  <g stroke="currentColor" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Shield -->
+    <path d="M256 36 L444 106 V260 C444 376 356 468 256 504 C156 468 68 376 68 260 V106 Z"/>
+
+    <!-- Castle (keep) -->
+    <path d="M170 330 V220"/>
+    <path d="M256 330 V190"/>
+    <path d="M342 330 V220"/>
+
+    <!-- Battlements -->
+    <path d="M150 220 H190"/>
+    <path d="M236 190 H276"/>
+    <path d="M322 220 H362"/>
+
+    <!-- Base platform -->
+    <path d="M156 330 H356"/>
+
+    <!-- Door arch -->
+    <path d="M232 330 V292 C232 276 245 264 256 264 C267 264 280 276 280 292 V330"/>
+  </g>
+</svg>

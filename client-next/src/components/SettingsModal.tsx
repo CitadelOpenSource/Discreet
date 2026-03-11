@@ -1,0 +1,1378 @@
+/**
+ * SettingsModal — 12-tab user settings panel.
+ * Tabs: Appearance, Voice & Audio, Video, Streaming, My Profile,
+ *       Privacy, Security, Notifications, Accessibility, Keybinds, Advanced, About.
+ */
+import React, { useState, useEffect, useMemo } from 'react';
+import { T, getInp } from '../theme';
+import * as I from '../icons';
+import { api } from '../api/CitadelAPI';
+import { voice } from '../hooks/useVoice';
+import { Av } from './Av';
+import { Modal } from './Modal';
+import { AvatarCreator } from './AvatarCreator';
+
+// ─── Types ────────────────────────────────────────────────
+
+interface UserSettings {
+  theme?: string;
+  font_size?: string;
+  compact_mode?: boolean;
+  show_embeds?: boolean;
+  dm_privacy?: string;
+  friend_request_privacy?: string;
+  notification_level?: string;
+  show_shared_servers?: boolean;
+  hide_online_status?: boolean;
+  hide_activity?: boolean;
+  block_stranger_dms?: boolean;
+  require_mutual_friends?: boolean;
+  user_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SettingsModalProps {
+  onClose: () => void;
+  onThemeChange?: (theme: string) => void;
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  setUserMap?: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
+  curServer?: { id: string } | null;
+  onLogout?: () => void;
+}
+
+// ─── Module-level constants ───────────────────────────────
+
+const API_BASE = window.location.origin + '/api/v1';
+
+const notifSound = {
+  _ctx: null as AudioContext | null,
+  _getCtx() {
+    if (!this._ctx) this._ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    return this._ctx!;
+  },
+  play(type: string) {
+    // Global gates: d_sounds (new key) or legacy d_mute_sounds
+    if (localStorage.getItem('d_sounds') === 'false') return;
+    if (localStorage.getItem('d_mute_sounds') === 'true') return;
+    // Per-type gates
+    if (type === 'send'    && localStorage.getItem('d_sound_send')          === 'false') return;
+    if (type === 'receive' && localStorage.getItem('d_sound_receive')        === 'false') return;
+    if (type === 'message' && localStorage.getItem('d_sound_receive')        === 'false') return;
+    if ((type === 'join' || type === 'leave') && localStorage.getItem('d_sound_voice') === 'false') return;
+    if (type === 'mention' && localStorage.getItem('d_notif_sound_mention')  === 'false') return;
+    try {
+      const ctx = this._getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      const vol = parseFloat(localStorage.getItem('d_notif_vol') || '0.3');
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      if (type === 'send') {
+        // Subtle upward blip for outgoing messages
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1);
+      } else if (type === 'message' || type === 'receive') {
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+      } else if (type === 'mention') {
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.16);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+      } else if (type === 'join') {
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+      } else if (type === 'leave') {
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+        osc.frequency.setValueAtTime(440, ctx.currentTime + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+      } else if (type === 'call') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(550, ctx.currentTime + 0.2);
+        osc.frequency.setValueAtTime(440, ctx.currentTime + 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+      }
+    } catch {}
+  },
+};
+
+// ─── Sub-components ───────────────────────────────────────
+
+interface DeviceSelectorProps {
+  label: string;
+  kind: MediaDeviceKind;
+  storageKey: string;
+  onChange: (deviceId: string) => void;
+}
+
+function DeviceSelector({ label, kind, storageKey, onChange }: DeviceSelectorProps) {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selected, setSelected] = useState(localStorage.getItem(storageKey) || 'default');
+  useEffect(() => {
+    navigator.mediaDevices?.enumerateDevices().then(all => {
+      setDevices(all.filter(d => d.kind === kind));
+    }).catch(() => {});
+    navigator.mediaDevices?.addEventListener('devicechange', () => {
+      navigator.mediaDevices.enumerateDevices().then(all => setDevices(all.filter(d => d.kind === kind))).catch(() => {});
+    });
+  }, [kind]);
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>{label}</div>
+      <select value={selected} onChange={e => { setSelected(e.target.value); localStorage.setItem(storageKey, e.target.value); onChange(e.target.value); }}
+        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.tx, fontSize: 12, cursor: 'pointer', outline: 'none' }}>
+        <option value="default">Default Device</option>
+        {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `${kind} ${d.deviceId.slice(0, 8)}`}</option>)}
+      </select>
+    </div>
+  );
+}
+
+interface AudioToggleProps {
+  label: string;
+  storageKey: string;
+  defaultVal: boolean;
+  desc?: string;
+  onChange: (val: boolean) => void;
+}
+
+function AudioToggle({ label, storageKey, defaultVal, desc, onChange }: AudioToggleProps) {
+  const [on, setOn] = useState(() => { const v = localStorage.getItem(storageKey); return v !== null ? v === 'true' : defaultVal; });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.bd}22` }}>
+      <div>
+        <div style={{ fontSize: 12, color: T.tx, fontWeight: 500 }}>{label}</div>
+        {desc && <div style={{ fontSize: 10, color: T.mt }}>{desc}</div>}
+      </div>
+      <div onClick={() => { const nv = !on; setOn(nv); localStorage.setItem(storageKey, String(nv)); onChange(nv); }}
+        style={{ width: 36, height: 20, borderRadius: 10, background: on ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
+        <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: on ? 18 : 2, transition: 'left 0.2s' }} />
+      </div>
+    </div>
+  );
+}
+
+interface DeleteAccountProps {
+  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+}
+
+function DeleteAccount({ showConfirm }: DeleteAccountProps) {
+  const [confirmPw, setConfirmPw] = useState('');
+  const [showPwField, setShowPwField] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!await showConfirm('⚠️ Delete Account', 'This will PERMANENTLY delete your account, all servers you own, all messages, DMs, and friend connections.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure?', true)) return;
+    if (!await showConfirm('⚠️ Final Confirmation', 'This is your ABSOLUTE LAST chance. Everything will be destroyed. Continue?', true)) return;
+    setShowPwField(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmPw.trim()) { alert('Please enter your password to confirm.'); return; }
+    setDeleting(true);
+    try {
+      const check = await api.login(api.username, confirmPw);
+      if (!check.ok) { alert('Incorrect password. Account NOT deleted.'); setDeleting(false); return; }
+      await api.deleteAccount();
+      localStorage.clear();
+      window.location.reload();
+    } catch (e: any) { alert('Account deletion failed: ' + (e.message || 'error')); setDeleting(false); }
+  };
+
+  return showPwField ? (
+    <div style={{ background: 'rgba(255,71,87,0.08)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,71,87,0.2)' }}>
+      <div style={{ fontSize: 12, color: T.err, fontWeight: 600, marginBottom: 8 }}>Enter your password to confirm account deletion:</div>
+      <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Your password" autoFocus
+        style={{ width: '100%', padding: '10px 12px', background: T.bg, border: '1px solid rgba(255,71,87,0.3)', borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', marginBottom: 8, boxSizing: 'border-box' }} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={confirmDelete} disabled={deleting} className="pill-btn" style={{ background: 'rgba(255,71,87,0.2)', color: T.err, border: '1px solid rgba(255,71,87,0.4)', padding: '8px 18px', fontSize: 12, fontWeight: 700 }}>{deleting ? 'Deleting...' : 'Permanently Delete Account'}</button>
+        <button onClick={() => { setShowPwField(false); setConfirmPw(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '8px 18px', fontSize: 12 }}>Cancel</button>
+      </div>
+    </div>
+  ) : (
+    <button onClick={handleDelete} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+  );
+}
+
+interface DevToolsProps {
+  curServer?: { id: string } | null;
+}
+
+function DevTools({ curServer }: DevToolsProps) {
+  const [endpoint, setEndpoint] = useState('/health');
+  const [method, setMethod] = useState('GET');
+  const [body, setBody] = useState('');
+  const [result, setResult] = useState<{ status: number | string; ms: string; data: unknown } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [wsLog, setWsLog] = useState<{ dir: string; data: string; t: string }[]>([]);
+
+  const runRequest = async () => {
+    setLoading(true); setResult(null);
+    try {
+      const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + api.token } as HeadersInit };
+      if (method !== 'GET' && body.trim()) opts.body = body;
+      const start = performance.now();
+      const res = await fetch(API_BASE + endpoint, opts);
+      const ms = (performance.now() - start).toFixed(1);
+      const text = await res.text();
+      let parsed: unknown; try { parsed = JSON.parse(text); } catch { parsed = text; }
+      setResult({ status: res.status, ms, data: parsed });
+    } catch (e: any) { setResult({ status: 'ERR', ms: '0', data: e.message }); }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (localStorage.getItem('d_verbose_log') !== 'true') return;
+    const ws = (api as any).ws;
+    const origSend = ws?.send?.bind(ws);
+    if (ws && origSend) {
+      ws._devOrigSend = origSend;
+      ws.send = (data: string) => {
+        setWsLog(p => [...p.slice(-19), { dir: '→', data: data.slice(0, 120), t: new Date().toLocaleTimeString() }]);
+        origSend(data);
+      };
+    }
+    return () => { if (ws?._devOrigSend) ws.send = ws._devOrigSend; };
+  }, []);
+
+  return (<>
+    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      <select value={method} onChange={e => setMethod(e.target.value)} style={{ background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.ac, fontSize: 11, padding: '4px 6px', fontFamily: 'monospace' }}>
+        {['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <input value={endpoint} onChange={e => setEndpoint(e.target.value)} placeholder="/api/v1/..." style={{ flex: 1, background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 11, padding: '4px 8px', fontFamily: 'monospace' }} />
+      <button onClick={runRequest} disabled={loading} style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 4, padding: '4px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{loading ? '...' : 'Send'}</button>
+    </div>
+    {method !== 'GET' && (
+      <textarea value={body} onChange={e => setBody(e.target.value)} placeholder='{"key":"value"}' rows={2} style={{ width: '100%', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 10, padding: 6, fontFamily: 'monospace', resize: 'vertical', marginBottom: 6, boxSizing: 'border-box' }} />
+    )}
+    {result && (
+      <div style={{ background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, padding: 8, maxHeight: 200, overflowY: 'auto', marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 10 }}>
+          <span style={{ color: (result.status as number) < 300 ? T.ac : (result.status as number) < 500 ? T.warn : T.err, fontWeight: 700 }}>{result.status}</span>
+          <span style={{ color: T.mt }}>{result.ms}ms</span>
+        </div>
+        <pre style={{ fontSize: 10, color: T.tx, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2)}</pre>
+      </div>
+    )}
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+      {['/health', '/api/v1/users/@me', '/api/v1/users/@me/servers', '/api/v1/bots/personas'].map(ep => (
+        <button key={ep} onClick={() => { setEndpoint(ep); setMethod('GET'); }} style={{ background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.mt, fontSize: 9, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace' }}>{ep.replace('/api/v1', '')}</button>
+      ))}
+    </div>
+    <div style={{ fontSize: 10, color: T.mt, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+      <div>User ID: <span style={{ color: T.ac, fontFamily: 'monospace' }}>{api.userId?.slice(0, 8)}</span></div>
+      <div>WS: <span style={{ color: (api as any).ws?.readyState === 1 ? T.ac : T.err }}>{(api as any).ws?.readyState === 1 ? 'Connected' : 'Disconnected'}</span></div>
+      <div>Token: <span style={{ color: T.ac, fontFamily: 'monospace' }}>{api.token?.slice(0, 12)}...</span></div>
+      <div>Server: <span style={{ color: T.ac, fontFamily: 'monospace' }}>{curServer?.id?.slice(0, 8) || '—'}</span></div>
+    </div>
+    {wsLog.length > 0 && (
+      <div style={{ marginTop: 8, maxHeight: 100, overflowY: 'auto', background: T.sf2, borderRadius: 4, padding: 4, border: `1px solid ${T.bd}` }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: T.mt, marginBottom: 2 }}>WebSocket Log</div>
+        {wsLog.map((l, i) => (
+          <div key={i} style={{ fontSize: 9, fontFamily: 'monospace', color: l.dir === '→' ? T.ac : '#faa61a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {l.t} {l.dir} {l.data}
+          </div>
+        ))}
+      </div>
+    )}
+  </>);
+}
+
+// ─── Notification sub-components ─────────────────────────
+
+function Toggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled?: boolean }) {
+  return (
+    <div
+      onClick={disabled ? undefined : onToggle}
+      style={{
+        width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+        background: on ? T.ac : T.bd,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        position: 'relative', transition: 'background .2s',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <div style={{
+        width: 16, height: 16, borderRadius: 8, background: '#fff',
+        position: 'absolute', top: 2, left: on ? 18 : 2,
+        transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+      }} />
+    </div>
+  );
+}
+
+function NRow({ label, sub, on, onToggle, disabled }: { label: string; sub: string; on: boolean; onToggle: () => void; disabled?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+      <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: disabled ? T.mt : T.tx }}>{label}</div>
+        <div style={{ fontSize: 11, color: T.mt }}>{sub}</div>
+      </div>
+      <Toggle on={on} onToggle={onToggle} disabled={disabled} />
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────
+
+export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout }: SettingsModalProps) {
+  const [s, setS] = useState<UserSettings | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState('appearance');
+  const [bio, setBio] = useState(localStorage.getItem('d_bio') || '');
+  const [displayName, setDisplayName] = useState('');
+  const [errMsg, setErrMsg] = useState('');
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [settingsSearch, setSettingsSearch] = useState('');
+
+  // ── Notification settings state ──────────────────────────
+  const [ns, setNs] = useState(() => ({
+    sounds:       localStorage.getItem('d_sounds') !== 'false',
+    soundSend:    localStorage.getItem('d_sound_send') !== 'false',
+    soundReceive: localStorage.getItem('d_sound_receive') !== 'false',
+    soundVoice:   localStorage.getItem('d_sound_voice') !== 'false',
+    soundMention: localStorage.getItem('d_notif_sound_mention') !== 'false',
+    desktop:      localStorage.getItem('d_notif_desktop') === 'true',
+    desktopPerm:  (typeof Notification !== 'undefined' ? Notification.permission : 'default') as NotificationPermission,
+    desktopLevel: localStorage.getItem('d_notif_desktop_level') || 'mentions',
+    group:        localStorage.getItem('d_notif_group') !== 'false',
+    dnd:          localStorage.getItem('d_notif_dnd') === 'true',
+    dndStart:     localStorage.getItem('d_notif_dnd_start') || '22:00',
+    dndEnd:       localStorage.getItem('d_notif_dnd_end') || '08:00',
+    mentionsOnly: localStorage.getItem('d_notif_mentions_only') === 'true',
+    vol:          parseFloat(localStorage.getItem('d_notif_vol') || '0.3'),
+  }));
+  const [muteServerIds, setMuteServerIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('d_notif_muted_servers') || '[]'); } catch { return []; }
+  });
+  const [mentionServerIds, setMentionServerIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('d_notif_mentions_servers') || '[]'); } catch { return []; }
+  });
+  const [notifServers, setNotifServers] = useState<{ id: string; name: string; icon_url?: string }[]>([]);
+
+  // Load servers when Notifications tab is active
+  useEffect(() => {
+    if (tab !== 'notifications') return;
+    api.listServers().then((list: any) => {
+      if (Array.isArray(list)) setNotifServers(list.map((sv: any) => ({ id: sv.id, name: sv.name, icon_url: sv.icon_url })));
+    }).catch(() => {});
+  }, [tab]);
+
+  const setN = <K extends keyof typeof ns>(key: K, val: typeof ns[K], lsKey: string) => {
+    setNs(p => ({ ...p, [key]: val }));
+    localStorage.setItem(lsKey, String(val));
+  };
+
+  const requestDesktopPermission = async () => {
+    if (typeof Notification === 'undefined') return;
+    const perm = await Notification.requestPermission();
+    setNs(p => ({ ...p, desktopPerm: perm, desktop: perm === 'granted' }));
+    if (perm === 'granted') localStorage.setItem('d_notif_desktop', 'true');
+  };
+
+  const toggleMuteServer = (sid: string) => {
+    setMuteServerIds(prev => {
+      const next = prev.includes(sid) ? prev.filter(x => x !== sid) : [...prev, sid];
+      localStorage.setItem('d_notif_muted_servers', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const toggleMentionServer = (sid: string) => {
+    setMentionServerIds(prev => {
+      const next = prev.includes(sid) ? prev.filter(x => x !== sid) : [...prev, sid];
+      localStorage.setItem('d_notif_mentions_servers', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const SETTINGS_INDEX = useMemo(() => [
+    { tab: 'appearance', keywords: 'theme dark light accent color font size compact mode show embeds gifs images videos url preview display density spacing', label: 'Theme & Appearance' },
+    { tab: 'appearance', keywords: 'recently used emojis emoji history recent emoji toggle', label: 'Recently Used Emojis' },
+    { tab: 'voice',      keywords: 'voice audio microphone speaker input output volume noise gate compressor echo cancellation noise suppression push to talk voice activation sensitivity', label: 'Voice & Audio' },
+    { tab: 'video',      keywords: 'video camera resolution fps webcam screen share streaming quality', label: 'Video & Streaming' },
+    { tab: 'profile',    keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
+    { tab: 'profile',    keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
+    { tab: 'privacy',    keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
+    { tab: 'security',   keywords: 'security password change email two factor 2fa totp authentication sessions devices logout', label: 'Security' },
+    { tab: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
+    { tab: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
+    { tab: 'keybinds',   keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
+    { tab: 'advanced',   keywords: 'advanced developer mode performance overlay cache clear data danger zone delete account', label: 'Advanced' },
+  ], []);
+
+  useEffect(() => {
+    api.getSettings().then((d: any) => {
+      if (d && typeof d === 'object' && d.user_id) setS(d);
+      else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' });
+    }).catch(() => setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' }));
+    api.getMe().then((u: any) => { if (u?.display_name) setDisplayName(u.display_name); else if (u?.username) setDisplayName(u.username); }).catch(() => {});
+  }, []);
+
+  const save = async (k: string, v: unknown) => {
+    setS(p => ({ ...p, [k]: v }));
+    try { await api.updateSettings({ [k]: v }); } catch { setErrMsg('Failed to save'); }
+    setSaved(true); setTimeout(() => setSaved(false), 1500);
+    if (k === 'font_size') {
+      const m: Record<string, string> = { small: '12px', medium: '14px', large: '16px', xl: '18px' };
+      document.documentElement.style.setProperty('--app-font-size', m[v as string] || '14px');
+      localStorage.setItem('d_font_size', v as string);
+    }
+    if (k === 'theme' && onThemeChange) onThemeChange(v as string);
+  };
+
+  const saveBio = (v: string) => { setBio(v); localStorage.setItem('d_bio', v); };
+
+  const saveDisplayName = async () => {
+    if (!displayName?.trim()) { setErrMsg('Display name cannot be empty'); return; }
+    try {
+      const res = await api.updateProfile({ display_name: displayName.trim() });
+      if (res && !res.ok) { const err = await res.text().catch(() => ''); setErrMsg('Save failed: ' + err); return; }
+      setUserMap?.(p => ({ ...p, [api.userId]: displayName.trim() }));
+      (api as any).invalidateUserCache?.(api.userId);
+      const ws = (api as any).ws;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'user_update', user_id: api.userId, username: api.username, display_name: displayName.trim() }));
+      }
+      setSaved(true); setTimeout(() => setSaved(false), 1500); setErrMsg('');
+    } catch (e: any) { setErrMsg('Failed to save: ' + (e?.message || 'Network error')); }
+  };
+
+  const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
+  const tabs = [
+    { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
+    { id: 'video', label: 'Video' }, { id: 'streaming', label: 'Streaming' },
+    { id: 'profile', label: 'My Profile' }, { id: 'privacy', label: 'Privacy' },
+    { id: 'security', label: 'Security' }, { id: 'notifications', label: 'Notifications' },
+    { id: 'accessibility', label: 'Accessibility' }, { id: 'keybinds', label: 'Keybinds' },
+    { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
+  ];
+
+  return (
+    <Modal title="Settings" onClose={onClose} wide>
+      {!s ? <div style={{ color: T.mt, textAlign: 'center', padding: 20 }}>Loading settings...</div> : (<>
+        {/* Settings Search */}
+        <div style={{ marginBottom: 10, position: 'relative' }}>
+          <input value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)} placeholder="🔍 Search settings..."
+            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif" }} />
+          {settingsSearch.trim() && (
+            <div style={{ marginTop: 6, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, padding: 4, maxHeight: 200, overflowY: 'auto' }}>
+              {SETTINGS_INDEX.filter(si => {
+                const q = settingsSearch.toLowerCase();
+                return si.keywords.includes(q) || si.label.toLowerCase().includes(q);
+              }).map((result, i) => (
+                <div key={i} onClick={() => { setTab(result.tab); setSettingsSearch(''); }}
+                  style={{ padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.tx, display: 'flex', justifyContent: 'space-between' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <span>{result.label}</span>
+                  <span style={{ fontSize: 10, color: T.mt, textTransform: 'capitalize' }}>{result.tab}</span>
+                </div>
+              ))}
+              {SETTINGS_INDEX.filter(si => { const q = settingsSearch.toLowerCase(); return si.keywords.includes(q) || si.label.toLowerCase().includes(q); }).length === 0 && (
+                <div style={{ padding: '8px 10px', fontSize: 12, color: T.mt, fontStyle: 'italic' }}>No settings found for "{settingsSearch}"</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tab Bar */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${T.bd}`, paddingBottom: 10, flexWrap: 'wrap' }}>
+          {tabs.map(t => (
+            <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent' }}>{t.label}</div>
+          ))}
+          {onLogout && <div onClick={onLogout} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err, marginLeft: 'auto' }}>Log Out</div>}
+        </div>
+
+        {/* ── Appearance ── */}
+        {tab === 'appearance' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme & Colors</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Theme</label>
+              <select style={sel} value={s.theme || 'dark'} onChange={e => save('theme', e.target.value)}>
+                <option value="dark">Dark</option><option value="onyx">Onyx (OLED Black)</option><option value="light">Light</option><option value="midnight">Midnight</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Accent Color</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {['#00d4aa', '#7289da', '#ff6b6b', '#faa61a', '#43b581', '#e91e63', '#9b59b6', '#1abc9c'].map(c => (
+                  <div key={c} onClick={() => localStorage.setItem('d_accent', c)} style={{ width: 24, height: 24, borderRadius: 12, background: c, cursor: 'pointer', border: localStorage.getItem('d_accent') === c ? '2px solid #fff' : '2px solid transparent' }} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Text & Layout</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Font Size</label>
+              <select style={sel} value={s.font_size || 'medium'} onChange={e => save('font_size', e.target.value)}>
+                <option value="small">Small (13px)</option><option value="medium">Medium (15px)</option><option value="large">Large (18px)</option><option value="xl">Extra Large (20px)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Font Family</label>
+              <select style={sel} value={localStorage.getItem('d_font') || 'dm-sans'} onChange={e => localStorage.setItem('d_font', e.target.value)}>
+                <option value="dm-sans">DM Sans (Default)</option><option value="inter">Inter</option><option value="system">System UI</option><option value="mono">JetBrains Mono</option><option value="serif">Georgia (Serif)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Spacing</label>
+              <select style={sel} value={localStorage.getItem('d_msg_spacing') || 'cozy'} onChange={e => localStorage.setItem('d_msg_spacing', e.target.value)}>
+                <option value="cozy">Cozy</option><option value="compact">Compact</option><option value="roomy">Roomy</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Width</label>
+              <select style={sel} value={localStorage.getItem('d_chat_width') || 'normal'} onChange={e => localStorage.setItem('d_chat_width', e.target.value)}>
+                <option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option><option value="full">Full Width</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
+          {[
+            { key: 'compact_mode',       label: 'Compact Mode',                    desc: 'Reduce padding and margins throughout the UI',                          setting: true  },
+            { key: 'show_embeds',        label: 'Show Link Embeds',                desc: 'Preview links with title, description, and images',                     setting: true, def: true },
+            { key: 'd_show_avatars',     label: 'Show Avatars in Chat',            desc: 'Display user avatars next to messages',                                 local: true,   def: true },
+            { key: 'd_show_timestamps',  label: 'Show Timestamps',                 desc: 'Display time next to every message',                                    local: true,   def: true },
+            { key: 'd_show_join_leave',  label: 'Show Join/Leave Messages',        desc: 'Display system messages when users join or leave',                      local: true,   def: true },
+            { key: 'd_animate_emoji',    label: 'Animate Emoji',                   desc: 'Play animated emoji and GIFs automatically',                            local: true,   def: true },
+            { key: 'd_show_typing',      label: 'Show Typing Indicators',          desc: 'See when others are typing in a channel',                               local: true,   def: true },
+            { key: 'd_sticker_preview',  label: 'Sticker & Emoji Previews',        desc: 'Show larger previews when hovering emoji/stickers',                     local: true,   def: true },
+            { key: 'd_smooth_scroll',    label: 'Smooth Scrolling',                desc: 'Enable smooth scroll animations in chat',                               local: true,   def: true },
+            { key: 'd_show_recent_emoji',label: 'Show Recently Used Emojis',       desc: 'Show your recently used emojis section in the emoji picker',            local: true,   def: true },
+            { key: 'd_twemoji_render',   label: 'Twemoji Rendering',               desc: 'Render emojis as Twemoji images (fixes flags on Windows)',              local: true,   def: true },
+          ].map(opt => {
+            const val = (opt as any).local
+              ? localStorage.getItem(opt.key) !== (opt.def ? 'false' : 'true')
+              : (opt.def ? s[opt.key] !== false : !!s[opt.key]);
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
+                <div onClick={() => { if ((opt as any).local) { localStorage.setItem(opt.key, val ? 'false' : 'true'); } else { save(opt.key, !val); } }}
+                  style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </>)}
+
+        {/* ── Voice & Audio ── */}
+        {tab === 'voice' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Input Mode</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {[{ id: 'vad', label: 'Voice Activity', desc: 'Auto-detect when you speak' }, { id: 'ptt', label: 'Push to Talk', desc: 'Hold a key to transmit' }].map(m => (
+              <div key={m.id} onClick={() => { localStorage.setItem('d_vmode', m.id); voice.mode = m.id as any; }}
+                style={{ flex: 1, padding: '12px 14px', borderRadius: 8, cursor: 'pointer', border: `2px solid ${(localStorage.getItem('d_vmode') || 'vad') === m.id ? T.ac : T.bd}`, background: (localStorage.getItem('d_vmode') || 'vad') === m.id ? 'rgba(0,212,170,0.06)' : 'transparent', textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: (localStorage.getItem('d_vmode') || 'vad') === m.id ? T.ac : T.tx }}>{m.label}</div>
+                <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>{m.desc}</div>
+              </div>
+            ))}
+          </div>
+          {(localStorage.getItem('d_vmode') || 'vad') === 'vad' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Sensitivity</div>
+              <input type="range" min="0.005" max="0.15" step="0.005" defaultValue={localStorage.getItem('d_vsens') || '0.02'} onChange={e => { localStorage.setItem('d_vsens', e.target.value); voice.sensitivity = parseFloat(e.target.value); }} style={{ width: '100%', accentColor: T.ac } as any} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt, marginTop: 2 }}><span>More Sensitive</span><span>Less Sensitive</span></div>
+            </div>
+          )}
+          {(localStorage.getItem('d_vmode') || 'vad') === 'ptt' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Push-to-Talk Key</div>
+              <div style={{ padding: '12px 16px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: T.ac, textAlign: 'center', cursor: 'pointer' }}
+                onClick={(e) => {
+                  const el = e.currentTarget; el.textContent = 'Press any key...';
+                  const handler = (ke: KeyboardEvent) => { ke.preventDefault(); voice.pttKey = ke.key; el.textContent = ke.key === ' ' ? 'Space' : ke.key; localStorage.setItem('d_pttkey', ke.key); document.removeEventListener('keydown', handler); };
+                  document.addEventListener('keydown', handler);
+                }}>{localStorage.getItem('d_pttkey') || '`'}</div>
+            </div>
+          )}
+          <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}>Audio Devices</div>
+            <DeviceSelector label="Input (Microphone)" kind="audioinput" storageKey="d_audioIn" onChange={id => voice.setInputDevice(id)} />
+            <DeviceSelector label="Output (Speakers/Headphones)" kind="audiooutput" storageKey="d_audioOut" onChange={id => voice.setOutputDevice(id)} />
+            <DeviceSelector label="Camera" kind="videoinput" storageKey="d_videoIn" onChange={() => {}} />
+          </div>
+          <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}>Volume</div>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Input Volume</div>
+              <input type="range" min="0" max="200" defaultValue={localStorage.getItem('d_inputVol') || '100'} onChange={e => { localStorage.setItem('d_inputVol', e.target.value); voice.inputGain = parseInt(e.target.value) / 100; }} style={{ width: '100%', accentColor: T.ac } as any} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>0%</span><span>{localStorage.getItem('d_inputVol') || '100'}%</span><span>200%</span></div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Output Volume</div>
+              <input type="range" min="0" max="200" defaultValue={localStorage.getItem('d_outputVol') || '100'} onChange={e => { localStorage.setItem('d_outputVol', e.target.value); voice.outputGain = parseInt(e.target.value) / 100; }} style={{ width: '100%', accentColor: T.ac } as any} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>0%</span><span>{localStorage.getItem('d_outputVol') || '100'}%</span><span>200%</span></div>
+            </div>
+          </div>
+          <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}><I.Sliders s={11} /> Audio Processing Chain</div>
+            <div style={{ fontSize: 10, color: T.mt, marginBottom: 10, lineHeight: 1.4 }}>Signal path: Mic → Noise Suppression → Noise Gate → Compressor → EQ → Gain → Output. Inspired by OBS Studio's audio filter chain.</div>
+            <AudioToggle label="Noise Suppression" storageKey="d_noiseSup" defaultVal={true} desc="AI-powered background noise removal (RNNoise)" onChange={v => voice.noiseSuppression = v} />
+            <AudioToggle label="Echo Cancellation" storageKey="d_echoCan" defaultVal={true} desc="Prevents feedback loops from speakers to mic" onChange={v => voice.echoCancellation = v} />
+            <AudioToggle label="Auto Gain Control" storageKey="d_agc" defaultVal={true} desc="Automatically levels your microphone" onChange={v => voice.autoGainControl = v} />
+
+            {/* Noise Gate */}
+            <div style={{ marginTop: 12, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Noise Gate</span>
+                <div onClick={() => { const v = localStorage.getItem('d_noiseGate') !== 'true'; localStorage.setItem('d_noiseGate', String(v)); (voice as any).noiseGate = v; }}
+                  style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_noiseGate') === 'true' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_noiseGate') === 'true' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: T.mt, marginBottom: 8 }}>Cuts audio when signal falls below threshold. Like OBS's noise gate filter.</div>
+              {[
+                { key: 'd_ng_openThresh',  label: 'Open Threshold (dB)',  min: -60, max: 0,   step: 1,  def: -26 },
+                { key: 'd_ng_closeThresh', label: 'Close Threshold (dB)', min: -60, max: 0,   step: 1,  def: -32 },
+                { key: 'd_ng_attack',      label: 'Attack (ms)',          min: 1,   max: 100, step: 1,  def: 25  },
+                { key: 'd_ng_hold',        label: 'Hold (ms)',            min: 0,   max: 500, step: 10, def: 200 },
+                { key: 'd_ng_release',     label: 'Release (ms)',         min: 10,  max: 500, step: 10, def: 150 },
+              ].map(p => (
+                <div key={p.key} style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>{p.label}</span><span style={{ color: T.ac, fontFamily: 'monospace' }}>{localStorage.getItem(p.key) || p.def}</span></div>
+                  <input type="range" min={p.min} max={p.max} step={p.step} defaultValue={localStorage.getItem(p.key) || p.def} onChange={e => localStorage.setItem(p.key, e.target.value)} style={{ width: '100%', accentColor: T.ac, height: 4 } as any} />
+                </div>
+              ))}
+            </div>
+
+            {/* Compressor */}
+            <div style={{ marginTop: 10, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Compressor</span>
+                <div onClick={() => { const v = localStorage.getItem('d_compressor') !== 'true'; localStorage.setItem('d_compressor', String(v)); }}
+                  style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_compressor') === 'true' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_compressor') === 'true' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: T.mt, marginBottom: 8 }}>Reduces dynamic range — makes quiet sounds louder and loud sounds quieter. Like OBS's compressor filter.</div>
+              {[
+                { key: 'd_comp_ratio',   label: 'Ratio',              min: 1,   max: 20,   step: 0.5, def: 4   },
+                { key: 'd_comp_thresh',  label: 'Threshold (dB)',     min: -60, max: 0,    step: 1,   def: -18 },
+                { key: 'd_comp_attack',  label: 'Attack (ms)',        min: 1,   max: 100,  step: 1,   def: 6   },
+                { key: 'd_comp_release', label: 'Release (ms)',       min: 10,  max: 1000, step: 10,  def: 60  },
+                { key: 'd_comp_gain',    label: 'Output Gain (dB)',   min: 0,   max: 20,   step: 1,   def: 0   },
+              ].map(p => (
+                <div key={p.key} style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>{p.label}</span><span style={{ color: T.ac, fontFamily: 'monospace' }}>{localStorage.getItem(p.key) || p.def}</span></div>
+                  <input type="range" min={p.min} max={p.max} step={p.step} defaultValue={localStorage.getItem(p.key) || p.def} onChange={e => localStorage.setItem(p.key, e.target.value)} style={{ width: '100%', accentColor: T.ac, height: 4 } as any} />
+                </div>
+              ))}
+            </div>
+
+            {/* Expander */}
+            <div style={{ marginTop: 10, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Expander</span>
+                <div onClick={() => { const v = localStorage.getItem('d_expander') !== 'true'; localStorage.setItem('d_expander', String(v)); }}
+                  style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_expander') === 'true' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_expander') === 'true' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: T.mt, marginBottom: 8 }}>Gradually reduces audio below threshold — smoother than noise gate.</div>
+              {[
+                { key: 'd_exp_ratio',   label: 'Ratio',          min: 1,  max: 10,  step: 0.5, def: 4   },
+                { key: 'd_exp_thresh',  label: 'Threshold (dB)', min: -60, max: 0,  step: 1,   def: -30 },
+                { key: 'd_exp_attack',  label: 'Attack (ms)',    min: 1,  max: 100, step: 1,   def: 10  },
+                { key: 'd_exp_release', label: 'Release (ms)',   min: 10, max: 500, step: 10,  def: 100 },
+              ].map(p => (
+                <div key={p.key} style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>{p.label}</span><span style={{ color: T.ac, fontFamily: 'monospace' }}>{localStorage.getItem(p.key) || p.def}</span></div>
+                  <input type="range" min={p.min} max={p.max} step={p.step} defaultValue={localStorage.getItem(p.key) || p.def} onChange={e => localStorage.setItem(p.key, e.target.value)} style={{ width: '100%', accentColor: T.ac, height: 4 } as any} />
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <AudioToggle label="Audio Ducking" storageKey="d_ducking" defaultVal={false} desc="Auto-lower media volume when someone speaks (Ventrilo-style)" onChange={v => { (voice as any).ducking = v; }} />
+              <AudioToggle label="Voice Normalization" storageKey="d_normalize" defaultVal={false} desc="Level all participants to similar volume" onChange={v => { (voice as any).normalization = v; }} />
+            </div>
+
+            {/* Equalizer */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: T.tx, fontWeight: 600 }}>5-Band Equalizer</div>
+                <select style={{ background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.ac, fontSize: 11, padding: '4px 8px', cursor: 'pointer' }} defaultValue="" onChange={e => {
+                  if (!e.target.value) return;
+                  const presets: Record<string, Record<string, number>> = {
+                    flat:      { '60': 0, '250': 0, '1k': 0, '4k': 0, '16k': 0 },
+                    rock:      { '60': 3, '250': 1, '1k': 0, '4k': 2, '16k': 3 },
+                    hiphop:    { '60': 5, '250': 3, '1k': -1, '4k': 1, '16k': 2 },
+                    pop:       { '60': 1, '250': 2, '1k': 3, '4k': 2, '16k': 1 },
+                    country:   { '60': 2, '250': 1, '1k': 2, '4k': 3, '16k': 2 },
+                    edm:       { '60': 4, '250': 2, '1k': 0, '4k': 1, '16k': 3 },
+                    jazz:      { '60': 3, '250': 1, '1k': -1, '4k': 1, '16k': 2 },
+                    classical: { '60': 1, '250': 0, '1k': 0, '4k': 1, '16k': 3 },
+                    bass:      { '60': 6, '250': 4, '1k': 0, '4k': 0, '16k': 0 },
+                    vocal:     { '60': -2, '250': 0, '1k': 3, '4k': 4, '16k': 1 },
+                  };
+                  const p = presets[e.target.value]; if (!p) return;
+                  Object.entries(p).forEach(([f, v]) => { localStorage.setItem('d_eq_' + f, String(v)); voice.setEQ(f, v); });
+                  e.target.value = '';
+                }}>
+                  <option value="">Presets ▾</option>
+                  <option value="flat">🎚️ Flat (Neutral)</option><option value="rock">🎸 Rock & Roll</option>
+                  <option value="hiphop">🎤 Hip-Hop / R&B</option><option value="pop">🎵 Pop</option>
+                  <option value="country">🤠 Country</option><option value="edm">🎧 EDM / Electronic</option>
+                  <option value="jazz">🎷 Jazz</option><option value="classical">🎻 Classical / Orchestral</option>
+                  <option value="bass">🔊 Bass Boost</option><option value="vocal">🎙️ Vocal / Podcast</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end' }}>
+                {[{ f: '60', l: '60' }, { f: '250', l: '250' }, { f: '1k', l: '1k' }, { f: '4k', l: '4k' }, { f: '16k', l: '16k' }].map(({ f, l }) => (
+                  <div key={f} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '18%' }}>
+                    <span style={{ fontSize: 9, color: T.ac, fontFamily: 'monospace', marginBottom: 2 }}>{localStorage.getItem('d_eq_' + f) || '0'}dB</span>
+                    <input type="range" min="-12" max="12" defaultValue={localStorage.getItem('d_eq_' + f) || '0'} onChange={e => { localStorage.setItem('d_eq_' + f, e.target.value); voice.setEQ(f, parseFloat(e.target.value)); }} style={{ width: 60, height: 'auto', accentColor: T.ac, writingMode: 'vertical-lr', direction: 'rtl' } as any} />
+                    <span style={{ fontSize: 9, color: T.mt, marginTop: 4 }}>{l}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: T.mt, marginTop: 4 }}><span>Bass</span><span>Mid</span><span>Treble</span></div>
+              <button onClick={() => { ['60', '250', '1k', '4k', '16k'].forEach(f => { localStorage.setItem('d_eq_' + f, '0'); voice.setEQ(f, 0); }); }} className="pill-btn" style={{ marginTop: 6, fontSize: 10, color: T.mt, background: T.sf, border: `1px solid ${T.bd}`, padding: '4px 10px' }}>Reset EQ</button>
+            </div>
+          </div>
+          <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>How Discreet Voice Works</div>
+            <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>Voice uses peer-to-peer WebRTC with echo cancellation and noise suppression. Audio goes directly between participants — it never touches our servers. In production, SFrame (RFC 9605) will encrypt every audio frame.</div>
+          </div>
+        </>)}
+
+        {/* ── My Profile ── */}
+        {tab === 'profile' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Your Profile</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, padding: 16, background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+            <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => {
+              const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*';
+              f.onchange = async (e: any) => {
+                const file = e.target.files[0]; if (!file || file.size > 2 * 1024 * 1024) { alert('Avatar must be under 2MB'); return; }
+                const reader = new FileReader(); reader.onload = (ev: any) => {
+                  const dataUrl = ev.target.result;
+                  localStorage.setItem('d_my_avatar', dataUrl);
+                  const avCache = JSON.parse(localStorage.getItem('d_avatars') || '{}'); avCache[api.userId] = dataUrl; localStorage.setItem('d_avatars', JSON.stringify(avCache));
+                  api.updateProfile({ avatar_url: dataUrl }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 1500); });
+                }; reader.readAsDataURL(file);
+              }; f.click();
+            }} title="Click to upload avatar">
+              <Av name={displayName || api.username} size={56} color={T.ac} url={localStorage.getItem('d_my_avatar') || undefined} />
+              <div style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, background: T.ac, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#000', fontWeight: 700, border: `2px solid ${T.bg}` }}>+</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>{displayName || api.username}</div>
+              <div style={{ fontSize: 12, color: T.mt }}>@{api.username}</div>
+              <div style={{ fontSize: 10, color: T.ac, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}><I.Lock s={8} /> E2EE Active</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button onClick={() => setShowAvatarCreator(true)} className="pill-btn" style={{ flex: 1, padding: '8px 0', background: `linear-gradient(135deg,${T.ac}22,${(T as any).ac2 || T.ac}22)`, color: T.ac, border: `1px solid ${T.ac}44`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>🎨 Create Avatar</button>
+            {localStorage.getItem('d_my_avatar') && (
+              <button onClick={() => { localStorage.removeItem('d_my_avatar'); const c = JSON.parse(localStorage.getItem('d_avatars') || '{}'); delete c[api.userId]; localStorage.setItem('d_avatars', JSON.stringify(c)); api.updateProfile({ avatar_url: '' }); setSaved(true); setTimeout(() => setSaved(false), 1500); }} className="pill-btn" style={{ padding: '8px 14px', background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.2)', borderRadius: 8, fontSize: 12 }}>Remove</button>
+            )}
+          </div>
+          {showAvatarCreator && <AvatarCreator onClose={() => setShowAvatarCreator(false)} onSave={(dataUrl: string) => {
+            localStorage.setItem('d_my_avatar', dataUrl);
+            const avCache = JSON.parse(localStorage.getItem('d_avatars') || '{}'); avCache[api.userId] = dataUrl; localStorage.setItem('d_avatars', JSON.stringify(avCache));
+            api.updateProfile({ avatar_url: dataUrl }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 1500); });
+            setShowAvatarCreator(false);
+          }} />}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, color: T.mt, marginBottom: 4 }}>Display Name</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input style={{ ...getInp(), flex: 1 }} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="How others see you" />
+              <button onClick={saveDisplayName} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 16px', whiteSpace: 'nowrap' }}>Save</button>
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, color: T.mt, marginBottom: 4 }}>About Me (public bio)</label>
+            <textarea value={bio} onChange={e => saveBio(e.target.value)} placeholder="Tell others about yourself..." rows={3}
+              style={{ width: '100%', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, padding: '10px 12px', resize: 'vertical', fontFamily: "'DM Sans',sans-serif", boxSizing: 'border-box', outline: 'none' }} />
+            <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>{bio.length}/190 characters</div>
+          </div>
+        </>)}
+
+        {/* ── Privacy ── */}
+        {tab === 'privacy' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Privacy</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Who can DM me</label>
+              <select style={sel} value={s.dm_privacy || 'everyone'} onChange={e => save('dm_privacy', e.target.value)}>
+                <option value="everyone">Everyone</option><option value="friends">Friends only</option><option value="nobody">Nobody</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Friend requests</label>
+              <select style={sel} value={s.friend_request_privacy || 'everyone'} onChange={e => save('friend_request_privacy', e.target.value)}>
+                <option value="everyone">Everyone</option><option value="friends_of_friends">Friends of friends</option><option value="nobody">Nobody</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Show Shared Servers</div>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>Let others see which servers you both share when they search for you.</div>
+            </div>
+            <div onClick={() => save('show_shared_servers', !(s.show_shared_servers === true))} style={{ width: 36, height: 20, borderRadius: 10, background: s.show_shared_servers === true ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.show_shared_servers === true ? 18 : 2, transition: 'left 0.2s' }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Interaction Controls</div>
+          {[
+            { key: 'hide_online_status',      label: 'Hide Online Status from Non-Friends',        desc: 'Only friends can see when you\'re online, idle, or DND.', def: false },
+            { key: 'hide_activity',            label: 'Hide Activity from Non-Friends',             desc: "Don't show what server you're in or what you're doing to non-friends.", def: false },
+            { key: 'block_stranger_dms',       label: 'Block DMs from Server Strangers',            desc: 'People you share a server with but aren\'t friends with cannot DM you.', def: false },
+            { key: 'require_mutual_friends',   label: 'Require Mutual Friends for Friend Requests', desc: 'Only allow friend requests from people who share a mutual friend with you.', def: false },
+          ].map(opt => {
+            const val = localStorage.getItem('d_' + opt.key) === 'true';
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+                <div><div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div><div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>{opt.desc}</div></div>
+                <div onClick={() => localStorage.setItem('d_' + opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left 0.2s' }} />
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 6, fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 8 }}>
+            <I.Shield /> Citadel respects your privacy. Shared server info is never publicly exposed.
+          </div>
+        </>)}
+
+        {/* ── Security ── */}
+        {tab === 'security' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Account Security</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Two-Factor Authentication (2FA)</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
+            <button onClick={() => {}} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Change Password</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Update your password regularly for better security</div></div>
+            <button onClick={() => { const pw = prompt('Enter new password (8+ chars, mixed case + digit):'); if (pw && pw.length >= 8) { api.updateProfile({ password: pw }).then(() => alert('Password updated!')); } }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Active Sessions</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>View and revoke active login sessions</div></div>
+            <div style={{ fontSize: 12, color: T.ac, fontFamily: 'monospace' }}>1 active</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Encryption Key Fingerprint</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
+            <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
+          </div>
+          <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 10 }}>⚠️ Danger Zone</div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.6 }}>
+              Permanently delete your account and <strong style={{ color: T.err }}>ALL</strong> associated data. <strong style={{ color: T.err }}>This action is irreversible.</strong>
+            </div>
+            <DeleteAccount showConfirm={showConfirm} />
+          </div>
+        </>)}
+
+        {/* ── Notifications ── */}
+        {tab === 'notifications' && (<>
+
+          {/* ─ Global level ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Message Notifications</div>
+          <div style={{ marginBottom: 6 }}>
+            <label style={{ fontSize: 12, color: T.mt, display: 'block', marginBottom: 4 }}>Default notification level</label>
+            <select style={{ ...sel, marginBottom: 0 }} value={s?.notification_level || 'all'} onChange={e => save('notification_level', e.target.value)}>
+              <option value="all">All messages</option>
+              <option value="mentions">Mentions only</option>
+              <option value="nothing">Nothing</option>
+            </select>
+          </div>
+          <NRow
+            label="Mentions-only mode"
+            sub="Only show a badge/alert when you are directly @mentioned"
+            on={ns.mentionsOnly}
+            onToggle={() => setN('mentionsOnly', !ns.mentionsOnly, 'd_notif_mentions_only')}
+          />
+          <NRow
+            label="Group notifications"
+            sub="Bundle multiple messages from the same channel into one alert"
+            on={ns.group}
+            onToggle={() => setN('group', !ns.group, 'd_notif_group')}
+          />
+
+          {/* ─ Sound alerts ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Sound Alerts</div>
+          <NRow
+            label="Enable sounds"
+            sub="Master switch for all notification tones"
+            on={ns.sounds}
+            onToggle={() => setN('sounds', !ns.sounds, 'd_sounds')}
+          />
+
+          {ns.sounds && (<>
+            <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.tx, marginBottom: 8 }}>Volume</div>
+              <input
+                type="range" min="0" max="100"
+                value={Math.round(ns.vol * 100)}
+                onChange={e => {
+                  const v = parseInt(e.target.value) / 100;
+                  setNs(p => ({ ...p, vol: v }));
+                  localStorage.setItem('d_notif_vol', v.toFixed(2));
+                }}
+                style={{ width: '100%', accentColor: T.ac } as React.CSSProperties}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt, marginTop: 2 }}>
+                <span>0%</span><span>{Math.round(ns.vol * 100)}%</span><span>100%</span>
+              </div>
+            </div>
+
+            {([
+              { key: 'soundSend',    lsKey: 'd_sound_send',           label: 'Message send',      sub: 'Short blip when you send a message',          test: 'send'    },
+              { key: 'soundReceive', lsKey: 'd_sound_receive',        label: 'Message receive',   sub: 'Tone when a new message arrives',              test: 'message' },
+              { key: 'soundMention', lsKey: 'd_notif_sound_mention',  label: 'Mention',           sub: 'Distinct chime when you are @mentioned',       test: 'mention' },
+              { key: 'soundVoice',   lsKey: 'd_sound_voice',          label: 'Voice join / leave', sub: 'Sounds when users enter or leave voice chat', test: 'join'    },
+            ] as const).map(opt => (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 4 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{opt.label}</div>
+                  <div style={{ fontSize: 11, color: T.mt }}>{opt.sub}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 12 }}>
+                  <button
+                    onClick={() => notifSound.play(opt.test)}
+                    title="Preview sound"
+                    style={{ background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 5, color: T.mt, cursor: 'pointer', fontSize: 10, padding: '3px 8px' }}
+                  >
+                    ▶ Test
+                  </button>
+                  <Toggle on={ns[opt.key]} onToggle={() => setN(opt.key, !ns[opt.key], opt.lsKey)} />
+                </div>
+              </div>
+            ))}
+          </>)}
+
+          {/* ─ Desktop notifications ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Desktop Notifications</div>
+
+          {/* Permission status */}
+          <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: ns.desktopPerm !== 'granted' ? 8 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Browser permission</div>
+                <div style={{ fontSize: 11, color: ns.desktopPerm === 'granted' ? '#3ba55d' : ns.desktopPerm === 'denied' ? T.err : T.mt }}>
+                  {ns.desktopPerm === 'granted' ? '✓ Granted' : ns.desktopPerm === 'denied' ? '✕ Denied — change in browser settings' : '⚠ Not yet requested'}
+                </div>
+              </div>
+              {ns.desktopPerm !== 'granted' && ns.desktopPerm !== 'denied' && (
+                <button
+                  onClick={requestDesktopPermission}
+                  style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Allow
+                </button>
+              )}
+            </div>
+          </div>
+
+          <NRow
+            label="Enable desktop notifications"
+            sub="Show OS notifications when Discreet is in the background"
+            on={ns.desktop && ns.desktopPerm === 'granted'}
+            disabled={ns.desktopPerm !== 'granted'}
+            onToggle={() => ns.desktopPerm === 'granted' && setN('desktop', !ns.desktop, 'd_notif_desktop')}
+          />
+
+          {ns.desktop && ns.desktopPerm === 'granted' && (
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 12, color: T.mt, display: 'block', marginBottom: 4 }}>Show desktop notification for</label>
+              <select
+                style={{ ...sel, marginBottom: 0 }}
+                value={ns.desktopLevel}
+                onChange={e => setN('desktopLevel', e.target.value as typeof ns.desktopLevel, 'd_notif_desktop_level')}
+              >
+                <option value="all">All messages</option>
+                <option value="mentions">Mentions only</option>
+                <option value="dms">DMs only</option>
+              </select>
+            </div>
+          )}
+
+          {/* ─ Do Not Disturb ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Do Not Disturb</div>
+          <NRow
+            label="Enable DND mode"
+            sub="Suppress all sounds and desktop alerts"
+            on={ns.dnd}
+            onToggle={() => setN('dnd', !ns.dnd, 'd_notif_dnd')}
+          />
+          <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: T.tx, marginBottom: 8 }}>Scheduled quiet hours</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Start</label>
+                <input
+                  type="time"
+                  value={ns.dndStart}
+                  onChange={e => setN('dndStart', e.target.value, 'd_notif_dnd_start')}
+                  style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
+                />
+              </div>
+              <div style={{ color: T.mt, fontSize: 13, paddingTop: 18 }}>→</div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>End</label>
+                <input
+                  type="time"
+                  value={ns.dndEnd}
+                  onChange={e => setN('dndEnd', e.target.value, 'd_notif_dnd_end')}
+                  style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
+                />
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: T.mt, marginTop: 6 }}>
+              DND activates automatically between these local times. Stored in <code>d_notif_dnd_start</code> / <code>d_notif_dnd_end</code>.
+            </div>
+          </div>
+
+          {/* ─ Per-server mute ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Per-Server Settings</div>
+          {notifServers.length === 0 && (
+            <div style={{ fontSize: 12, color: T.mt, textAlign: 'center', padding: '16px 0' }}>No servers — join one to configure per-server notifications.</div>
+          )}
+          {notifServers.map(sv => {
+            const muted      = muteServerIds.includes(sv.id);
+            const mentionOnly = mentionServerIds.includes(sv.id);
+            return (
+              <div key={sv.id} style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+                {/* Server name row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: sv.icon_url ? 'transparent' : `${T.ac}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: T.ac, overflow: 'hidden', flexShrink: 0 }}>
+                    {sv.icon_url ? <img src={sv.icon_url} alt="" style={{ width: 28, height: 28, objectFit: 'cover' }} /> : sv.name[0]?.toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: muted ? T.mt : T.tx, flex: 1 }}>{sv.name}</span>
+                  {muted && <span style={{ fontSize: 10, color: T.mt, background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, padding: '1px 6px' }}>Muted</span>}
+                </div>
+                {/* Controls */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: T.tx }}>Mute server</span>
+                    <Toggle on={muted} onToggle={() => toggleMuteServer(sv.id)} />
+                  </div>
+                  {!muted && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: T.tx }}>Mentions only</span>
+                      <Toggle on={mentionOnly} onToggle={() => toggleMentionServer(sv.id)} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* ─ Status & Presence (preserved from original) ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Status & Presence</div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Auto-Idle Timeout</div>
+            <select style={sel} value={localStorage.getItem('d_idle_timeout') || '300'} onChange={e => localStorage.setItem('d_idle_timeout', e.target.value)}>
+              <option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes (default)</option>
+              <option value="600">10 minutes</option><option value="900">15 minutes</option><option value="1800">30 minutes</option>
+              <option value="3600">1 hour</option><option value="0">Never (stay online)</option>
+            </select>
+            <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Automatically switch to Idle after this much inactivity.</div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Show Media Automatically</div>
+            {[
+              { key: 'd_show_images', label: 'Auto-show images in chat' },
+              { key: 'd_show_gifs',   label: 'Auto-show GIFs in chat'   },
+              { key: 'd_show_videos', label: 'Auto-play videos in chat'  },
+            ].map(opt => {
+              const val = localStorage.getItem(opt.key) !== 'false';
+              return (
+                <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: T.tx }}>{opt.label}</span>
+                  <Toggle on={val} onToggle={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} />
+                </div>
+              );
+            })}
+          </div>
+        </>)}
+
+        {/* ── Video ── */}
+        {tab === 'video' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Camera & Video Playback</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Camera Resolution</label>
+              <select style={sel} value={localStorage.getItem('d_cam_res') || '720'} onChange={e => localStorage.setItem('d_cam_res', e.target.value)}>
+                <option value="480">480p</option><option value="720">720p (Default)</option><option value="1080">1080p</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Camera FPS</label>
+              <select style={sel} value={localStorage.getItem('d_cam_fps') || '30'} onChange={e => localStorage.setItem('d_cam_fps', e.target.value)}>
+                <option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Video Grid Size</div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Max Video Grid Height</label>
+            <select style={sel} value={localStorage.getItem('d_video_max_height') || '280px'} onChange={e => localStorage.setItem('d_video_max_height', e.target.value)}>
+              <option value="180px">Small (180px)</option><option value="280px">Medium (280px — Default)</option>
+              <option value="420px">Large (420px)</option><option value="600px">XL (600px)</option><option value="none">Full Size (No Limit)</option>
+            </select>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>In-Chat Playback</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Default Volume</label>
+              <input type="range" min="0" max="100" defaultValue={localStorage.getItem('d_video_vol') || '80'} onChange={e => localStorage.setItem('d_video_vol', e.target.value)} style={{ width: '100%', accentColor: T.ac } as any} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>0%</span><span>{localStorage.getItem('d_video_vol') || '80'}%</span><span>100%</span></div>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Playback Speed</label>
+              <select style={sel} value={localStorage.getItem('d_video_speed') || '1'} onChange={e => localStorage.setItem('d_video_speed', e.target.value)}>
+                <option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1">1x (Normal)</option>
+                <option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>
+              </select>
+            </div>
+          </div>
+          {[
+            { key: 'd_video_autoplay', label: 'Autoplay Videos',          desc: 'Automatically play video attachments',     def: false },
+            { key: 'd_video_loop',     label: 'Loop Short Videos',         desc: 'Auto-loop videos under 30 seconds',        def: false },
+            { key: 'd_video_pip',      label: 'Picture-in-Picture',        desc: 'Pop out floating video player',            def: true  },
+            { key: 'd_hardware_accel', label: 'Hardware Acceleration',     desc: 'Use GPU for video decoding',               def: true  },
+          ].map(opt => {
+            const val = localStorage.getItem(opt.key) !== (opt.def ? 'false' : 'true');
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </>)}
+
+        {/* ── Streaming ── */}
+        {tab === 'streaming' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Stream Output</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Output Resolution</label>
+              <select style={sel} value={localStorage.getItem('d_stream_res') || '1080'} onChange={e => localStorage.setItem('d_stream_res', e.target.value)}>
+                <option value="480">480p (854×480)</option><option value="720">720p (1280×720)</option><option value="1080">1080p (1920×1080)</option><option value="1440">1440p (2560×1440)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Frame Rate</label>
+              <select style={sel} value={localStorage.getItem('d_stream_fps') || '30'} onChange={e => localStorage.setItem('d_stream_fps', e.target.value)}>
+                <option value="15">15 FPS</option><option value="24">24 FPS (Cinematic)</option><option value="30">30 FPS (Default)</option><option value="60">60 FPS (Smooth)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Encoder</label>
+              <select style={sel} value={localStorage.getItem('d_stream_encoder') || 'auto'} onChange={e => localStorage.setItem('d_stream_encoder', e.target.value)}>
+                <option value="auto">Auto (Recommended)</option><option value="h264">H.264 (Hardware/NVENC)</option><option value="vp8">VP8 (Software)</option><option value="vp9">VP9 (Quality)</option><option value="av1">AV1 (Experimental)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Rate Control</label>
+              <select style={sel} value={localStorage.getItem('d_stream_rc') || 'cbr'} onChange={e => localStorage.setItem('d_stream_rc', e.target.value)}>
+                <option value="cbr">CBR (Constant Bitrate)</option><option value="vbr">VBR (Variable Bitrate)</option><option value="cqp">CQP (Constant Quality)</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Bitrate</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Video Bitrate (kbps)</label>
+              <input type="range" min="500" max="12000" step="500" defaultValue={localStorage.getItem('d_stream_vbr') || '4000'} onChange={e => localStorage.setItem('d_stream_vbr', e.target.value)} style={{ width: '100%', accentColor: T.ac } as any} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>500</span><span style={{ color: T.ac, fontWeight: 700 }}>{localStorage.getItem('d_stream_vbr') || '4000'} kbps</span><span>12000</span></div>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Audio Bitrate</label>
+              <select style={sel} value={localStorage.getItem('d_stream_abr') || '128'} onChange={e => localStorage.setItem('d_stream_abr', e.target.value)}>
+                <option value="64">64 kbps</option><option value="96">96 kbps</option><option value="128">128 kbps (Default)</option>
+                <option value="160">160 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps (Studio)</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Advanced Stream</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Keyframe Interval</label>
+              <select style={sel} value={localStorage.getItem('d_stream_kfi') || '2'} onChange={e => localStorage.setItem('d_stream_kfi', e.target.value)}>
+                <option value="1">1 second</option><option value="2">2 seconds (Default)</option><option value="3">3 seconds</option><option value="4">4 seconds</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Profile</label>
+              <select style={sel} value={localStorage.getItem('d_stream_profile') || 'high'} onChange={e => localStorage.setItem('d_stream_profile', e.target.value)}>
+                <option value="baseline">Baseline</option><option value="main">Main</option><option value="high">High (Default)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Downscale Filter</label>
+              <select style={sel} value={localStorage.getItem('d_stream_filter') || 'lanczos'} onChange={e => localStorage.setItem('d_stream_filter', e.target.value)}>
+                <option value="bilinear">Bilinear (Fast)</option><option value="bicubic">Bicubic (Balanced)</option><option value="lanczos">Lanczos (Sharp)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Color Format</label>
+              <select style={sel} value={localStorage.getItem('d_stream_color') || 'nv12'} onChange={e => localStorage.setItem('d_stream_color', e.target.value)}>
+                <option value="nv12">NV12 (Default)</option><option value="i420">I420</option><option value="i444">I444 (High Quality)</option>
+              </select>
+            </div>
+          </div>
+          {[
+            { key: 'd_stream_preview',  label: 'Stream Preview',              desc: 'Show preview before going live',               def: true  },
+            { key: 'd_stream_audio',    label: 'Include System Audio',         desc: 'Capture desktop audio in screen share',        def: true  },
+            { key: 'd_stream_cursor',   label: 'Show Cursor',                  desc: 'Include mouse cursor in screen share',         def: true  },
+            { key: 'd_stream_optimize', label: 'Optimize for Low Latency',     desc: 'Reduce encoding delay for real-time viewing',  def: false },
+          ].map(opt => {
+            const val = localStorage.getItem(opt.key) !== (opt.def ? 'false' : 'true');
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </>)}
+
+        {/* ── Accessibility ── */}
+        {tab === 'accessibility' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Accessibility</div>
+          {[
+            { key: 'd_reduce_motion', label: 'Reduce Motion',             desc: 'Disable animations and transitions for a calmer experience' },
+            { key: 'd_high_contrast', label: 'High Contrast Mode',        desc: 'Increase contrast between text and background' },
+            { key: 'd_screen_reader', label: 'Screen Reader Optimized',   desc: 'Add ARIA labels and landmarks for screen readers' },
+            { key: 'd_large_click',   label: 'Large Click Targets',       desc: 'Increase button and link sizes for easier interaction' },
+            { key: 'd_focus_rings',   label: 'Focus Indicators',          desc: 'Show visible outlines on keyboard-focused elements' },
+            { key: 'd_dyslexia_font', label: 'Dyslexia-Friendly Font',    desc: 'Use OpenDyslexic font for improved readability' },
+          ].map(opt => {
+            const val = localStorage.getItem(opt.key) === 'true';
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: 12 }}><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>UI Zoom</label>
+            <input type="range" min="80" max="150" step="5" defaultValue={localStorage.getItem('d_zoom') || '100'} onChange={e => { localStorage.setItem('d_zoom', e.target.value); document.documentElement.style.fontSize = e.target.value + '%'; }} style={{ width: '100%', accentColor: T.ac } as any} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>80%</span><span>{localStorage.getItem('d_zoom') || '100'}%</span><span>150%</span></div>
+          </div>
+          <div style={{ marginTop: 12 }}><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Color Saturation</label>
+            <input type="range" min="0" max="200" step="10" defaultValue={localStorage.getItem('d_saturation') || '100'} onChange={e => localStorage.setItem('d_saturation', e.target.value)} style={{ width: '100%', accentColor: T.ac } as any} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>Grayscale</span><span>{localStorage.getItem('d_saturation') || '100'}%</span><span>Vivid</span></div>
+          </div>
+        </>)}
+
+        {/* ── Keybinds ── */}
+        {tab === 'keybinds' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Keyboard Shortcuts</div>
+          <div style={{ fontSize: 12, color: T.mt, marginBottom: 12 }}>Click any key to rebind. Press Escape to cancel, Delete to clear.</div>
+          {[
+            { key: 'd_kb_ptt',       label: 'Push to Talk',       def: '`'        },
+            { key: 'd_kb_mute',      label: 'Toggle Mute',        def: 'm'        },
+            { key: 'd_kb_deafen',    label: 'Toggle Deafen',      def: 'd'        },
+            { key: 'd_kb_search',    label: 'Search',             def: '/'        },
+            { key: 'd_kb_emoji',     label: 'Emoji Picker',       def: 'e'        },
+            { key: 'd_kb_gif',       label: 'GIF Picker',         def: 'g'        },
+            { key: 'd_kb_edit',      label: 'Edit Last Message',  def: 'ArrowUp'  },
+            { key: 'd_kb_reply',     label: 'Reply to Last',      def: 'r'        },
+            { key: 'd_kb_mark_read', label: 'Mark as Read',       def: 'Escape'   },
+            { key: 'd_kb_settings',  label: 'Settings',           def: ','        },
+          ].map(kb => {
+            const current = localStorage.getItem(kb.key) || kb.def;
+            return (
+              <div key={kb.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.sf2, borderRadius: 8, marginBottom: 3 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{kb.label}</span>
+                <div onClick={e => {
+                  const el = e.currentTarget; el.textContent = '...'; el.style.borderColor = T.ac;
+                  const h = (ke: KeyboardEvent) => {
+                    ke.preventDefault(); ke.stopPropagation();
+                    if (ke.key === 'Escape') { el.textContent = current === 'ArrowUp' ? '↑' : current; }
+                    else if (ke.key === 'Delete') { localStorage.removeItem(kb.key); el.textContent = 'None'; }
+                    else { localStorage.setItem(kb.key, ke.key); el.textContent = ke.key === ' ' ? 'Space' : ke.key === 'ArrowUp' ? '↑' : ke.key; }
+                    el.style.borderColor = T.bd; document.removeEventListener('keydown', h);
+                  };
+                  document.addEventListener('keydown', h);
+                }} style={{ padding: '3px 10px', borderRadius: 4, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: T.ac, cursor: 'pointer', minWidth: 40, textAlign: 'center' }}>
+                  {current === ' ' ? 'Space' : current === 'ArrowUp' ? '↑' : current}
+                </div>
+              </div>
+            );
+          })}
+          <button onClick={() => { ['d_kb_ptt', 'd_kb_mute', 'd_kb_deafen', 'd_kb_search', 'd_kb_emoji', 'd_kb_gif', 'd_kb_edit', 'd_kb_reply', 'd_kb_mark_read', 'd_kb_settings'].forEach(k => localStorage.removeItem(k)); }} className="pill-btn" style={{ marginTop: 6, fontSize: 10, color: T.mt, background: T.sf, border: `1px solid ${T.bd}`, padding: '4px 12px' }}>Reset All</button>
+        </>)}
+
+        {/* ── Advanced ── */}
+        {tab === 'advanced' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Advanced Settings</div>
+          <div style={{ fontSize: 11, color: T.warn, marginBottom: 12, padding: '8px 12px', background: 'rgba(250,166,26,0.08)', borderRadius: 8, border: '1px solid rgba(250,166,26,0.15)' }}>⚠️ Power user settings. Incorrect changes may affect performance.</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>WS Reconnect</label>
+              <select style={sel} value={localStorage.getItem('d_ws_reconnect') || '3000'} onChange={e => localStorage.setItem('d_ws_reconnect', e.target.value)}>
+                <option value="1000">1s (aggressive)</option><option value="3000">3s (default)</option><option value="5000">5s</option><option value="10000">10s (saver)</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Cache</label>
+              <select style={sel} value={localStorage.getItem('d_msg_cache') || '200'} onChange={e => localStorage.setItem('d_msg_cache', e.target.value)}>
+                <option value="50">50 msgs</option><option value="100">100 msgs</option><option value="200">200 (default)</option><option value="500">500 msgs</option><option value="1000">1000 msgs</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Image Quality</label>
+              <select style={sel} value={localStorage.getItem('d_img_quality') || 'high'} onChange={e => localStorage.setItem('d_img_quality', e.target.value)}>
+                <option value="low">Low</option><option value="medium">Medium</option><option value="high">High (default)</option><option value="original">Original</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Max Upload</label>
+              <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 12, color: T.ac, fontFamily: 'monospace' }}>50 MB</div>
+            </div>
+          </div>
+          {[
+            { key: 'd_dev_tools',    label: 'Developer Mode',          desc: 'Show IDs and API debug info' },
+            { key: 'd_raw_cipher',   label: 'Show Raw Ciphertext',      desc: 'Display encrypted data alongside decrypted messages' },
+            { key: 'd_perf_overlay', label: 'Performance Overlay',      desc: 'FPS, memory, WebSocket latency' },
+            { key: 'd_verbose_log',  label: 'Verbose Console Logs',     desc: 'Log all API calls and WS events' },
+            { key: 'd_experimental', label: 'Experimental Features',    desc: 'Enable unstable features in development' },
+          ].map(opt => {
+            const val = localStorage.getItem(opt.key) === 'true';
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.sf2, borderRadius: 8, marginBottom: 3 }}>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt }}>{opt.desc}</div></div>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: 12, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 8 }}>Danger Zone</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => { if (confirm('Clear ALL local settings?')) { localStorage.clear(); window.location.reload(); } }} className="pill-btn" style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '5px 12px', fontSize: 10 }}>Reset All Settings</button>
+              <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(localStorage))} className="pill-btn" style={{ background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, padding: '5px 12px', fontSize: 10 }}>Export Settings</button>
+            </div>
+          </div>
+          {localStorage.getItem('d_dev_tools') === 'true' && (
+            <div style={{ marginTop: 16, padding: 12, background: T.bg, borderRadius: 10, border: `1px solid ${T.ac}22` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ac, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>💻 Developer Tools</div>
+              <div style={{ fontSize: 11, color: T.mt, marginBottom: 10 }}>API testing and debugging tools. Available to verified accounts on their own servers.</div>
+              <DevTools curServer={curServer} />
+            </div>
+          )}
+        </>)}
+
+        {/* ── About ── */}
+        {tab === 'about' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>About Discreet</div>
+          <div style={{ padding: 16, background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}><I.Shield s={20} /><span style={{ fontSize: 16, fontWeight: 700 }}>Discreet v0.4.0-alpha</span></div>
+            <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.6, marginBottom: 12 }}>Zero-knowledge encrypted messaging. The server cannot read your messages. Ever.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+              <div><span style={{ color: T.mt }}>Encryption:</span> <span style={{ color: T.ac }}>AES-256-GCM</span></div>
+              <div><span style={{ color: T.mt }}>Protocol:</span> <span style={{ color: T.ac }}>MLS RFC 9420</span></div>
+              <div><span style={{ color: T.mt }}>License:</span> <span style={{ color: T.ac }}>AGPL-3.0</span></div>
+              <div><span style={{ color: T.mt }}>Backend:</span> <span style={{ color: T.ac }}>Rust/Axum</span></div>
+            </div>
+          </div>
+        </>)}
+
+        {errMsg && <div style={{ padding: '8px 12px', background: 'rgba(255,71,87,0.08)', borderRadius: 8, color: T.err, fontSize: 13, textAlign: 'center', marginTop: 8 }}>{errMsg}</div>}
+        {saved && <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.08)', borderRadius: 8, color: T.ac, fontSize: 13, textAlign: 'center', marginTop: 8 }}>Settings saved!</div>}
+      </>)}
+    </Modal>
+  );
+}

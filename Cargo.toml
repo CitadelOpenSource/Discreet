@@ -1,0 +1,88 @@
+[package]
+name = "citadel-server"
+version = "0.4.0-alpha"
+edition = "2021"
+rust-version = "1.77"
+authors = ["John <john@citadel.rs>"]
+description = "Discreet — end-to-end encrypted community platform — the server can't read your messages"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/CitadelOpenSource/Discreet"
+keywords = ["discreet", "e2ee", "mls", "encryption", "discord-alternative"]
+categories = ["network-programming", "cryptography"]
+
+[features]
+default = []
+# Enable when client-side MLS integration is ready:
+mls = ["dep:openmls", "dep:openmls_rust_crypto"]
+# Enable when PQ key exchange endpoints are wired:
+# NOTE: ml-kem and ml-dsa only have pre-release versions on crates.io.
+# Add them back with exact pinned versions when PQ implementation begins.
+post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek", "dep:hkdf"]
+
+[dependencies]
+# ── Web framework ─────────────────────────────────────────
+axum = { version = "0.7", features = ["ws", "macros", "multipart"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "fs"] }
+hyper = { version = "1.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+
+# ── Serialization ─────────────────────────────────────────
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── Database ──────────────────────────────────────────────
+# NOTE: "migrate" feature is REQUIRED for sqlx::migrate!() macro in main.rs
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-rustls", "postgres",
+    "uuid", "chrono", "json",
+    "migrate", "ipnetwork"
+] }
+
+# ── Cache / Pubsub ────────────────────────────────────────
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# ── Auth ──────────────────────────────────────────────────
+argon2 = "0.5"
+jsonwebtoken = "9"
+
+# ── Crypto (currently used) ───────────────────────────────
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
+hex = "0.4"
+
+# ── Crypto — future: classical key exchange (behind feature flag) ──
+ed25519-dalek = { version = "2", features = ["serde", "rand_core"], optional = true }
+x25519-dalek = { version = "2", features = ["serde", "static_secrets"], optional = true }
+aes-gcm = "0.10"
+hkdf = { version = "0.12", optional = true }
+
+# ── Crypto — future: post-quantum (behind feature flag) ──
+# ml-kem and ml-dsa will be added when stable releases exist.
+# See: https://crates.io/crates/ml-kem / https://crates.io/crates/ml-dsa
+
+# ── Crypto — future: MLS (behind feature flag) ───────────
+openmls = { version = "0.5", optional = true }
+openmls_rust_crypto = { version = "0.2", optional = true }
+
+# ── Utilities ─────────────────────────────────────────────
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "1"
+dotenvy = "0.15"
+envy = "0.4"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

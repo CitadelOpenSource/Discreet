@@ -1,0 +1,37 @@
+{
+  "name": "discreet-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-native": "0.75.4",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/stack": "^6.4.1",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "react-native-screens": "^3.34.0",
+    "react-native-safe-area-context": "^4.11.0",
+    "@react-native-async-storage/async-storage": "^2.0.0",
+    "react-native-webrtc": "^124.0.4",
+    "react-native-gesture-handler": "^2.19.0",
+    "react-native-ble-plx": "^3.2.1",
+    "react-native-wifi-p2p": "^3.6.1",
+    "react-native-tcp-socket": "^6.2.0",
+    "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-firebase/app": "^20.0.0",
+    "@react-native-firebase/messaging": "^20.0.0",
+    "@notifee/react-native": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0"
+  }
+}
