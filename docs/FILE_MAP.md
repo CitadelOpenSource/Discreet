@@ -1,5 +1,5 @@
 # Discreet — File Map
-**Auto-generated: Session 34, March 8, 2026**
+**Last updated: March 8, 2026**
 
 ## Key Documents (Start Here)
 | File | Purpose |
@@ -26,7 +26,6 @@
 | `docs/USER_MANUAL.md` | ✅ Current — end-user guide |
 | `docs/API_REFERENCE.md` | ✅ Current — all 184 endpoints |
 | `SECURITY.md` | ✅ Current — security architecture |
-| `CLAUDE.md` | ✅ Current — Claude Code project context |
 | `SETUP.md` | ⚠️ Superseded by LAUNCH_NOW.md |
 | `docs/SETUP_GUIDE.md` | ⚠️ Superseded by LAUNCH_NOW.md |
 | `docs/BUILD_AND_RUN.md` | ⚠️ Superseded by LAUNCH_NOW.md |

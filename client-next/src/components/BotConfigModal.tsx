@@ -1067,7 +1067,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
 
       {tab === 'personality' && (<>
         <label style={lbl}>System Prompt (Instructions)</label>
-        <div style={{ fontSize: 10, color: T.mt, marginBottom: 6 }}>Define the bot's personality, knowledge, and behavior. Like Claude's project instructions.</div>
+        <div style={{ fontSize: 10, color: T.mt, marginBottom: 6 }}>Define the bot's personality, knowledge, and behavior.</div>
         <textarea value={cfg.system_prompt} onChange={e => set('system_prompt', e.target.value)} rows={6} placeholder="You are a helpful gaming expert who knows all about strategies, meta, patch notes..." style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', marginBottom: 12, fontFamily: 'monospace', lineHeight: 1.5, boxSizing: 'border-box' }} />
 
         <label style={lbl}>Voice Style</label>

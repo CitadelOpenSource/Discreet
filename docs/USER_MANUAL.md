@@ -262,7 +262,7 @@ Right-click any bot in the member list → "Configure Bot" to open the configura
 
 **Behavior** — Response mode: Auto (responds to all), Mention Only (@bot to trigger), Silent (slash commands only). In DMs, bots ALWAYS auto-respond. Greeting message, response prefix, persistent/temporary toggle.
 
-**Personality** — System prompt (like Claude's project instructions). Define the bot's knowledge, tone, and behavior. Voice style selector (12 options). Temperature slider: 0.0 (precise) to 1.0 (creative).
+**Personality** — System prompt defining the bot's knowledge, tone, and behavior. Voice style selector (12 options). Temperature slider: 0.0 (precise) to 1.0 (creative).
 
 **Limits** — Max response length (256-4000 tokens). Rate limit (5-60 per minute or unlimited). Blocked topics list.
 
