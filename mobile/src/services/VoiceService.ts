@@ -21,6 +21,115 @@ import {
 } from 'react-native-webrtc';
 import { WebSocketService } from './WebSocketService';
 
+// ── SFrame helpers (AES-256-GCM, matching web client) ─────────────────────────
+
+/** PBKDF2 key derivation — matches web client's deriveChannelKeyBytes exactly. */
+async function deriveChannelKeyBytes(channelId: string): Promise<Uint8Array> {
+  try {
+    // Prefer react-native-quick-crypto (Node-compatible API)
+    const QuickCrypto = require('react-native-quick-crypto');
+    return new Promise<Uint8Array>((resolve, reject) => {
+      QuickCrypto.pbkdf2(
+        `citadel:${channelId}:0`,       // password
+        'mls-group-secret',              // salt
+        100_000,                         // iterations
+        32,                              // keylen (256 bits)
+        'sha256',                        // digest
+        (err: Error | null, key: Buffer) => {
+          if (err) return reject(err);
+          resolve(new Uint8Array(key));
+        },
+      );
+    });
+  } catch {
+    // Fallback: Web Crypto API (available in Hermes with JSI crypto polyfill)
+    const enc = new TextEncoder();
+    const mat = await crypto.subtle.importKey(
+      'raw', enc.encode(`citadel:${channelId}:0`), 'PBKDF2', false, ['deriveBits'],
+    );
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt: enc.encode('mls-group-secret'), iterations: 100_000, hash: 'SHA-256' },
+      mat, 256,
+    );
+    return new Uint8Array(bits);
+  }
+}
+
+/** Import raw 256-bit key for AES-GCM. */
+async function importAesKey(rawKey: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(rawKey.buffer),
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/**
+ * Encrypt a single audio frame.
+ * Wire format: [12-byte IV | AES-GCM ciphertext + 16-byte tag]
+ * IV = 8 random bytes + 4-byte monotonic counter (big-endian).
+ */
+async function encryptAudioFrame(
+  plaintext: Uint8Array,
+  key: CryptoKey,
+  counter: number,
+): Promise<{ encrypted: Uint8Array; nextCounter: number }> {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv.subarray(0, 8));
+  const view = new DataView(iv.buffer, iv.byteOffset, iv.byteLength);
+  view.setUint32(8, counter, false);
+
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: new Uint8Array(iv.buffer) },
+    key,
+    plaintext,
+  );
+  const ctArr = new Uint8Array(ct);
+
+  const out = new Uint8Array(12 + ctArr.byteLength);
+  out.set(iv, 0);
+  out.set(ctArr, 12);
+
+  return { encrypted: out, nextCounter: counter + 1 };
+}
+
+/**
+ * Decrypt a single audio frame.
+ * Tries currentKey first, then previousKey (2-second rotation overlap).
+ */
+async function decryptAudioFrame(
+  frame: Uint8Array,
+  currentKey: CryptoKey,
+  previousKey: CryptoKey | null,
+): Promise<Uint8Array | null> {
+  if (frame.byteLength < 28) return null;           // 12 IV + 16 tag minimum
+  const iv = frame.slice(0, 12);
+  const ct = frame.slice(12);
+
+  try {
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(iv.buffer) },
+      currentKey,
+      ct,
+    );
+    return new Uint8Array(pt);
+  } catch {
+    if (!previousKey) return null;
+    try {
+      const pt = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: new Uint8Array(iv.buffer) },
+        previousKey,
+        ct,
+      );
+      return new Uint8Array(pt);
+    } catch {
+      return null;
+    }
+  }
+}
+
 export type VoiceUser = {
   user_id: string;
   username: string;
@@ -51,6 +160,14 @@ export class VoiceService {
   private listeners: VoiceEventListener[] = [];
   private voiceUsers: VoiceUser[] = [];
 
+  // ── SFrame state ──
+  sframeActive = false;
+  private sframeKey:      CryptoKey | null = null;
+  private sframePrevKey:  CryptoKey | null = null;
+  private sframeCounter   = 0;
+  private sframeRotationTimer: ReturnType<typeof setTimeout> | null = null;
+  peerKeyIds: Map<string, number> = new Map();
+
   // WS unsubscribe handles
   private wsUnsubs: Array<() => void> = [];
 
@@ -66,6 +183,9 @@ export class VoiceService {
     // Get local audio
     this.localStream = await mediaDevices.getUserMedia({ audio: true, video: false }) as MediaStream;
 
+    // Derive SFrame encryption key
+    await this.setupSFrame();
+
     // Subscribe to WS voice events
     this.subscribeWsEvents();
 
@@ -75,6 +195,7 @@ export class VoiceService {
 
   async leave(): Promise<void> {
     this.ws.send({ type: 'voice_leave', channel_id: this.channelId });
+    this.sframeCleanup();
     this.cleanup();
   }
 
@@ -214,6 +335,13 @@ export class VoiceService {
     this.ws.on('voice_sdp',   onSdp);
     this.ws.on('voice_ice',   onIce);
 
+    // SFrame key updates
+    const onSFrameKey = (evt: any) => {
+      if (evt.channel_id !== this.channelId) return;
+      this.handleSFrameKeyUpdate(evt.user_id, evt.key_id, evt.epoch);
+    };
+    this.ws.on('voice_sframe_key_update', onSFrameKey);
+
     // Store unsub handles if WebSocketService supports it; otherwise we rely on destroy()
     // (WebSocketService doesn't expose off(), so cleanup is handled by destroy() or leaving)
   }
@@ -268,6 +396,72 @@ export class VoiceService {
       });
     } catch (e) {
       console.warn('[voice] offer error:', e);
+    }
+  }
+
+  // ── SFrame encryption ────────────────────────────────────────────────────
+
+  private async setupSFrame(): Promise<void> {
+    try {
+      const rawKey = await deriveChannelKeyBytes(this.channelId);
+      this.sframeKey = await importAesKey(rawKey);
+      this.sframeCounter = 0;
+      this.sframeActive = true;
+      console.log('[voice] SFrame encryption active');
+    } catch (e) {
+      console.warn('[voice] SFrame setup failed, continuing without E2EE:', e);
+      this.sframeActive = false;
+    }
+  }
+
+  /** Rotate to a new key (2-second overlap for in-flight frames). */
+  async rotateKey(newRawKey: Uint8Array): Promise<void> {
+    if (this.sframeRotationTimer) clearTimeout(this.sframeRotationTimer);
+    this.sframePrevKey = this.sframeKey;
+    this.sframeKey = await importAesKey(newRawKey);
+    this.sframeCounter = 0;
+
+    this.sframeRotationTimer = setTimeout(() => {
+      this.sframePrevKey = null;
+      this.sframeRotationTimer = null;
+    }, 2_000);
+  }
+
+  /** Encrypt a frame before sending. */
+  async encrypt(plaintext: Uint8Array): Promise<Uint8Array> {
+    if (!this.sframeKey) return plaintext;
+    const { encrypted, nextCounter } = await encryptAudioFrame(
+      plaintext, this.sframeKey, this.sframeCounter,
+    );
+    this.sframeCounter = nextCounter;
+    return encrypted;
+  }
+
+  /** Decrypt a received frame. */
+  async decrypt(frame: Uint8Array): Promise<Uint8Array | null> {
+    if (!this.sframeKey) return frame;
+    return decryptAudioFrame(frame, this.sframeKey, this.sframePrevKey);
+  }
+
+  /** Handle server key_id broadcasts. */
+  handleSFrameKeyUpdate(userId: string, keyId: number, epoch: number): void {
+    if (epoch === 0xFFFFFFFF || epoch === Number.MAX_SAFE_INTEGER) {
+      // User removed
+      this.peerKeyIds.delete(userId);
+    } else {
+      this.peerKeyIds.set(userId, keyId);
+    }
+  }
+
+  private sframeCleanup(): void {
+    this.sframeActive = false;
+    this.sframeKey = null;
+    this.sframePrevKey = null;
+    this.sframeCounter = 0;
+    this.peerKeyIds.clear();
+    if (this.sframeRotationTimer) {
+      clearTimeout(this.sframeRotationTimer);
+      this.sframeRotationTimer = null;
     }
   }
 
