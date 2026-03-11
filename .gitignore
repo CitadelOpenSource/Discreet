@@ -38,7 +38,7 @@ client-next/dist/
 # WASM build output
 discreet-crypto/pkg/
 discreet-crypto/target/
-# Claude Code artifacts
+# IDE / tool artifacts
 .claude/
 
 desktop/src-tauri/target/

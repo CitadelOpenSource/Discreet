@@ -51,11 +51,6 @@ Priority areas:
 - **Accessibility** — screen reader support, keyboard navigation
 - **i18n** — internationalization framework
 
-## Using Claude Code
-
-See `CLAUDE.md` for project-specific setup. Claude Code can read the codebase
-and create typed TypeScript files directly.
-
 ## PR Checklist
 
 - [ ] `CITADEL_STATUS.md` updated
