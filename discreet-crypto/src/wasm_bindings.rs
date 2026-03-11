@@ -251,26 +251,27 @@ pub fn mls_version() -> String {
 // ── SFrame Voice Bindings ───────────────────────────────────────────────
 
 #[wasm_bindgen]
-pub fn sframe_derive_key(channel_id: &str, epoch: u64, base_secret_b64: &str) -> Result<String, JsValue> {
+pub fn derive_voice_key(base_secret_b64: &str, channel_id: &str, epoch: u64) -> Result<String, JsValue> {
     let base_secret = b64_decode(base_secret_b64)?;
-    let key = sframe_voice::derive_sframe_key(channel_id, epoch, &base_secret);
+    let key = sframe_voice::derive_voice_key_bytes(&base_secret, channel_id, epoch)
+        .map_err(|e| JsValue::from_str(&e))?;
     Ok(b64_encode(&key))
 }
 
 #[wasm_bindgen]
-pub fn sframe_encrypt(plaintext_b64: &str, key_b64: &str, key_id: u64) -> Result<String, JsValue> {
+pub fn encrypt_voice_frame(plaintext_b64: &str, key_id: u64, key_b64: &str) -> Result<String, JsValue> {
     let plaintext = b64_decode(plaintext_b64)?;
     let key = b64_decode(key_b64)?;
-    let ciphertext = sframe_voice::sframe_encrypt(&plaintext, &key, key_id)
+    let ciphertext = sframe_voice::encrypt_voice_frame_bytes(&plaintext, &key, key_id)
         .map_err(|e| JsValue::from_str(&e))?;
     Ok(b64_encode(&ciphertext))
 }
 
 #[wasm_bindgen]
-pub fn sframe_decrypt(ciphertext_b64: &str, key_b64: &str, key_id: u64) -> Result<String, JsValue> {
+pub fn decrypt_voice_frame(ciphertext_b64: &str, key_id: u64, key_b64: &str) -> Result<String, JsValue> {
     let ciphertext = b64_decode(ciphertext_b64)?;
     let key = b64_decode(key_b64)?;
-    let decrypted = sframe_voice::sframe_decrypt(&ciphertext, &key, key_id)
+    let decrypted = sframe_voice::decrypt_voice_frame_bytes(&ciphertext, &key, key_id)
         .map_err(|e| JsValue::from_str(&e))?;
     Ok(b64_encode(&decrypted))
 }
