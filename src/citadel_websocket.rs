@@ -225,6 +225,29 @@ async fn handle_ws(
                 "user_id": user_id,
                 "username": "disconnected",
             })).await;
+            // Broadcast SFrame key removal for disconnected user.
+            state.ws_broadcast(voice_server, serde_json::json!({
+                "type": "voice_sframe_key_update",
+                "channel_id": voice_channel,
+                "user_id": user_id,
+                "key_id": 0,
+                "epoch": u64::MAX,
+            })).await;
+            // Re-broadcast updated key_ids for remaining members.
+            let members: Vec<Uuid> = vs.iter()
+                .filter(|(_, (_, ch))| *ch == voice_channel)
+                .map(|(uid, _)| *uid)
+                .collect();
+            let epoch = members.len() as u64;
+            for (idx, member_id) in members.iter().enumerate() {
+                state.ws_broadcast(voice_server, serde_json::json!({
+                    "type": "voice_sframe_key_update",
+                    "channel_id": voice_channel,
+                    "user_id": member_id,
+                    "key_id": idx as u64,
+                    "epoch": epoch,
+                })).await;
+            }
         }
     }
     state.remove_presence(user_id, server_id).await;
@@ -271,6 +294,14 @@ async fn handle_client_message(
                             "user_id": user_id,
                             "username": username,
                         })).await;
+                        // Broadcast SFrame key removal for old channel.
+                        state.ws_broadcast(old_server, serde_json::json!({
+                            "type": "voice_sframe_key_update",
+                            "channel_id": old_channel,
+                            "user_id": user_id,
+                            "key_id": 0,
+                            "epoch": u64::MAX,
+                        })).await;
                         tracing::info!(user_id = %user_id, old_channel = %old_channel, "Auto-left previous voice channel");
                     }
                     // Track new voice state.
@@ -283,6 +314,26 @@ async fn handle_client_message(
                     "user_id": user_id,
                     "username": username,
                 })).await;
+
+                // Broadcast SFrame key_id assignment for the joining user.
+                // key_id = position index in the channel's member list.
+                {
+                    let vs = state.voice_state.read().await;
+                    let members: Vec<Uuid> = vs.iter()
+                        .filter(|(_, (_, ch))| *ch == channel_id)
+                        .map(|(uid, _)| *uid)
+                        .collect();
+                    let epoch = members.len() as u64;
+                    for (idx, member_id) in members.iter().enumerate() {
+                        state.ws_broadcast(server_id, serde_json::json!({
+                            "type": "voice_sframe_key_update",
+                            "channel_id": channel_id,
+                            "user_id": member_id,
+                            "key_id": idx as u64,
+                            "epoch": epoch,
+                        })).await;
+                    }
+                }
             }
         }
 
@@ -301,6 +352,34 @@ async fn handle_client_message(
                     "user_id": user_id,
                     "username": username,
                 })).await;
+
+                // Broadcast SFrame key removal for the departing user.
+                state.ws_broadcast(server_id, serde_json::json!({
+                    "type": "voice_sframe_key_update",
+                    "channel_id": channel_id,
+                    "user_id": user_id,
+                    "key_id": 0,
+                    "epoch": u64::MAX,
+                })).await;
+
+                // Re-broadcast updated key_ids for remaining members.
+                {
+                    let vs = state.voice_state.read().await;
+                    let members: Vec<Uuid> = vs.iter()
+                        .filter(|(_, (_, ch))| *ch == channel_id)
+                        .map(|(uid, _)| *uid)
+                        .collect();
+                    let epoch = members.len() as u64;
+                    for (idx, member_id) in members.iter().enumerate() {
+                        state.ws_broadcast(server_id, serde_json::json!({
+                            "type": "voice_sframe_key_update",
+                            "channel_id": channel_id,
+                            "user_id": member_id,
+                            "key_id": idx as u64,
+                            "epoch": epoch,
+                        })).await;
+                    }
+                }
             }
         }
 

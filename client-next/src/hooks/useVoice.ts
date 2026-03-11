@@ -15,7 +15,8 @@ export type VoiceEventType =
   | 'mute_changed' | 'deafen_changed' | 'speaking_changed' | 'level'
   | 'video_started' | 'video_stopped'
   | 'screen_started' | 'screen_stopped'
-  | 'peer_stream' | 'peer_video' | 'peer_left' | 'ice_candidate';
+  | 'peer_stream' | 'peer_video' | 'peer_left' | 'ice_candidate'
+  | 'sframe_key_update';
 
 export interface VoiceEvent {
   type: VoiceEventType;
@@ -41,6 +42,7 @@ export interface VoiceState {
   sframeActive: boolean;
   audioLevel: number;
   streams: Map<string, MediaStream>;
+  peerKeyIds: Map<string, number>;
 }
 
 // ─── VoiceEngine class ────────────────────────────────────
@@ -69,6 +71,7 @@ export class VoiceEngine {
   echoCancellation: boolean;
   autoGainControl: boolean;
   sframeActive: boolean;
+  peerKeyIds: Map<string, number>;
   pttKey: string;
   pttDown: boolean;
   private listeners: Set<(e: VoiceEvent) => void>;
@@ -100,6 +103,7 @@ export class VoiceEngine {
     this.echoCancellation = localStorage.getItem('d_echoCan') !== 'false';
     this.autoGainControl = localStorage.getItem('d_agc') !== 'false';
     this.sframeActive = false;
+    this.peerKeyIds = new Map();
     this.pttKey = localStorage.getItem('d_pttkey') || '`';
     this.pttDown = false;
     this.listeners = new Set();
@@ -177,6 +181,7 @@ export class VoiceEngine {
   leave(): void {
     sframeService.cleanup();
     this.sframeActive = false;
+    this.peerKeyIds.clear();
     this.peers.forEach(pc => pc.close());
     this.peers.clear();
     this.streams.clear();
@@ -376,6 +381,16 @@ export class VoiceEngine {
       });
   }
 
+  handleSFrameKeyUpdate(userId: string, keyId: number, epoch: number): void {
+    const MAX_U64 = 0xFFFFFFFFFFFFFFFF;
+    if (epoch === MAX_U64 || epoch === -1) {
+      this.peerKeyIds.delete(userId);
+    } else {
+      this.peerKeyIds.set(userId, keyId);
+    }
+    this.emit('sframe_key_update', {});
+  }
+
   _removePeer(pid: string): void {
     const pc = this.peers.get(pid);
     if (pc) pc.close();
@@ -404,6 +419,7 @@ export function useVoice() {
     sframeActive: false,
     audioLevel: 0,
     streams: new Map(),
+    peerKeyIds: new Map(),
   });
 
   // Keep a ref to force Map identity change on peer updates
@@ -416,7 +432,7 @@ export function useVoice() {
           setState(s => ({ ...s, channelId: e.channelId ?? voice.channelId }));
           break;
         case 'left':
-          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, streams: new Map() }));
+          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, streams: new Map(), peerKeyIds: new Map() }));
           break;
         case 'mute_changed':
           setState(s => ({ ...s, muted: e.muted ?? voice.muted }));
@@ -446,6 +462,9 @@ export function useVoice() {
         case 'peer_left':
           // Return new Map so consumers re-render
           setState(s => ({ ...s, streams: new Map(voice.streams) }));
+          break;
+        case 'sframe_key_update':
+          setState(s => ({ ...s, peerKeyIds: new Map(voice.peerKeyIds) }));
           break;
       }
     });

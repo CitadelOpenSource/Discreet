@@ -570,6 +570,10 @@ export default function App() {
       if (evt.type === 'voice_offer' && evt.from) vc.handleOffer(evt.from, evt.offer);
       if (evt.type === 'voice_answer' && evt.from) vc.handleAnswer(evt.from, evt.answer);
       if (evt.type === 'voice_ice' && evt.from) vc.handleIceCandidate(evt.from, evt.candidate);
+      // SFrame key updates from server
+      if (evt.type === 'voice_sframe_key_update' && evt.user_id && evt.channel_id) {
+        vc.engine.handleSFrameKeyUpdate(evt.user_id, evt.key_id ?? 0, evt.epoch ?? 0);
+      }
       // DM unread tracking: dm_message event (dm_id) or message_create whose channel_id matches a DM
       if (evt.author_id !== api.userId) {
         const dmId = evt.dm_id || (dmsRef.current.find((dm: DM) => dm.id === evt.channel_id)?.id);
