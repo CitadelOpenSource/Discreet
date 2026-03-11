@@ -126,8 +126,8 @@ async function legacyDecrypt(channelId: string, b64: string): Promise<string> {
 }
 
 async function deriveChannelKey(channelId: string): Promise<CryptoKey> {
-  const password = `discreet-channel-${channelId}`;
-  const salt = new TextEncoder().encode('discreet-salt-v1');
+  const password = `citadel:${channelId}:0`;
+  const salt = new TextEncoder().encode('mls-group-secret');
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
@@ -138,7 +138,7 @@ async function deriveChannelKey(channelId: string): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
     keyMaterial,
-    { name: 'AES-GCM', length: 128 },
+    { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt'],
   );
