@@ -264,7 +264,7 @@ pub async fn spawn_bot_channel(
         let bid = Uuid::new_v4();
         sqlx::query!(
             "INSERT INTO users (id, username, display_name, password_hash, is_bot, account_tier)
-             VALUES ($1, $2, $3, $4, TRUE, 'registered')",
+             VALUES ($1, $2, $3, $4, TRUE, 'unverified')",
             bid, bot_username, persona.name,
             "$argon2id$v=19$m=19456,t=2,p=1$BOT_NO_LOGIN$0000000000000000000000",
         )
@@ -458,7 +458,7 @@ pub async fn add_bot_to_server(
             let bid = Uuid::new_v4();
             sqlx::query!(
                 "INSERT INTO users (id, username, display_name, password_hash, is_bot, account_tier)
-                 VALUES ($1, $2, $3, $4, TRUE, 'registered')",
+                 VALUES ($1, $2, $3, $4, TRUE, 'unverified')",
                 bid, bot_username, req.display_name.as_deref().unwrap_or(&persona.name),
                 "$argon2id$v=19$m=19456,t=2,p=1$BOT_NO_LOGIN$0000000000000000000000",
             ).execute(&state.db).await?;

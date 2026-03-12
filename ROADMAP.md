@@ -1,92 +1,98 @@
-# Discreet — Roadmap
+# Roadmap
 
-*Last updated: March 7, 2026*
+Last updated: March 12, 2026
 
-## ✅ Phase 1 — Core Features (DONE)
-- 44 Rust backend modules, 14,191 lines, 184 API routes
-- 29 React components, 18,115 lines
-- E2EE (MLS RFC 9420 + PBKDF2-AES-GCM fallback)
-- Voice/Video WebRTC + screen share
-- AI Agent framework (8+ presets, 26-field config, LLM engine tab)
-- Gamification, events, polls, watch parties, meetings
-- Forum channels, threaded discussions
-- Custom emoji, GIF picker, URL previews
-- 80+ user settings across 12 tabs
-- Server settings: channels, members, roles, bots, categories
+## Done
 
-## ✅ Phase 2 — Security Hardening (DONE)
-- 17/18 OWASP items (pen testing remaining)
-- CSP, HSTS, CSRF, 2FA TOTP, account lockout
-- File upload validation, session revocation, invite expiry
-- Email verification flow (Resend-ready)
-- GDPR data export
-- Admin dashboard + server health monitor
+**Core platform:**
+- 44 Rust backend modules, 184+ API routes, 33+ database migrations
+- 29+ React components, 18,500+ lines of TypeScript
+- E2EE messaging (MLS RFC 9420 + PBKDF2-AES-256-GCM fallback)
+- Voice and video (WebRTC + SFrame E2EE, RFC 9605)
+- Servers, channels, categories, roles, invites, bans
+- Direct messages and group DMs
+- File sharing (encrypted blob upload/download)
+- Polls, reactions, pinned messages, typing indicators
+- Calendar, events, RSVP
+- Encrypted document editor
+- Guest meeting join (browser-only, no signup)
 
-## ✅ Phase 3 — Feature Wiring (DONE)
-- [x] Calendar suite (monthly grid, events, RSVP, meeting integration)
-- [x] Encrypted document editor (rich text, auto-save, sharing)
-- [x] Guest meeting join (browser-only, /meet/:code, no signup)
-- [x] Tier system (Guest → Verified → Pro, feature gating)
-- [x] LLM bot engine (OpenAI/Anthropic/Ollama/Custom)
-- [x] Unread bold channels + count badges
-- [x] Auto-join default channel on server select
-- [x] Typing indicators (debounced, WS broadcast)
-- [x] Pinned messages panel (📌 button, side panel)
-- [x] Friend request from right-click context menu
-- [x] Poll voting with progress bars
-- [x] Reaction wiring (add/remove/toggle)
-- [x] Group DMs (create, list, send, load)
-- [x] Duplicate #general fix (DB unique index)
-- [x] Default channel configuration (server owner setting)
+**AI agents (patent-pending):**
+- 14 specialist agent personas
+- Multi-provider LLM integration (Anthropic, OpenAI, Ollama, MCP, Custom)
+- Server-side encrypted API key storage (AES-256-GCM)
+- Encrypted episodic memory (agents learn and remember, zero-knowledge)
+- Auto-response on @mention and keyword triggers
+- Mandatory disclosure banners
 
-## ✅ Phase 4 — Native Apps (DONE)
-- [x] Tauri desktop: compiling, running, system tray, close-to-tray
-- [x] React Native mobile: 12 files, 5,098 lines, auth + chat + DM + settings + voice
-- [ ] Tauri production build (.msi)
-- [ ] React Native production build (APK)
+**Security:**
+- Argon2id password hashing with 2FA TOTP
+- JWT + HttpOnly refresh cookies, session revocation
+- OWASP security headers (CSP, HSTS, X-Frame-Options)
+- CSRF double-submit cookie protection
+- Rate limiting (registration, login, API)
+- Platform-level permission tiers (Admin, Dev, Premium, Verified, Unverified, Guest)
+- Server-level RBAC (22 permission bitflags)
+- Developer API tokens (SHA-256 hashed, revocable)
+- Account deletion (GDPR cascade)
 
-## ⬜ Phase 5 — Public Launch
-- [ ] File provisional patent ($75) — 18 claims, covers everything
-- [ ] Oracle Cloud deployment (free tier)
-- [ ] Resend SMTP (email verification)
-- [ ] Custom domain + SSL (discreet.chat)
-- [ ] Clean GitHub repo (new repo, one push, no internal docs)
-- [ ] Reddit / HN / Product Hunt launch
-- [ ] Landing page
+**Clients:**
+- Vite + React web client (served at root)
+- Tauri desktop (Windows, configured for macOS/Linux)
+- React Native mobile (Android, 12 files, 5,000+ lines)
+- Internationalization framework (12 languages, RTL support)
 
-## 🔨 Phase 6 — Proximity Mesh Communication (IN PROGRESS — THE GAME CHANGER)
-- [ ] BLE proximity discovery (find nearby Discreet users)
-- [ ] Encrypted BLE text messaging (no internet needed)
-- [ ] Wi-Fi Direct voice channels ("cold spot" — phone as server)
-- [ ] Raspberry Pi relay nodes ($50 solar-powered mesh extenders)
-- [ ] Hybrid online/offline auto-fallback
-- [ ] Offline message queue + sync on reconnect
-- [ ] Desktop BLE via Web Bluetooth API
-- [ ] Stealth mode (listen only, don't broadcast)
+**SFrame voice E2EE (S1-S7 complete):**
+- Rust SFrame crate with WASM bindings
+- Browser insertable streams + Web Worker
+- Key rotation with 2-second overlap window
+- Mobile pre-encryption via react-native-quick-crypto
 
-## ⬜ Phase 7 — Post-Launch Features
-- [ ] Breakout rooms in voice
-- [ ] Meeting notes (auto-generated)
-- [ ] Live captions (Web Speech API)
-- [ ] Background blur / virtual backgrounds
-- [ ] Noise cancellation (Web Audio API)
-- [ ] Encrypted spreadsheet editor
-- [ ] Course builder (modules, quizzes)
-- [ ] Stripe payments integration
-- [ ] Onboarding automations
-- [ ] Hand raise in voice
-- [ ] Privacy Health Score dashboard
+## In progress
 
-## ⬜ Phase 8 — Revenue
-- [ ] Citadel Pro ($5/mo cosmetics, unlimited servers)
-- [ ] Citadel Teams ($12/user/mo SSO, compliance)
-- [ ] Citadel Enterprise (custom pricing, SLA)
-- [ ] Managed hosting service
-- [ ] Plugin marketplace
-- [ ] Proximity mesh licensing (emergency services, military, humanitarian)
+**Deployment:**
+- Oracle Cloud VM provisioned (ARM A1, 6GB RAM, Ubuntu 22.04)
+- Caddy reverse proxy for automatic HTTPS
+- Cloudflare DNS (discreetai.net)
+- Resend SMTP for email verification
 
-## Stats
-- **40,270 code lines** across 104+ source files
-- **325 commits** in 12 days
-- **18 patent claims** drafted (AI agents, encrypted streaming, proximity mesh)
-- **$0 spent**
+**Pre-launch polish:**
+- Admin dashboard with telemetry and user management
+- Platform-level account banning (IP + account)
+- Branding cleanup (internal Citadel references → Discreet)
+- Documentation consolidation
+
+## Next (post-launch)
+
+**Proximity mesh communication (the game changer):**
+- P1: BLE service discovery (react-native-ble-plx)
+- P2: Pseudonymous ID + X25519 key exchange
+- P3: Encrypted BLE messaging with 512-byte chunking
+- P4: Radar screen UI (RSSI-based distance rings)
+- P5: Proximity chat UI
+- P6: Multi-hop relay (onion-routing-lite, max 3 hops)
+- P7: Wi-Fi Direct voice (WebRTC + SFrame, no internet)
+- P8: Online sync bridge (re-encrypt under MLS before upload)
+
+**Platform growth:**
+- Stripe integration for Pro tier
+- GitHub Sponsors and community funding
+- Plugin/extension SDK for community developers
+- Channel owner analytics
+- iOS App Store submission
+- Google Play Store submission
+
+**Protocol advancement:**
+- Full MLS key exchange replacing PBKDF2 fallback
+- Post-quantum key exchange (ML-KEM + ML-DSA)
+- Federation between self-hosted instances
+- Encrypted database backups
+- Centralized log aggregation and alerting
+
+## Non-goals
+
+Things we're intentionally not building:
+- Game streaming (not a gaming platform)
+- Social media features (no stories, no feeds)
+- Advertising infrastructure (never)
+- Backdoors or lawful intercept capabilities (never)

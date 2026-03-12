@@ -1,0 +1,588 @@
+// citadel_platform_admin_handlers.rs — Platform identity and admin stat endpoints.
+//
+// Endpoints:
+//   GET  /api/v1/platform/me                  — Current user's platform profile + permissions.
+//   GET  /api/v1/admin/stats                  — Aggregate platform stats (ACCESS_ADMIN_DASHBOARD).
+//   GET  /api/v1/admin/users                  — Paginated user list (ACCESS_ADMIN_DASHBOARD).
+//   GET  /api/v1/admin/registrations          — Daily registration counts, last 30 days
+//                                               (VIEW_PLATFORM_STATS).
+//   POST /api/v1/admin/users/:id/role         — Set a user's account_tier and/or platform_role
+//                                               (ACCESS_ADMIN_DASHBOARD + MANAGE_USERS).
+//   POST /api/v1/admin/generate-dev-accounts  — Bulk-create dev_NNN test accounts with
+//                                               random passwords shown once (MANAGE_USERS).
+//
+// Guards:
+//   require_staff_role           — In-memory check: platform_role must be admin or dev.
+//   require_platform_permission  — DB check: role must have the named permission.
+//
+// All handlers use PlatformUser (not AuthUser) so account_tier, platform_role,
+// badge_type, and email_verified are already loaded before the handler runs.
+
+use std::sync::Arc;
+
+use axum::{
+    extract::{Path, Query, State},
+    response::IntoResponse,
+    Json,
+};
+use rand::Rng;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::citadel_error::AppError;
+use crate::citadel_platform_permissions::{check_platform_permission, PlatformRole, PlatformUser};
+use crate::citadel_state::AppState;
+
+// ─── Serde helper — double Option ────────────────────────────────────────────
+//
+// Distinguishes three states for nullable request fields:
+//   Field absent           → outer None  (don't touch the column)
+//   Field present as null  → Some(None)  (clear the column to NULL)
+//   Field present as value → Some(Some(v))
+//
+// Used for `platform_role` which is nullable in the DB.
+// Apply with: #[serde(default, deserialize_with = "deserialize_double_option")]
+fn deserialize_double_option<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(d)?))
+}
+
+// ─── Role guard ───────────────────────────────────────────────────────────────
+
+/// Returns `Ok(())` if the caller holds the `admin` or `dev` platform_role,
+/// or `Err(AppError::Forbidden)` if not.
+///
+/// This check is in-memory (no DB query) because `PlatformUser` loads
+/// `platform_role` during extraction. It is the primary gate for all
+/// `/admin/*` and `/dev/*` routes.
+pub fn require_staff_role(caller: &PlatformUser) -> Result<(), AppError> {
+    match caller.platform_role {
+        Some(PlatformRole::Admin) | Some(PlatformRole::Dev) => Ok(()),
+        _ => Err(AppError::Forbidden(
+            "Requires admin or dev platform role".into(),
+        )),
+    }
+}
+
+// ─── Permission guard ─────────────────────────────────────────────────────────
+
+/// Returns `Ok(())` if the user's `platform_role` grants `permission_name`,
+/// or `Err(AppError::Forbidden)` if not.
+///
+/// Delegates to `check_platform_permission`; DB errors also produce Forbidden
+/// so that internal failures do not silently grant access.
+pub async fn require_platform_permission(
+    pool: &PgPool,
+    user_id: Uuid,
+    permission_name: &str,
+) -> Result<(), AppError> {
+    if check_platform_permission(pool, user_id, permission_name).await {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(format!(
+            "Requires the {permission_name} platform permission"
+        )))
+    }
+}
+
+// ─── GET /platform/me ────────────────────────────────────────────────────────
+
+/// Returns the calling user's full platform identity:
+///   - account_tier   (e.g. "unverified", "verified", "premium")
+///   - platform_role  (e.g. "admin", "dev", or null for ordinary users)
+///   - badge_type     (e.g. "shield", "gem", "wrench", "crown", or null)
+///   - email_verified (bool)
+///   - permissions    (array of permission name strings granted by their platform_role)
+///
+/// `permissions` is empty for users with no platform_role (the common case).
+pub async fn platform_me(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Fetch the permission names for the caller's platform_role.
+    // Short-circuit to an empty list when platform_role is NULL.
+    let permissions: Vec<String> = match &caller.platform_role {
+        None => vec![],
+        Some(role) => {
+            sqlx::query_scalar!(
+                r#"SELECT pp.name
+                   FROM platform_role_permissions prp
+                   JOIN platform_permissions pp ON pp.id = prp.permission_id
+                   WHERE prp.role_name = $1
+                   ORDER BY pp.bit_flag"#,
+                role.to_string(),
+            )
+            .fetch_all(&state.db)
+            .await?
+        }
+    };
+
+    Ok(Json(json!({
+        "account_tier":   caller.account_tier.to_string(),
+        "platform_role":  caller.platform_role.map(|r| r.to_string()),
+        "badge_type":     caller.badge_type,
+        "email_verified": caller.email_verified,
+        "permissions":    permissions,
+    })))
+}
+
+// ─── GET /admin/stats ─────────────────────────────────────────────────────────
+
+/// Returns aggregate platform statistics. Requires ACCESS_ADMIN_DASHBOARD.
+///
+/// All nine counts are fetched concurrently with `tokio::try_join!` to keep
+/// response latency near the slowest single query rather than their sum.
+///
+/// Fields:
+///   total_users         — non-bot users in the users table
+///   verified_users      — non-bot users with account_tier = 'verified'
+///   guest_users         — users with account_tier = 'guest'
+///   total_servers       — server rows
+///   total_messages      — non-deleted message rows
+///   total_channels      — channel rows
+///   active_users_24h    — non-bot users whose last_active_at is within 24 h
+///   registrations_today — non-bot users created since midnight UTC
+///   total_bot_configs   — rows in server_bots (AI bot integrations per server)
+pub async fn admin_stats(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    let (
+        total_users,
+        verified_users,
+        guest_users,
+        total_servers,
+        total_messages,
+        total_channels,
+        active_users_24h,
+        registrations_today,
+        total_bot_configs,
+    ) = tokio::try_join!(
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE is_bot = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE account_tier = 'verified' AND is_bot = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE account_tier = 'guest'"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM servers"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE deleted = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM channels"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users
+             WHERE is_bot = FALSE
+               AND last_active_at > NOW() - INTERVAL '24 hours'"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users
+             WHERE is_bot = FALSE
+               AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM server_bots"
+        )
+        .fetch_one(&state.db),
+    )?;
+
+    Ok(Json(json!({
+        "total_users":         total_users.unwrap_or(0),
+        "verified_users":      verified_users.unwrap_or(0),
+        "guest_users":         guest_users.unwrap_or(0),
+        "total_servers":       total_servers.unwrap_or(0),
+        "total_messages":      total_messages.unwrap_or(0),
+        "total_channels":      total_channels.unwrap_or(0),
+        "active_users_24h":    active_users_24h.unwrap_or(0),
+        "registrations_today": registrations_today.unwrap_or(0),
+        "total_bot_configs":   total_bot_configs.unwrap_or(0),
+    })))
+}
+
+// ─── POST /admin/users/:user_id/role ─────────────────────────────────────────
+
+const VALID_ROLES: &[&str] = &["admin", "dev", "premium", "verified", "unverified", "guest"];
+
+#[derive(Debug, Deserialize)]
+pub struct SetUserRoleRequest {
+    /// New platform_role value. Absent = don't change. null = clear to NULL.
+    /// Must be one of the VALID_ROLES strings if provided.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub platform_role: Option<Option<String>>,
+
+    /// New account_tier value. Absent = don't change.
+    /// Must be one of the VALID_ROLES strings if provided (account_tier is NOT NULL).
+    pub account_tier: Option<String>,
+}
+
+/// Maps a platform_role string to its automatic badge_type.
+/// Returns None for roles that carry no badge (unverified, guest, NULL).
+fn badge_for_role(role: Option<&str>) -> Option<&'static str> {
+    match role {
+        Some("admin")    => Some("crown"),
+        Some("dev")      => Some("wrench"),
+        Some("premium")  => Some("gem"),
+        Some("verified") => Some("shield"),
+        _                => None,
+    }
+}
+
+/// Promote or demote a user's platform role and/or account tier.
+///
+/// Requires both ACCESS_ADMIN_DASHBOARD and MANAGE_USERS platform permissions.
+///
+/// Request body fields are all optional — omit a field to leave it unchanged:
+///   platform_role  — nullable; send null to clear the staff designation
+///   account_tier   — non-nullable; must be a valid tier string if present
+///
+/// badge_type is derived automatically from the new platform_role and is
+/// never accepted as an input field.
+///
+/// Returns the updated user row: id, username, account_tier, platform_role,
+/// badge_type, email_verified.
+pub async fn set_user_role(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<SetUserRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    // Both permissions are required.
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Validate account_tier if provided.
+    if let Some(ref tier) = req.account_tier {
+        if !VALID_ROLES.contains(&tier.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid account_tier '{tier}'. Must be one of: {}",
+                VALID_ROLES.join(", ")
+            )));
+        }
+    }
+
+    // Validate platform_role string if provided as a non-null value.
+    if let Some(Some(ref role)) = req.platform_role {
+        if !VALID_ROLES.contains(&role.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid platform_role '{role}'. Must be one of: {} or null",
+                VALID_ROLES.join(", ")
+            )));
+        }
+    }
+
+    // Confirm the target user exists.
+    let exists = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND is_bot = FALSE)",
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !exists {
+        return Err(AppError::NotFound("User not found".into()));
+    }
+
+    // Apply platform_role + badge_type update if the field was present in the request.
+    if let Some(new_role) = req.platform_role {
+        let role_str = new_role.as_deref();           // Option<&str>: None = NULL, Some(s) = value
+        let badge    = badge_for_role(role_str);       // Option<&str>: derived automatically
+
+        sqlx::query!(
+            "UPDATE users SET platform_role = $1, badge_type = $2 WHERE id = $3",
+            role_str,
+            badge,
+            target_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Apply account_tier update if the field was present in the request.
+    if let Some(ref new_tier) = req.account_tier {
+        sqlx::query!(
+            "UPDATE users SET account_tier = $1 WHERE id = $2",
+            new_tier,
+            target_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Fetch and return the updated profile.
+    let row = sqlx::query!(
+        r#"SELECT id, username, account_tier, platform_role, badge_type, email_verified
+           FROM users
+           WHERE id = $1"#,
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    tracing::info!(
+        admin_id  = %caller.user_id,
+        target_id = %target_id,
+        account_tier  = ?req.account_tier,
+        "Admin updated user role",
+    );
+
+    Ok(Json(json!({
+        "id":             row.id,
+        "username":       row.username,
+        "account_tier":   row.account_tier,
+        "platform_role":  row.platform_role,
+        "badge_type":     row.badge_type,
+        "email_verified": row.email_verified,
+    })))
+}
+
+// ─── POST /admin/generate-dev-accounts ───────────────────────────────────────
+
+fn default_count() -> u32 { 10 }
+
+#[derive(Debug, Deserialize)]
+pub struct GenerateDevAccountsRequest {
+    /// Number of accounts to create. Clamped to 1–100. Defaults to 10.
+    #[serde(default = "default_count")]
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DevAccountCreated {
+    pub username: String,
+    /// Plaintext password — shown once and never stored. Save immediately.
+    pub password: String,
+}
+
+/// Bulk-create `dev_NNN` test accounts. Requires MANAGE_USERS permission.
+///
+/// Usernames are `dev_NNNN` (4-digit zero-padded), sequenced from the
+/// current highest existing `dev_NNNN` account so repeated calls never collide.
+///
+/// Passwords are 16 random alphanumeric characters (≈95 bits of entropy).
+/// They are hashed with Argon2id before storage. The plaintext is returned
+/// **once** in this response and is not recoverable afterwards.
+///
+/// Each account is created with:
+///   account_tier = 'unverified'
+///   platform_role = 'dev'
+///   badge_type    = 'wrench'
+pub async fn generate_dev_accounts(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GenerateDevAccountsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    if req.count == 0 || req.count > 100 {
+        return Err(AppError::BadRequest(
+            "count must be between 1 and 100".into(),
+        ));
+    }
+
+    // Find the highest existing dev_NNNN suffix so new names don't collide.
+    // SUBSTRING(username FROM 5) strips the leading "dev_".
+    let max_existing: i32 = sqlx::query_scalar!(
+        r#"SELECT COALESCE(
+               MAX(CAST(SUBSTRING(username FROM 5) AS INTEGER)),
+               0
+           )
+           FROM users
+           WHERE username ~ '^dev_[0-9]+$'"#
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(0);
+
+    let mut created: Vec<DevAccountCreated> = Vec::with_capacity(req.count as usize);
+
+    for i in 0..req.count {
+        let num = max_existing + i as i32 + 1;
+        let username = format!("dev_{num:04}");
+
+        // 16-char alphanumeric password — sufficient entropy, human-typeable.
+        let password: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect();
+
+        let password_hash = crate::citadel_auth_handlers::hash_password(&password)?;
+        let id = Uuid::new_v4();
+
+        sqlx::query!(
+            r#"INSERT INTO users
+                   (id, username, display_name, password_hash, account_tier, platform_role, badge_type)
+               VALUES ($1, $2, $3, $4, 'unverified', 'dev', 'wrench')"#,
+            id,
+            username,
+            username,   // display_name defaults to username for dev accounts
+            password_hash,
+        )
+        .execute(&state.db)
+        .await?;
+
+        created.push(DevAccountCreated { username, password });
+    }
+
+    tracing::info!(
+        admin_id = %caller.user_id,
+        count    = req.count,
+        first    = %created.first().map(|a| a.username.as_str()).unwrap_or(""),
+        last     = %created.last().map(|a| a.username.as_str()).unwrap_or(""),
+        "Dev accounts generated — passwords shown once",
+    );
+
+    Ok((axum::http::StatusCode::CREATED, Json(created)))
+}
+
+// ─── GET /admin/users ─────────────────────────────────────────────────────────
+
+fn default_page() -> i64 { 1 }
+fn default_per_page() -> i64 { 50 }
+
+#[derive(Debug, Deserialize)]
+pub struct UserListQuery {
+    #[serde(default = "default_page")]
+    pub page: i64,
+    #[serde(default = "default_per_page")]
+    pub per_page: i64,
+}
+
+/// Paginated list of all users. Requires ACCESS_ADMIN_DASHBOARD.
+///
+/// Query params:
+///   page      — 1-based page number (default: 1)
+///   per_page  — rows per page, clamped to 1–200 (default: 50)
+///
+/// Response:
+///   { users: [...], total: N, page: N, per_page: N, total_pages: N }
+pub async fn list_users(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<UserListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    let per_page = q.per_page.clamp(1, 200);
+    let page     = q.page.max(1);
+    let offset   = (page - 1) * per_page;
+
+    let total: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(0);
+
+    let rows = sqlx::query!(
+        r#"SELECT id,
+                  username,
+                  display_name,
+                  account_tier,
+                  platform_role,
+                  badge_type,
+                  email_verified,
+                  is_bot,
+                  created_at
+           FROM users
+           ORDER BY created_at DESC
+           LIMIT $1 OFFSET $2"#,
+        per_page,
+        offset,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let users: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| json!({
+            "id":             r.id,
+            "username":       r.username,
+            "display_name":   r.display_name,
+            "account_tier":   r.account_tier,
+            "platform_role":  r.platform_role,
+            "badge_type":     r.badge_type,
+            "email_verified": r.email_verified,
+            "is_bot":         r.is_bot,
+            "created_at":     r.created_at.to_rfc3339(),
+        }))
+        .collect();
+
+    let total_pages = (total + per_page - 1) / per_page;
+
+    Ok(Json(json!({
+        "users":       users,
+        "total":       total,
+        "page":        page,
+        "per_page":    per_page,
+        "total_pages": total_pages,
+    })))
+}
+
+// ─── GET /admin/registrations ─────────────────────────────────────────────────
+
+/// Daily registration counts for the last 30 days. Requires VIEW_PLATFORM_STATS.
+///
+/// Returns an array of `{ date: "YYYY-MM-DD", count: N }` objects ordered
+/// oldest-first, covering every calendar day in the window (days with no
+/// registrations are omitted — the client should fill gaps with 0).
+pub async fn registration_trend(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "VIEW_PLATFORM_STATS").await?;
+
+    let rows = sqlx::query!(
+        r#"SELECT DATE_TRUNC('day', created_at AT TIME ZONE 'UTC')::date AS "day!: chrono::NaiveDate",
+                  COUNT(*) AS "count!: i64"
+           FROM users
+           WHERE is_bot = FALSE
+             AND created_at >= NOW() - INTERVAL '30 days'
+           GROUP BY 1
+           ORDER BY 1"#
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let trend: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| json!({
+            "date":  r.day.to_string(),   // "YYYY-MM-DD"
+            "count": r.count,
+        }))
+        .collect();
+
+    Ok(Json(trend))
+}

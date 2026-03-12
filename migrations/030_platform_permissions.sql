@@ -16,6 +16,7 @@
 
 -- Step 1: Rename 'registered' to 'unverified' for clarity
 UPDATE users SET account_tier = 'unverified' WHERE account_tier = 'registered';
+ALTER TABLE users ALTER COLUMN account_tier SET DEFAULT 'unverified';
 
 -- Step 2: Add platform_role column for the internal staff layer
 -- This is SEPARATE from account_tier. A verified user who is also

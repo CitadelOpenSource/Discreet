@@ -9,9 +9,12 @@ import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { setLanguage } from '../i18n/i18n';
 import { voice } from '../hooks/useVoice';
+import { TIER_META } from '../utils/tiers';
+import type { Tier } from '../utils/tiers';
 import { Av } from './Av';
 import { Modal } from './Modal';
 import { AvatarCreator } from './AvatarCreator';
+import { AdminDashboard } from './AdminDashboard';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -40,6 +43,12 @@ export interface SettingsModalProps {
   setUserMap?: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
   curServer?: { id: string } | null;
   onLogout?: () => void;
+  /** Full response from GET /api/v1/platform/me — null until loaded. */
+  platformUser?: { account_tier?: string; platform_role?: string | null; badge_type?: string | null; permissions?: string[] } | null;
+  /** Current dev-tier impersonation (null = real tier). */
+  devTierOverride?: Tier | null;
+  /** Called when the dev tier dropdown changes. Pass null to clear the override. */
+  onSetDevTierOverride?: (t: Tier | null) => void;
 }
 
 // ─── Module-level constants ───────────────────────────────
@@ -328,7 +337,7 @@ function NRow({ label, sub, on, onToggle, disabled }: { label: string; sub: stri
 
 // ─── Main Component ───────────────────────────────────────
 
-export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout }: SettingsModalProps) {
+export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout, platformUser, devTierOverride, onSetDevTierOverride }: SettingsModalProps) {
   const [s, setS] = useState<UserSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const [tab, setTab] = useState('appearance');
@@ -455,6 +464,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   };
 
   const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
+  const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
   const tabs = [
     { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
     { id: 'video', label: 'Video' }, { id: 'streaming', label: 'Streaming' },
@@ -462,6 +472,8 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { id: 'security', label: 'Security' }, { id: 'notifications', label: 'Notifications' },
     { id: 'accessibility', label: 'Accessibility' }, { id: 'keybinds', label: 'Keybinds' },
     { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
+    ...(isStaff ? [{ id: 'admin', label: '⚙ Admin' }] : []),
+    ...(isStaff ? [{ id: 'dev-tools', label: '🔧 Dev Tools' }] : []),
   ];
 
   return (
@@ -1407,6 +1419,89 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <div><span style={{ color: T.mt }}>License:</span> <span style={{ color: T.ac }}>AGPL-3.0</span></div>
               <div><span style={{ color: T.mt }}>Backend:</span> <span style={{ color: T.ac }}>Rust/Axum</span></div>
             </div>
+          </div>
+        </>)}
+
+        {/* ── Admin ── */}
+        {tab === 'admin' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Platform Administration</div>
+
+          {/* Role card */}
+          <div style={{ background: T.sf2, borderRadius: 10, padding: 14, marginBottom: 16, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 22 }}>{platformUser?.platform_role === 'admin' ? '👑' : '🔧'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>{platformUser?.platform_role === 'admin' ? 'Platform Admin' : 'Developer'}</div>
+              <div style={{ fontSize: 11, color: T.mt }}>platform_role: {platformUser?.platform_role} · account_tier: {platformUser?.account_tier}</div>
+            </div>
+            {/* Permission chips inline */}
+            {(platformUser?.permissions ?? []).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 280, justifyContent: 'flex-end' }}>
+                {(platformUser?.permissions ?? []).map((p: string) => (
+                  <span key={p} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: `${T.ac}18`, border: `1px solid ${T.ac}33`, color: T.ac, fontFamily: 'monospace' }}>{p}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Dashboard — stats grid + user table */}
+          <AdminDashboard platformUser={platformUser ?? null} />
+        </>)}
+
+        {/* ── Dev Tools ── */}
+        {tab === 'dev-tools' && (<>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Developer Tools</div>
+
+          {/* Current tier */}
+          <div style={{ background: T.sf2, borderRadius: 10, padding: 14, marginBottom: 16, border: `1px solid ${T.bd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Real Account Tier</div>
+            <div style={{ fontSize: 14, color: T.tx }}>
+              {(TIER_META as any)[platformUser?.account_tier ?? '']?.icon ?? '❓'}{' '}
+              <strong>{(TIER_META as any)[platformUser?.account_tier ?? '']?.label ?? platformUser?.account_tier ?? '—'}</strong>
+              {platformUser?.platform_role && (
+                <span style={{ marginLeft: 8, fontSize: 11, color: '#5865F2', fontFamily: 'monospace' }}>platform_role: {platformUser.platform_role}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Tier impersonation */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>
+              Impersonate Tier <span style={{ color: '#6b7280', fontWeight: 400, textTransform: 'none' }}>(UI only — does not change server permissions)</span>
+            </label>
+            <select style={sel} value={devTierOverride ?? ''} onChange={e => {
+              const v = e.target.value as Tier | '';
+              onSetDevTierOverride?.(v || null);
+            }}>
+              <option value="">— Use real tier ({platformUser?.account_tier ?? 'unknown'}) —</option>
+              <option value="guest">👤 Guest</option>
+              <option value="unverified">📬 Unverified</option>
+              <option value="verified">✅ Verified</option>
+              <option value="pro">⚡ Pro</option>
+              <option value="teams">🏢 Teams</option>
+              <option value="enterprise">🏛 Enterprise</option>
+            </select>
+            {devTierOverride && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(250,166,26,0.08)', border: '1px solid rgba(250,166,26,0.3)', borderRadius: 8, fontSize: 12, color: '#faa61a' }}>
+                ⚠ UI showing <strong>{devTierOverride}</strong> tier limits. Actual server permissions are unchanged.
+              </div>
+            )}
+          </div>
+
+          {/* Resources */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Resources</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[
+              { href: '/api/v1/info',           label: '🖥 API Info' },
+              { href: '/api/v1/platform/me',    label: '👤 My Platform Profile' },
+              { href: '/api/v1/admin/stats',    label: '📊 Admin Stats' },
+            ].map(({ href, label }) => (
+              <a key={href} href={href} target="_blank" rel="noopener noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 12px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 7, color: T.mt, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+                onMouseEnter={e => (e.currentTarget.style.color = T.ac)}
+                onMouseLeave={e => (e.currentTarget.style.color = T.mt)}>
+                {label}
+              </a>
+            ))}
           </div>
         </>)}
 

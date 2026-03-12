@@ -274,6 +274,7 @@ export class CitadelAPI {
   async getUser(id: string) { if (this._userCache[id]) return this._userCache[id]; try { const d = await (await this.fetch(`/users/${id}`)).json(); this._userCache[id] = d; return d; } catch { return null; } }
   async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
   async getMe() { try { return (await this.fetch('/users/@me')).json(); } catch { return null; } }
+  async getPlatformMe() { try { const r = await this.fetch('/platform/me'); return r.ok ? r.json() : null; } catch { return null; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
   async deleteAccount() { return this.fetch('/users/@me', { method: 'DELETE' }); }

@@ -99,9 +99,21 @@ pub async fn confirm_email(
     .await?
     .ok_or_else(|| AppError::BadRequest("Invalid or expired verification token".into()))?;
 
-    // Mark email as verified
+    // Mark email as verified and upgrade tier from guest/unverified → verified.
+    // Users already on a higher tier (premium, dev, admin) keep their tier.
     sqlx::query!(
-        "UPDATE users SET email = $1, email_verified = TRUE WHERE id = $2",
+        "UPDATE users
+         SET email         = $1,
+             email_verified = TRUE,
+             account_tier   = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'verified'
+                 ELSE account_tier
+             END,
+             badge_type     = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'shield'
+                 ELSE badge_type
+             END
+         WHERE id = $2",
         row.email, auth.user_id,
     )
     .execute(&state.db)
@@ -227,9 +239,20 @@ pub async fn verify_email_by_token(
     .await?
     .ok_or_else(|| AppError::BadRequest("Invalid or expired verification token".into()))?;
 
-    // Mark the account as verified.
+    // Mark the account as verified and upgrade tier from guest/unverified → verified.
+    // Users already on a higher tier (premium, dev, admin) keep their tier.
     sqlx::query!(
-        "UPDATE users SET email_verified = TRUE WHERE id = $1",
+        "UPDATE users
+         SET email_verified = TRUE,
+             account_tier   = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'verified'
+                 ELSE account_tier
+             END,
+             badge_type     = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'shield'
+                 ELSE badge_type
+             END
+         WHERE id = $1",
         row.user_id,
     )
     .execute(&state.db)
