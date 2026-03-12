@@ -140,9 +140,11 @@ All Rust files are prefixed `citadel_`. Key modules:
 - Agents (`citadel_agent_handlers.rs`, `_config.rs`, `_memory.rs`, `_provider.rs`) — LLM agents as MLS group members
 
 **AI Agent subsystem** (newest, migration 028):
+NOTE: Agent files exist in src/ but are not yet wired. Modules need registering in lib.rs, AGENT_KEY_SECRET config field needs adding, and prompt_bot still returns placeholder responses.
 - `citadel_agent_config.rs` — Agent config + AES-256-GCM encrypted API key storage
 - `citadel_agent_memory.rs` — Sliding window + summary memory modes for conversation context
 - `citadel_agent_provider.rs` — Multi-provider abstraction: Anthropic, OpenAI, local Ollama, MCP servers
+
 
 **WebSocket (`citadel_websocket.rs`):** Per-server broadcast channels for real-time events, typing indicators, voice signaling. Clients authenticate via JWT query param on `/ws?server_id=<uuid>`.
 
