@@ -65,6 +65,7 @@ use citadel_server::citadel_stream_handlers;
 use citadel_server::citadel_state::AppState;
 use citadel_server::citadel_typing;
 use citadel_server::citadel_user_handlers;
+use citadel_server::citadel_dev_token_handlers;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
 
@@ -253,7 +254,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Bots ──
         .route("/servers/:server_id/bots", axum::routing::post(citadel_server_handlers::create_bot).get(citadel_server_handlers::list_bots))
         // ── Users ──
-        .route("/users/@me", axum::routing::get(citadel_user_handlers::get_me).patch(citadel_user_handlers::update_me))
+        .route("/users/@me", axum::routing::get(citadel_user_handlers::get_me).patch(citadel_user_handlers::update_me).delete(citadel_user_handlers::delete_account))
         .route("/users/@me/servers", axum::routing::get(citadel_user_handlers::list_my_servers))
         .route("/users/@me/export", axum::routing::get(citadel_user_handlers::export_my_data))
         .route("/users/@me/settings", axum::routing::get(citadel_settings_handlers::get_my_settings).patch(citadel_settings_handlers::patch_my_settings))
@@ -295,7 +296,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Info ──
         .route("/info", axum::routing::get(citadel_health::server_info))
         // ── Waitlist ──
-        .route("/waitlist", axum::routing::post(citadel_waitlist::join_waitlist));
+        .route("/waitlist", axum::routing::post(citadel_waitlist::join_waitlist))
+        // ── Developer API Tokens ──
+        .route("/dev/tokens", axum::routing::post(citadel_dev_token_handlers::create_token)
+            .get(citadel_dev_token_handlers::list_tokens))
+        .route("/dev/tokens/:id", axum::routing::delete(citadel_dev_token_handlers::revoke_token));
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000
@@ -337,20 +342,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build the top-level router with middleware stack.
     let app = axum::Router::new()
-        // Serve the web client at root (legacy monolith — will be replaced by Vite client).
-        .route(
-            "/",
-            axum::routing::get(|| async {
-                axum::response::Html(include_str!("../client/index.html"))
-            }),
-        )
-        // Serve Vite client at /next/ (during migration — will become / when ready)
-        .nest_service(
-            "/next",
-            tower_http::services::ServeDir::new("client-next/dist")
-                .fallback(tower_http::services::ServeFile::new("client-next/dist/index.html")),
-        )
-        // Unversioned endpoints.
+        // Unversioned endpoints — registered before the catch-all SPA service.
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/manifest.json", axum::routing::get(|| async {
             (
@@ -359,8 +351,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         }))
         .route("/ws", axum::routing::get(citadel_websocket::ws_connect))
+        // Legacy client — emergency fallback only.
+        .route(
+            "/legacy/",
+            axum::routing::get(|| async {
+                axum::response::Html(include_str!("../client/index.html"))
+            }),
+        )
         // Versioned API.
         .nest("/api/v1", api_v1)
+        // Vite client — serves client-next/dist/ at / and returns index.html
+        // for any path that doesn't match an API route or static asset, enabling
+        // React Router client-side navigation.
+        .nest_service(
+            "/",
+            tower_http::services::ServeDir::new("client-next/dist")
+                .fallback(tower_http::services::ServeFile::new("client-next/dist/index.html")),
+        )
         // Shared state.
         .with_state(state.clone())
         // Middleware stack — .layer() calls are applied bottom-up in Axum,

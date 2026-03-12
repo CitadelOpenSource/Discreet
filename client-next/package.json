@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "discreet-crypto": "file:../discreet-crypto/pkg",
+    "i18next": "^25.8.18",
     "lucide-react": "^0.263.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-i18next": "^16.5.8"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

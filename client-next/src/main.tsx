@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { initCrypto } from './crypto/mls';
+import './i18n/i18n';
 
 // Initialize MLS WASM module before rendering
 initCrypto().then(() => {
@@ -9,7 +10,7 @@ initCrypto().then(() => {
   console.warn('[main] WASM crypto unavailable, using legacy mode');
 });
 
-// Detect /meet/:code URL (works for /next/meet/ABC123 or /meet/ABC123)
+// Detect /meet/:code URL (e.g. /meet/ABC123)
 const _meetMatch = window.location.pathname.match(/\/meet\/([A-Za-z0-9]{4,})/);
 const _meetCode  = _meetMatch?.[1] ?? null;
 

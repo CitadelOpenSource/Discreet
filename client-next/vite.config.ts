@@ -10,7 +10,7 @@ export default defineConfig({
     wasm(),          // Native WASM import support
     topLevelAwait(), // Allows `await init()` at module scope
   ],
-  base: '/next/',
+  base: '/',
   server: {
     port: 5173,
     proxy: {

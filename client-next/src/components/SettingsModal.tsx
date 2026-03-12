@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { T, getInp } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
+import { setLanguage } from '../i18n/i18n';
 import { voice } from '../hooks/useVoice';
 import { Av } from './Av';
 import { Modal } from './Modal';
@@ -27,6 +28,7 @@ interface UserSettings {
   hide_activity?: boolean;
   block_stranger_dms?: boolean;
   require_mutual_friends?: boolean;
+  locale?: string;
   user_id?: string;
   [key: string]: unknown;
 }
@@ -414,8 +416,10 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
   useEffect(() => {
     api.getSettings().then((d: any) => {
-      if (d && typeof d === 'object' && d.user_id) setS(d);
-      else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' });
+      if (d && typeof d === 'object' && d.user_id) {
+        setS(d);
+        if (d.locale && d.locale !== 'en') setLanguage(d.locale).catch(() => {});
+      } else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' });
     }).catch(() => setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' }));
     api.getMe().then((u: any) => { if (u?.display_name) setDisplayName(u.display_name); else if (u?.username) setDisplayName(u.username); }).catch(() => {});
   }, []);
@@ -424,6 +428,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     setS(p => ({ ...p, [k]: v }));
     try { await api.updateSettings({ [k]: v }); } catch { setErrMsg('Failed to save'); }
     setSaved(true); setTimeout(() => setSaved(false), 1500);
+    if (k === 'locale') { setLanguage(v as string).catch(() => {}); }
     if (k === 'font_size') {
       const m: Record<string, string> = { small: '12px', medium: '14px', large: '16px', xl: '18px' };
       document.documentElement.style.setProperty('--app-font-size', m[v as string] || '14px');
@@ -532,6 +537,22 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Width</label>
               <select style={sel} value={localStorage.getItem('d_chat_width') || 'normal'} onChange={e => localStorage.setItem('d_chat_width', e.target.value)}>
                 <option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option><option value="full">Full Width</option>
+              </select>
+            </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Language</label>
+              <select style={sel} value={s.locale || 'en'} onChange={e => save('locale', e.target.value)}>
+                <option value="en">English</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="pt">Português</option>
+                <option value="ru">Русский</option>
+                <option value="uk">Українська</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="ar">العربية</option>
+                <option value="fa">فارسی</option>
+                <option value="tr">Türkçe</option>
               </select>
             </div>
           </div>

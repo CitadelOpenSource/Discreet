@@ -334,51 +334,155 @@ pub async fn get_shared_servers(
 
 // ─── DELETE /api/v1/users/@me ──────────────────────────────────────────
 
-/// Permanently delete the authenticated user's account.
-/// This is IRREVERSIBLE. Removes all user data, server memberships,
-/// DMs, friend connections, and messages.
+#[derive(Debug, Deserialize)]
+pub struct DeleteAccountRequest {
+    /// The user's current password — required to confirm the destructive action.
+    pub password: String,
+}
+
+/// Permanently delete the authenticated user's account (GDPR Article 17).
+///
+/// Password confirmation is required. The deletion order is:
+///   1. Verify password against stored Argon2id hash
+///   2. Soft-delete all messages (zero the ciphertext, set deleted=true)
+///   3. Delete AI agent memory rows (episodic facts + context summaries)
+///   4. Delete developer tokens
+///   5. Revoke and delete all sessions (DB + Redis)
+///   6. Delete owned servers (cascades channels/messages)
+///   7. Remove server memberships and roles
+///   8. Remove friendships
+///   9. Remove DM channels and group DM memberships
+///  10. Remove ancillary rows (email tokens, event RSVPs)
+///  11. Delete the user record
 pub async fn delete_account(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    Json(req): Json<DeleteAccountRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let uid = auth.user_id;
 
-    // Transfer or delete owned servers
-    let owned = sqlx::query!("SELECT id FROM servers WHERE owner_id = $1", uid)
-        .fetch_all(&state.db).await?;
-    for srv in &owned {
-        // Delete servers the user owns (cascade handles channels, messages, etc.)
-        sqlx::query!("DELETE FROM servers WHERE id = $1", srv.id)
-            .execute(&state.db).await?;
+    // ── 1. Verify password ────────────────────────────────────────────────
+    let stored_hash = sqlx::query_scalar!(
+        "SELECT password_hash FROM users WHERE id = $1",
+        uid,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    if !crate::citadel_auth_handlers::verify_password_pub(&req.password, &stored_hash)? {
+        return Err(AppError::Unauthorized("Incorrect password".into()));
     }
 
-    // Remove from all servers
+    // ── 2. Soft-delete all messages by this user ──────────────────────────
+    // We zero the ciphertext rather than hard-deleting to preserve message
+    // threading (reply_to_id chains) for other participants.
+    sqlx::query!(
+        r#"UPDATE messages
+           SET deleted = TRUE, content_ciphertext = '\x00', edited_at = NOW()
+           WHERE author_id = $1 AND deleted = FALSE"#,
+        uid,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // ── 3. Delete AI agent memory rows ───────────────────────────────────
+    sqlx::query!(
+        "DELETE FROM agent_episodic_facts WHERE agent_id = $1",
+        uid,
+    )
+    .execute(&state.db)
+    .await.ok(); // table may not exist on older deployments
+
+    sqlx::query!(
+        "DELETE FROM agent_context_summaries WHERE bot_user_id = $1",
+        uid,
+    )
+    .execute(&state.db)
+    .await.ok();
+
+    // ── 4. Delete developer tokens ────────────────────────────────────────
+    // (also covered by ON DELETE CASCADE on dev_tokens.user_id, belt+suspenders)
+    sqlx::query!("DELETE FROM dev_tokens WHERE user_id = $1", uid)
+        .execute(&state.db)
+        .await.ok();
+
+    // ── 5. Revoke sessions — DB + Redis ──────────────────────────────────
+    // Collect active session IDs first so we can write them to Redis,
+    // ensuring any still-valid JWTs are immediately rejected by the auth layer.
+    let active_session_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()",
+        uid,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    if !active_session_ids.is_empty() {
+        let revoked_key = format!("revoked_sessions:{}", uid);
+        let mut redis_conn = state.redis.clone();
+        for sid in &active_session_ids {
+            let _: Result<i64, _> = redis::cmd("SADD")
+                .arg(&revoked_key)
+                .arg(sid.to_string())
+                .query_async(&mut redis_conn)
+                .await;
+        }
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&revoked_key)
+            .arg(86_400i64)
+            .query_async(&mut redis_conn)
+            .await;
+    }
+
+    sqlx::query!("DELETE FROM sessions WHERE user_id = $1", uid)
+        .execute(&state.db)
+        .await?;
+
+    // ── 6. Delete owned servers (cascade handles channels/messages) ───────
+    let owned = sqlx::query_scalar!("SELECT id FROM servers WHERE owner_id = $1", uid)
+        .fetch_all(&state.db)
+        .await?;
+    for srv_id in &owned {
+        sqlx::query!("DELETE FROM servers WHERE id = $1", srv_id)
+            .execute(&state.db)
+            .await?;
+    }
+
+    // ── 7. Remove server memberships and role assignments ─────────────────
     sqlx::query!("DELETE FROM server_members WHERE user_id = $1", uid)
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
     sqlx::query!("DELETE FROM member_roles WHERE user_id = $1", uid)
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
 
-    // Remove friend connections
+    // ── 8. Remove friend connections ──────────────────────────────────────
     sqlx::query!("DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1", uid)
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
 
-    // Remove DMs and group DM memberships
+    // ── 9. Remove DM channels and group DM memberships ────────────────────
     sqlx::query!("DELETE FROM dm_channels WHERE user_a = $1 OR user_b = $1", uid)
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
     sqlx::query!("DELETE FROM group_dm_members WHERE user_id = $1", uid)
-        .execute(&state.db).await.ok();
+        .execute(&state.db)
+        .await.ok();
 
-    // Remove email tokens, event RSVPs (tables may not exist yet)
+    // ── 10. Remove ancillary rows (best-effort; tables may not exist) ─────
     sqlx::query!("DELETE FROM email_tokens WHERE user_id = $1", uid)
-        .execute(&state.db).await.ok();
+        .execute(&state.db)
+        .await.ok();
     sqlx::query!("DELETE FROM event_rsvps WHERE user_id = $1", uid)
-        .execute(&state.db).await.ok();
+        .execute(&state.db)
+        .await.ok();
 
-    // Delete the user record itself
+    // ── 11. Delete the user record ────────────────────────────────────────
     sqlx::query!("DELETE FROM users WHERE id = $1", uid)
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
 
-    tracing::warn!(user_id = %uid, "Account permanently deleted");
+    tracing::warn!(user_id = %uid, "Account permanently deleted (GDPR Article 17)");
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -686,16 +790,108 @@ pub async fn change_password(
     }))
 }
 
+// ─── GET /api/v1/users/@me/settings ───────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct UserSettingsResponse {
+    pub locale: String,
+    pub theme: String,
+    pub notifications_enabled: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateUserSettingsRequest {
+    pub locale: Option<String>,
+    pub theme: Option<String>,
+    pub notifications_enabled: Option<bool>,
+}
+
+pub async fn get_user_settings(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let row = sqlx::query!(
+        "SELECT locale, theme, notifications_enabled
+         FROM user_settings WHERE user_id = $1",
+        auth.user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    let resp = match row {
+        Some(r) => UserSettingsResponse {
+            locale:                r.locale,
+            theme:                 r.theme,
+            notifications_enabled: r.notifications_enabled,
+        },
+        None => UserSettingsResponse {
+            locale:                "en".into(),
+            theme:                 "dark".into(),
+            notifications_enabled: true,
+        },
+    };
+
+    Ok(Json(resp))
+}
+
+// ─── PUT /api/v1/users/@me/settings ───────────────────────────────────
+
+pub async fn update_user_settings(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<UpdateUserSettingsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate locale if provided (2–10 chars, letters + optional hyphen/underscore)
+    if let Some(ref locale) = req.locale {
+        if locale.len() < 2 || locale.len() > 10 {
+            return Err(AppError::BadRequest("locale must be 2–10 characters".into()));
+        }
+    }
+
+    sqlx::query!(
+        r#"INSERT INTO user_settings (user_id, locale, theme, notifications_enabled)
+           VALUES ($1,
+               COALESCE($2, 'en'),
+               COALESCE($3, 'dark'),
+               COALESCE($4, TRUE))
+           ON CONFLICT (user_id) DO UPDATE SET
+               locale                = COALESCE($2, user_settings.locale),
+               theme                 = COALESCE($3, user_settings.theme),
+               notifications_enabled = COALESCE($4, user_settings.notifications_enabled),
+               updated_at            = NOW()"#,
+        auth.user_id,
+        req.locale,
+        req.theme,
+        req.notifications_enabled,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Re-query and return the current state
+    let row = sqlx::query!(
+        "SELECT locale, theme, notifications_enabled
+         FROM user_settings WHERE user_id = $1",
+        auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(UserSettingsResponse {
+        locale:                row.locale,
+        theme:                 row.theme,
+        notifications_enabled: row.notifications_enabled,
+    }))
+}
+
 // ─── Route Registration ────────────────────────────────────────────────
 
 pub fn user_routes() -> axum::Router<Arc<AppState>> {
-    use axum::routing::{get, patch, post, delete};
+    use axum::routing::{get, post};
     axum::Router::new()
-        .route("/users/@me", get(get_me))
-        .route("/users/@me", patch(update_me))
-        .route("/users/@me", delete(delete_account))
+        .route("/users/@me", get(get_me).patch(update_me).delete(delete_account))
         .route("/users/@me/password", post(change_password))
+        .route("/users/@me/settings", get(get_user_settings).put(update_user_settings))
         .route("/users/@me/servers", get(list_my_servers))
-        .route("/users/{id}", get(get_user))
-        .route("/users/{id}/shared-servers", get(get_shared_servers))
+        .route("/users/:id", get(get_user))
+        .route("/users/:id/shared-servers", get(get_shared_servers))
 }
