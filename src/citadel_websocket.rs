@@ -21,7 +21,13 @@ use axum::{
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::Deserialize;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+// ─── Per-connection WebSocket rate limits ────────────────────────────────────
+const WS_MAX_MESSAGES_PER_MINUTE: u64 = 120;
+const WS_MAX_BYTES_PER_MINUTE: u64 = 1_048_576; // 1 MiB
+const WS_RATE_WINDOW: Duration = Duration::from_secs(60);
 
 use crate::citadel_auth::Claims;
 use crate::citadel_error::AppError;
@@ -33,7 +39,6 @@ use crate::citadel_typing;
 #[derive(Debug, Deserialize)]
 pub struct WsParams {
     pub server_id: Uuid,
-    pub token: Option<String>,
 }
 
 /// Generic incoming message. The `type` field routes to the appropriate handler.
@@ -63,17 +68,42 @@ pub async fn ws_connect(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, AppError> {
-    // Try multiple auth sources:
-    // 1. Authorization header (standard HTTP)
-    // 2. Sec-WebSocket-Protocol header (browser WebSocket subprotocol)
-    // 3. Token query parameter (fallback)
+    // ── Origin validation ────────────────────────────────────────────────
+    // Reject browser WebSocket connections whose Origin doesn't match the
+    // allowed CORS_ORIGINS.  Non-browser clients (CLI, bots) typically
+    // don't send an Origin header — those are allowed through.
+    if let Ok(cors) = std::env::var("CORS_ORIGINS") {
+        if cors != "*" && !cors.is_empty() {
+            if let Some(origin) = headers
+                .get(header::ORIGIN)
+                .and_then(|v| v.to_str().ok())
+            {
+                let allowed: Vec<&str> = cors.split(',').map(|s| s.trim()).collect();
+                if !allowed.iter().any(|a| *a == origin) {
+                    tracing::warn!(
+                        origin = origin,
+                        allowed = %cors,
+                        "WebSocket connection rejected — origin not in CORS_ORIGINS",
+                    );
+                    return Err(AppError::Forbidden(
+                        "Origin not allowed".into(),
+                    ));
+                }
+            }
+            // No Origin header → allow (CLI / non-browser client)
+        }
+    }
+
+    // Auth sources (token query parameter intentionally excluded — tokens must
+    // not appear in URLs where they can be logged by proxies/CDNs):
+    // 1. Authorization: Bearer <token>  (standard HTTP header)
+    // 2. Sec-WebSocket-Protocol: "Bearer, <token>"  (browser WebSocket subprotocol)
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
         .map(|t| t.to_string())
         .or_else(|| {
-            // Check Sec-WebSocket-Protocol: "Bearer, <token>"
             headers.get("sec-websocket-protocol")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| {
@@ -85,8 +115,9 @@ pub async fn ws_connect(
                     }
                 })
         })
-        .or_else(|| params.token.clone())
-        .ok_or_else(|| AppError::Unauthorized("Missing authentication".into()))?;
+        .ok_or_else(|| AppError::Unauthorized(
+            "Missing authentication — use Authorization header or Sec-WebSocket-Protocol".into(),
+        ))?;
 
     let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
     let validation = Validation::default();
@@ -170,6 +201,11 @@ async fn handle_ws(
         return;
     }
 
+    // Per-connection rate limiting — reset counters every 60 s.
+    let mut ws_window_start = Instant::now();
+    let mut ws_msg_count: u64 = 0;
+    let mut ws_byte_count: u64 = 0;
+
     loop {
         tokio::select! {
             // Event from broadcast bus -> forward to client.
@@ -195,6 +231,34 @@ async fn handle_ws(
                         let _ = socket.send(Message::Pong(data)).await;
                     }
                     Some(Ok(Message::Text(text))) => {
+                        // ── Per-connection rate limiting ──────────────
+                        if ws_window_start.elapsed() >= WS_RATE_WINDOW {
+                            ws_window_start = Instant::now();
+                            ws_msg_count = 0;
+                            ws_byte_count = 0;
+                        }
+                        ws_msg_count += 1;
+                        ws_byte_count += text.len() as u64;
+
+                        if ws_msg_count > WS_MAX_MESSAGES_PER_MINUTE
+                            || ws_byte_count > WS_MAX_BYTES_PER_MINUTE
+                        {
+                            tracing::warn!(
+                                user_id = %user_id,
+                                server_id = %server_id,
+                                messages = ws_msg_count,
+                                bytes = ws_byte_count,
+                                "WebSocket rate limit exceeded — closing connection",
+                            );
+                            let _ = socket.send(Message::Close(Some(
+                                axum::extract::ws::CloseFrame {
+                                    code: 1008,
+                                    reason: "Rate limit exceeded".into(),
+                                },
+                            ))).await;
+                            break;
+                        }
+
                         if let Ok(msg) = serde_json::from_str::<IncomingMessage>(&text) {
                             // Block guests from voice channels.
                             if is_guest && (msg.msg_type == "voice_join" || msg.msg_type == "force_voice_join") {

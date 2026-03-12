@@ -477,7 +477,15 @@ pub async fn delete_account(
         .execute(&state.db)
         .await.ok();
 
-    // ── 11. Delete the user record ────────────────────────────────────────
+    // ── 11. Tombstone the UUID to prevent cryptographic key reuse ────────
+    sqlx::query!(
+        "INSERT INTO deleted_user_ids (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+        uid,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // ── 12. Delete the user record ────────────────────────────────────────
     sqlx::query!("DELETE FROM users WHERE id = $1", uid)
         .execute(&state.db)
         .await?;

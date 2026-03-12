@@ -284,7 +284,23 @@ pub async fn register(
 
     // Create user.
     let display_name = req.display_name.unwrap_or_else(|| req.username.clone());
-    let user_id = Uuid::new_v4();
+    let mut user_id = Uuid::new_v4();
+
+    // Prevent cryptographic key reuse: regenerate if UUID was previously deleted.
+    for _ in 0..5 {
+        let tombstoned = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM deleted_user_ids WHERE user_id = $1)",
+            user_id,
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(false);
+        if !tombstoned {
+            break;
+        }
+        tracing::warn!(user_id = %user_id, "UUID collision with deleted account — regenerating");
+        user_id = Uuid::new_v4();
+    }
 
     sqlx::query!(
         "INSERT INTO users (id, username, display_name, email, password_hash)
@@ -396,10 +412,47 @@ pub async fn register(
 /// Guest accounts can join public servers, voice channels, and browse.
 /// They auto-expire after 30 days of inactivity.
 /// Guests can upgrade to registered (add username+password) or verified (add email).
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct GuestRegisterRequest {
+    pub captcha_token: Option<String>,
+}
+
 pub async fn register_guest(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
+    body: Option<Json<GuestRegisterRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
+    let captcha_token = body.and_then(|Json(b)| b.captcha_token);
+
+    // ── Cloudflare Turnstile CAPTCHA (optional) ───────────────────────────
+    // Only enforced when TURNSTILE_SECRET_KEY is set AND the client sends a
+    // captcha_token. Self-hosted, offline, and proximity mesh deployments
+    // work without CAPTCHA by simply not setting the env var.
+    if let Ok(secret) = std::env::var("TURNSTILE_SECRET_KEY") {
+        if !secret.is_empty() {
+            if let Some(ref token) = captcha_token {
+                let resp = reqwest::Client::new()
+                    .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+                    .form(&[("secret", secret.as_str()), ("response", token.as_str())])
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("CAPTCHA verification request failed: {e}")))?;
+
+                #[derive(serde::Deserialize)]
+                struct TurnstileResponse {
+                    success: bool,
+                }
+
+                let result: TurnstileResponse = resp.json().await
+                    .map_err(|e| AppError::Internal(format!("CAPTCHA response parse error: {e}")))?;
+
+                if !result.success {
+                    return Err(AppError::BadRequest("CAPTCHA verification failed".into()));
+                }
+            }
+        }
+    }
+
     // Rate limit: max 10 guest accounts per IP per 24 hours
     let ip = headers.get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
@@ -422,7 +475,23 @@ pub async fn register_guest(
         ip,
     ).execute(&state.db).await.ok();
 
-    let user_id = Uuid::new_v4();
+    let mut user_id = Uuid::new_v4();
+
+    // Prevent cryptographic key reuse: regenerate if UUID was previously deleted.
+    for _ in 0..5 {
+        let tombstoned = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM deleted_user_ids WHERE user_id = $1)",
+            user_id,
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(false);
+        if !tombstoned {
+            break;
+        }
+        tracing::warn!(user_id = %user_id, "UUID collision with deleted account — regenerating");
+        user_id = Uuid::new_v4();
+    }
 
     // Generate display name from the guest_name_pool (e.g. "SwiftFox247").
     // Falls back to the UUID-prefix format if the pool is empty.
@@ -530,11 +599,13 @@ pub async fn upgrade_account(
 
 pub async fn login(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Response, AppError> {
     // Find user by username or email.
     let user = sqlx::query!(
-        "SELECT id, username, display_name, email, password_hash, created_at, totp_enabled
+        "SELECT id, username, display_name, email, password_hash, created_at, totp_enabled,
+                banned_at, ban_reason, ban_expires_at
          FROM users
          WHERE username = $1 OR email = $1",
         req.login,
@@ -542,6 +613,58 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("Invalid credentials".into()))?;
+
+    // ── Account ban check ─────────────────────────────────────────────────────
+    if user.banned_at.is_some() {
+        // Check if the ban has expired.
+        let still_banned = match user.ban_expires_at {
+            Some(expires) => chrono::Utc::now() < expires,
+            None => true, // permanent ban
+        };
+        if still_banned {
+            let reason = user.ban_reason.as_deref().unwrap_or("Violation of terms of service");
+            return Err(AppError::Forbidden(
+                format!("Account suspended: {reason}"),
+            ));
+        }
+        // Ban expired — clear it.
+        sqlx::query!(
+            "UPDATE users SET banned_at = NULL, ban_reason = NULL, ban_expires_at = NULL WHERE id = $1",
+            user.id,
+        )
+        .execute(&state.db)
+        .await
+        .ok();
+    }
+
+    // ── IP ban check ──────────────────────────────────────────────────────────
+    {
+        let ip = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+            .or_else(|| {
+                headers
+                    .get("x-real-ip")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let ip_banned = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM platform_ip_bans WHERE ip_address = $1 AND (expires_at IS NULL OR expires_at > NOW()))",
+            ip,
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(false);
+
+        if ip_banned {
+            return Err(AppError::Forbidden(
+                "Access denied from this network".into(),
+            ));
+        }
+    }
 
     // ── Account lockout (Redis) ──────────────────────────────────────────────
     // Track failed password attempts per user. After 5 consecutive failures,
@@ -1176,8 +1299,12 @@ fn validate_username(username: &str) -> Result<(), AppError> {
         }
     }
     // Block fully reserved names.
-    let reserved = ["admin", "system", "citadel", "mod", "moderator", "root",
-                    "everyone", "here", "deleted", "ghost"];
+    let reserved = [
+        "admin", "system", "citadel", "discreet", "mod", "moderator", "root",
+        "everyone", "here", "deleted", "ghost", "support", "help", "security",
+        "bot", "api", "www", "mail", "noreply", "abuse", "postmaster",
+        "webmaster", "info", "contact", "staff", "team", "official",
+    ];
     if reserved.contains(&lower.as_str()) {
         return Err(AppError::BadRequest("This username is reserved".into()));
     }
@@ -1204,10 +1331,12 @@ fn validate_password(password: &str) -> Result<(), AppError> {
             "Password must contain at least one uppercase letter, one lowercase letter, and one digit".into()
         ));
     }
-    // Block extremely common passwords (top 20).
+    // Block extremely common passwords.
     let common = [
         "password", "12345678", "123456789", "qwerty123", "password1",
         "iloveyou", "abcdefgh", "1234567890", "baseball1", "football1",
+        "welcome1", "letmein1", "admin123", "passw0rd", "abc12345",
+        "hello123", "changeme1", "password123", "trustno1",
     ];
     let lower = password.to_lowercase();
     if common.iter().any(|c| lower == *c) {
