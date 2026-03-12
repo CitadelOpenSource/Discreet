@@ -17,6 +17,7 @@ pub mod citadel_channel_handlers;
 pub mod citadel_category_handlers;
 pub mod citadel_config;
 pub mod citadel_csrf;
+pub mod citadel_dev_token_handlers;
 pub mod citadel_discovery_handlers;
 pub mod citadel_dm_handlers;
 pub mod citadel_email_handlers;

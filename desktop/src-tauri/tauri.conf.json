@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devUrl": "http://localhost:3000/next/",
+    "devUrl": "http://localhost:3000/",
     "frontendDist": "../../client-next/dist"
   },
   "app": {

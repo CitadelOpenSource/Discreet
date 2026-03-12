@@ -210,8 +210,37 @@ pub struct SessionInfo {
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // ── IP-based registration rate limit (max 3 per IP per 24 h) ──────────
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let reg_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM registrations_log \
+         WHERE ip_address = $1 AND created_at > NOW() - INTERVAL '24 hours'",
+        ip,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(0);
+
+    if reg_count >= 3 {
+        return Err(AppError::RateLimited(
+            "Too many registrations from this address. Try again later.".into(),
+        ));
+    }
+
     // Validate username.
     validate_username(&req.username)?;
     validate_password(&req.password)?;
@@ -267,6 +296,15 @@ pub async fn register(
     )
     .execute(&state.db)
     .await?;
+
+    // Record this registration for IP rate-limiting (best-effort, non-fatal).
+    sqlx::query!(
+        "INSERT INTO registrations_log (ip_address) VALUES ($1)",
+        ip,
+    )
+    .execute(&state.db)
+    .await
+    .ok();
 
     // ── Email verification ────────────────────────────────────────────────
     // Only triggered when the user supplied an email address.
@@ -1094,15 +1132,23 @@ fn validate_username(username: &str) -> Result<(), AppError> {
             "Username must be 3-32 characters".into()
         ));
     }
-    if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    if !username.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
         return Err(AppError::BadRequest(
-            "Username may only contain letters, numbers, and underscores".into()
+            "Username may only contain letters, numbers, underscores, and hyphens".into()
         ));
     }
-    // Block reserved names.
+    // Block reserved prefixes used by system/bot accounts.
+    let lower = username.to_lowercase();
+    let blocked_prefixes = ["bot-", "system-", "dev_", "guest_"];
+    for prefix in &blocked_prefixes {
+        if lower.starts_with(prefix) {
+            return Err(AppError::BadRequest("This username prefix is reserved".into()));
+        }
+    }
+    // Block fully reserved names.
     let reserved = ["admin", "system", "citadel", "mod", "moderator", "root",
                     "everyone", "here", "deleted", "ghost"];
-    if reserved.contains(&username.to_lowercase().as_str()) {
+    if reserved.contains(&lower.as_str()) {
         return Err(AppError::BadRequest("This username is reserved".into()));
     }
     Ok(())

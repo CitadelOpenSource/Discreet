@@ -275,7 +275,7 @@ export class CitadelAPI {
   async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
   async getMe() { try { return (await this.fetch('/users/@me')).json(); } catch { return null; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
-  async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PATCH', body: JSON.stringify(s) }); }
+  async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
   async deleteAccount() { return this.fetch('/users/@me', { method: 'DELETE' }); }
 
   // ── Bots ──

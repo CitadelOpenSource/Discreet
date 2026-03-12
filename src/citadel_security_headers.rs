@@ -85,26 +85,9 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
 
     // ── Content-Security-Policy ─────────────────────────────────────────────
     // Path-conditional CSP:
-    //   /next/*  (Vite client) → STRICT: no 'unsafe-inline' for scripts
-    //   /        (legacy client) → COMPAT: 'unsafe-inline' for Babel JSX
-    //
-    // When the Vite client replaces the legacy client at /, the strict policy
-    // will become the only policy and the legacy branch can be deleted.
-    let csp = if path.starts_with("/next") || path.starts_with("/api") {
-        // Strict CSP for the production Vite client and API responses.
-        "default-src 'self'; \
-         script-src 'self'; \
-         style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws: wss:; \
-         img-src 'self' data: blob:; \
-         media-src 'self' data: blob:; \
-         font-src 'self'; \
-         frame-src https://www.youtube-nocookie.com https://challenges.cloudflare.com; \
-         object-src 'none'; \
-         frame-ancestors 'none'; \
-         base-uri 'self'; \
-         form-action 'self'"
-    } else {
+    //   /legacy/* → COMPAT: 'unsafe-inline' for in-browser Babel/JSX
+    //   everything else (Vite client at /, API) → STRICT
+    let csp = if path.starts_with("/legacy") {
         // Legacy client needs 'unsafe-inline' for in-browser Babel/JSX.
         "default-src 'self'; \
          script-src 'self' 'unsafe-inline'; \
@@ -114,6 +97,20 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
          media-src 'self' data: blob:; \
          font-src 'self'; \
          frame-src https://www.youtube-nocookie.com; \
+         object-src 'none'; \
+         frame-ancestors 'none'; \
+         base-uri 'self'; \
+         form-action 'self'"
+    } else {
+        // Strict CSP for the Vite client (served at /) and all API responses.
+        "default-src 'self'; \
+         script-src 'self'; \
+         style-src 'self' 'unsafe-inline'; \
+         connect-src 'self' ws: wss:; \
+         img-src 'self' data: blob:; \
+         media-src 'self' data: blob:; \
+         font-src 'self'; \
+         frame-src https://www.youtube-nocookie.com https://challenges.cloudflare.com; \
          object-src 'none'; \
          frame-ancestors 'none'; \
          base-uri 'self'; \
