@@ -132,9 +132,22 @@ export class CitadelAPI {
     return { ok: res.ok, data: d };
   }
 
+  async forgotPassword(email: string) {
+    const r = await fetch(`${API_BASE}/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || d.message || 'Request failed');
+    return d;
+  }
+  async resetPassword(token: string, newPassword: string) {
+    const r = await fetch(`${API_BASE}/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: newPassword }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || d.message || 'Request failed');
+    return d;
+  }
+
   // ── Servers ──
   async listServers() { return (await this.fetch('/servers')).json(); }
-  async createServer(name: string) { return (await this.fetch('/servers', { method: 'POST', body: JSON.stringify({ name }) })).json(); }
+  async createServer(name: string, opts?: { enable_automod?: boolean }) { return (await this.fetch('/servers', { method: 'POST', body: JSON.stringify({ name, ...opts }) })).json(); }
   async createInvite(sid: string, opts?: { expires_at?: string | null; max_uses?: number | null; temporary?: boolean }) {
     const body: any = { temporary: opts?.temporary ?? false };
     if (opts && 'expires_at' in opts) body.expires_at = opts.expires_at;  // send null explicitly for "Never"
@@ -275,8 +288,13 @@ export class CitadelAPI {
   async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
   async getMe() { try { return (await this.fetch('/users/@me')).json(); } catch { return null; } }
   async getPlatformMe() { try { const r = await this.fetch('/platform/me'); return r.ok ? r.json() : null; } catch { return null; } }
+  async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
+  async changeEmail(newEmail: string, password: string) { const r = await this.fetch('/users/@me/email', { method: 'PUT', body: JSON.stringify({ new_email: newEmail, password }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
+  async changePassword(currentPassword: string, newPassword: string) { const r = await this.fetch('/users/@me/password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
+  async listSessions() { try { const r = await this.fetch('/auth/sessions'); return r.ok ? r.json() : []; } catch { return []; } }
+  async revokeSession(id: string) { const r = await this.fetch(`/auth/sessions/${id}`, { method: 'DELETE' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } }
   async deleteAccount() { return this.fetch('/users/@me', { method: 'DELETE' }); }
 
   // ── Bots ──
@@ -298,6 +316,10 @@ export class CitadelAPI {
   async listEvents(sid: string) { try { const r = await this.fetch(`/servers/${sid}/events`); return r.ok ? r.json() : []; } catch { return []; } }
   async createEvent(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/events`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async rsvpEvent(eid: string, status: string) { return (await this.fetch(`/events/${eid}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) })).json(); }
+
+  // ── AutoMod ──
+  async getAutomod(sid: string) { try { const r = await this.fetch(`/servers/${sid}/automod`); return r.ok ? r.json() : null; } catch { return null; } }
+  async updateAutomod(sid: string, config: any) { return this.fetch(`/servers/${sid}/automod`, { method: 'PUT', body: JSON.stringify(config) }); }
 
   // ── Discovery ──
   async discoverServers(query?: string, category?: string) { try { const params = new URLSearchParams(); if (query) params.set('q', query); if (category && category !== 'all') params.set('category', category); const r = await this.fetch(`/discover?${params}`); return r.ok ? r.json() : []; } catch { return []; } }

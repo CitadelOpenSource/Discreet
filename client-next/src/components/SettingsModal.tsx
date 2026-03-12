@@ -1,7 +1,7 @@
 /**
  * SettingsModal — 12-tab user settings panel.
  * Tabs: Appearance, Voice & Audio, Video, Streaming, My Profile,
- *       Privacy, Security, Notifications, Accessibility, Keybinds, Advanced, About.
+ *       Privacy, Account, Notifications, Accessibility, Keybinds, Advanced, About.
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { T, getInp } from '../theme';
@@ -335,6 +335,196 @@ function NRow({ label, sub, on, onToggle, disabled }: { label: string; sub: stri
   );
 }
 
+// ─── Change Email ────────────────────────────────────────
+
+function ChangeEmail() {
+  const [editing, setEditing] = useState(false);
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [newEmail, setNewEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.getMe().then((u: any) => { if (u?.email) setCurrentEmail(u.email); });
+  }, []);
+
+  const handleSubmit = async () => {
+    setErr(''); setMsg('');
+    if (!newEmail.includes('@') || !newEmail.includes('.')) { setErr('Invalid email address'); return; }
+    if (!password) { setErr('Password is required'); return; }
+    setSaving(true);
+    try {
+      const res = await api.changeEmail(newEmail, password);
+      setMsg(res.message || 'Email updated. Check your new email for a verification link.');
+      setCurrentEmail(newEmail);
+      setNewEmail(''); setPassword(''); setEditing(false);
+    } catch (e: any) {
+      setErr(e.message || 'Failed to change email');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Email Address</div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>{currentEmail || 'No email set'}</div>
+        </div>
+        {!editing && (
+          <button onClick={() => { setEditing(true); setMsg(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
+        )}
+      </div>
+      {editing && (
+        <div style={{ marginTop: 10 }}>
+          <input
+            type="email" placeholder="New email address" value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 6, outline: 'none', boxSizing: 'border-box' }}
+          />
+          <input
+            type="password" placeholder="Confirm your password" value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+            style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 8, outline: 'none', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSubmit} disabled={saving} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>{saving ? 'Saving...' : 'Update Email'}</button>
+            <button onClick={() => { setEditing(false); setNewEmail(''); setPassword(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {msg && <div style={{ marginTop: 8, fontSize: 11, color: T.ac, padding: '6px 10px', background: 'rgba(0,212,170,0.08)', borderRadius: 6 }}>{msg}</div>}
+      {err && <div style={{ marginTop: 8, fontSize: 11, color: T.err, padding: '6px 10px', background: 'rgba(255,71,87,0.08)', borderRadius: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+// ─── Change Password ─────────────────────────────────────
+
+function ChangePassword() {
+  const [editing, setEditing] = useState(false);
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const handleSubmit = async () => {
+    setErr(''); setMsg('');
+    if (!currentPw) { setErr('Current password is required'); return; }
+    if (newPw.length < 8) { setErr('New password must be at least 8 characters'); return; }
+    setSaving(true);
+    try {
+      const res = await api.changePassword(currentPw, newPw);
+      // Store new tokens if returned
+      if (res.access_token) {
+        (api as any).token = res.access_token;
+        if (res.refresh_token) (api as any).refreshToken = res.refresh_token;
+      }
+      setMsg('Password updated successfully. All other sessions have been revoked.');
+      setCurrentPw(''); setNewPw(''); setEditing(false);
+    } catch (e: any) {
+      setErr(e.message || 'Failed to change password');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Password</div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Update your password regularly for better security</div>
+        </div>
+        {!editing && (
+          <button onClick={() => { setEditing(true); setMsg(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
+        )}
+      </div>
+      {editing && (
+        <div style={{ marginTop: 10 }}>
+          <input
+            type="password" placeholder="Current password" value={currentPw}
+            onChange={e => setCurrentPw(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 6, outline: 'none', boxSizing: 'border-box' }}
+            autoFocus autoComplete="current-password" />
+          <input
+            type="password" placeholder="New password (min 8 characters)" value={newPw}
+            onChange={e => setNewPw(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+            style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 8, outline: 'none', boxSizing: 'border-box' }}
+            autoComplete="new-password" />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSubmit} disabled={saving} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>{saving ? 'Saving...' : 'Update Password'}</button>
+            <button onClick={() => { setEditing(false); setCurrentPw(''); setNewPw(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {msg && <div style={{ marginTop: 8, fontSize: 11, color: T.ac, padding: '6px 10px', background: 'rgba(0,212,170,0.08)', borderRadius: 6 }}>{msg}</div>}
+      {err && <div style={{ marginTop: 8, fontSize: 11, color: T.err, padding: '6px 10px', background: 'rgba(255,71,87,0.08)', borderRadius: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+// ─── Active Sessions ─────────────────────────────────────
+
+function ActiveSessions() {
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const list = await api.listSessions();
+    setSessions(Array.isArray(list) ? list : []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const revoke = async (id: string) => {
+    setRevoking(id);
+    try {
+      await api.revokeSession(id);
+      setSessions(prev => prev.filter(s => s.id !== id));
+    } catch { /* ignore */ }
+    setRevoking(null);
+  };
+
+  return (
+    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Active Sessions</div>
+      {loading ? (
+        <div style={{ fontSize: 11, color: T.mt }}>Loading sessions...</div>
+      ) : sessions.length === 0 ? (
+        <div style={{ fontSize: 11, color: T.mt }}>No active sessions</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {sessions.map((s: any) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {s.device_name || 'Unknown device'}
+                  {s.current && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(0,212,170,0.15)', color: T.ac, fontWeight: 700 }}>THIS DEVICE</span>}
+                </div>
+                <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>
+                  {s.ip_address || 'Unknown IP'} · Created {new Date(s.created_at).toLocaleDateString()}
+                </div>
+              </div>
+              {!s.current && (
+                <button onClick={() => revoke(s.id)} disabled={revoking === s.id} className="pill-btn"
+                  style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
+                  {revoking === s.id ? '...' : 'Revoke'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────
 
 export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout, platformUser, devTierOverride, onSetDevTierOverride }: SettingsModalProps) {
@@ -416,7 +606,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { tab: 'profile',    keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
     { tab: 'profile',    keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
     { tab: 'privacy',    keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
-    { tab: 'security',   keywords: 'security password change email two factor 2fa totp authentication sessions devices logout', label: 'Security' },
+    { tab: 'account',    keywords: 'account security password change email two factor 2fa totp authentication sessions devices logout username delete', label: 'Account' },
     { tab: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
     { tab: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
     { tab: 'keybinds',   keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
@@ -469,7 +659,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
     { id: 'video', label: 'Video' }, { id: 'streaming', label: 'Streaming' },
     { id: 'profile', label: 'My Profile' }, { id: 'privacy', label: 'Privacy' },
-    { id: 'security', label: 'Security' }, { id: 'notifications', label: 'Notifications' },
+    { id: 'account', label: 'Account' }, { id: 'notifications', label: 'Notifications' },
     { id: 'accessibility', label: 'Accessibility' }, { id: 'keybinds', label: 'Keybinds' },
     { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
     ...(isStaff ? [{ id: 'admin', label: '⚙ Admin' }] : []),
@@ -895,27 +1085,38 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           </div>
         </>)}
 
-        {/* ── Security ── */}
-        {tab === 'security' && (<>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Account Security</div>
+        {/* ── Account ── */}
+        {tab === 'account' && (<>
+          {/* ─ Identity ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Username</div>
+              <div style={{ fontSize: 12, color: T.ac, fontFamily: 'monospace', marginTop: 2 }}>{api.username || '—'}</div>
+            </div>
+            <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>ID: {api.userId?.slice(0, 8) || '—'}</div>
+          </div>
+          <ChangeEmail />
+
+          {/* ─ Security ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
+          <ChangePassword />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
             <div><div style={{ fontSize: 13, fontWeight: 600 }}>Two-Factor Authentication (2FA)</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
             <button onClick={() => {}} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Change Password</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Update your password regularly for better security</div></div>
-            <button onClick={() => { const pw = prompt('Enter new password (8+ chars, mixed case + digit):'); if (pw && pw.length >= 8) { api.updateProfile({ password: pw }).then(() => alert('Password updated!')); } }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Active Sessions</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>View and revoke active login sessions</div></div>
-            <div style={{ fontSize: 12, color: T.ac, fontFamily: 'monospace' }}>1 active</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
             <div><div style={{ fontSize: 13, fontWeight: 600 }}>Encryption Key Fingerprint</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
             <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
           </div>
+
+          {/* ─ Sessions ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Sessions</div>
+          <ActiveSessions />
+
+          {/* ─ Danger Zone ─ */}
           <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 10 }}>⚠️ Danger Zone</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 10 }}>Danger Zone</div>
             <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.6 }}>
               Permanently delete your account and <strong style={{ color: T.err }}>ALL</strong> associated data. <strong style={{ color: T.err }}>This action is irreversible.</strong>
             </div>

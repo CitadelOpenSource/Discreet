@@ -913,6 +913,26 @@ interface ModerationPanelProps {
   decrypt: (ciphertext: string, channelId: string, epoch: number) => Promise<string>;
 }
 
+interface AutoModConfig {
+  enabled: boolean;
+  bad_words: string[];
+  spam_threshold_per_minute: number;
+  block_invites: boolean;
+  block_links: boolean;
+  max_mentions: number;
+  max_caps_percent: number;
+}
+
+const DEFAULT_AUTOMOD: AutoModConfig = {
+  enabled: false,
+  bad_words: [],
+  spam_threshold_per_minute: 5,
+  block_invites: false,
+  block_links: false,
+  max_mentions: 10,
+  max_caps_percent: 0.8,
+};
+
 function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
   const [modTab, setModTab] = useState('search');
   const [searchTerm, setSearchTerm] = useState('');
@@ -921,9 +941,13 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
   const [searching, setSearching] = useState(false);
   const [deleted, setDeleted] = useState<number | null>(null);
   const [modChannels, setModChannels] = useState<Channel[]>([]);
+  const [automod, setAutomod] = useState<AutoModConfig>(DEFAULT_AUTOMOD);
+  const [automodSaved, setAutomodSaved] = useState('');
+  const [automodLoaded, setAutomodLoaded] = useState(false);
 
   useEffect(() => {
     api.listChannels(serverId).then(c => setModChannels(Array.isArray(c) ? c.filter((ch: Channel) => ch.channel_type === 'text') : []));
+    api.getAutomod(serverId).then(c => { if (c) { setAutomod({ ...DEFAULT_AUTOMOD, ...c }); } setAutomodLoaded(true); });
   }, [serverId]);
 
   const doSearch = async () => {
@@ -1010,28 +1034,66 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
 
     {modTab === 'automod' && (<>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Auto-Moderation Rules</div>
-      <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>Set up automatic moderation rules. Because Citadel is zero-knowledge, auto-mod runs on each client — not the server. Rules are synced via encrypted server settings.</div>
-      {[
-        { key: 'spam_detect',          label: 'Spam Detection',          desc: 'Flag rapid-fire duplicate messages (5+ in 10s)',                       default: true },
-        { key: 'invite_filter',        label: 'Invite Link Filter',       desc: 'Block invite links from other platforms (Discord, Slack, etc.)',       default: false },
-        { key: 'caps_filter',          label: 'Excessive Caps Filter',    desc: 'Flag messages that are >70% uppercase (10+ chars)',                    default: false },
-        { key: 'mention_spam',         label: 'Mass Mention Protection',  desc: 'Block messages with 5+ @mentions',                                     default: true },
-        { key: 'new_account_slowmode', label: 'New Member Slowmode',      desc: 'Auto-apply 30s slowmode to accounts <24h old',                        default: false },
-      ].map(rule => {
-        const storageKey = `mod_${serverId}_${rule.key}`;
-        const isOn = JSON.parse(localStorage.getItem(storageKey) ?? (rule.default ? 'true' : 'false'));
-        return (
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>Server-side AutoMod rules. Messages matching these rules are blocked or flagged before delivery.</div>
+
+      {!automodLoaded ? <div style={{ color: T.mt, fontSize: 13, padding: 16, textAlign: 'center' }}>Loading...</div> : (<>
+        {/* Master toggle */}
+        {[
+          { key: 'enabled',       label: 'Enable AutoMod',       desc: 'Activate server-side automatic moderation',               value: automod.enabled,       toggle: () => setAutomod(a => ({ ...a, enabled: !a.enabled })) },
+          { key: 'block_invites', label: 'Block Invite Links',   desc: 'Block Discord, Slack, Telegram invite links',              value: automod.block_invites, toggle: () => setAutomod(a => ({ ...a, block_invites: !a.block_invites })) },
+          { key: 'block_links',   label: 'Block External Links', desc: 'Block all http:// and https:// URLs',                      value: automod.block_links,   toggle: () => setAutomod(a => ({ ...a, block_links: !a.block_links })) },
+        ].map(rule => (
           <div key={rule.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{rule.label}</div>
               <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>{rule.desc}</div>
             </div>
-            <div onClick={() => { localStorage.setItem(storageKey, JSON.stringify(!isOn)); setModTab('automod'); }} style={{ width: 40, height: 22, borderRadius: 11, background: isOn ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
-              <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: isOn ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+            <div onClick={rule.toggle} style={{ width: 40, height: 22, borderRadius: 11, background: rule.value ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+              <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: rule.value ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
             </div>
           </div>
-        );
-      })}
+        ))}
+
+        {/* Thresholds */}
+        <div style={{ display: 'flex', gap: 12, marginTop: 12, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 4 }}>Spam threshold (msg/min)</div>
+            <input type="number" min={1} max={60} value={automod.spam_threshold_per_minute} onChange={e => setAutomod(a => ({ ...a, spam_threshold_per_minute: parseInt(e.target.value) || 5 }))} style={{ ...getInp(), width: '100%' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 4 }}>Max mentions per message</div>
+            <input type="number" min={1} max={100} value={automod.max_mentions} onChange={e => setAutomod(a => ({ ...a, max_mentions: parseInt(e.target.value) || 10 }))} style={{ ...getInp(), width: '100%' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 4 }}>Max caps % (0–100)</div>
+            <input type="number" min={0} max={100} value={Math.round(automod.max_caps_percent * 100)} onChange={e => setAutomod(a => ({ ...a, max_caps_percent: Math.min(1, Math.max(0, (parseInt(e.target.value) || 80) / 100)) }))} style={{ ...getInp(), width: '100%' }} />
+          </div>
+        </div>
+
+        {/* Bad words */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 4 }}>Blocked words (one per line)</div>
+          <textarea
+            value={automod.bad_words.join('\n')}
+            onChange={e => setAutomod(a => ({ ...a, bad_words: e.target.value.split('\n').map(w => w.trim()).filter(Boolean) }))}
+            placeholder="badword1&#10;badword2&#10;..."
+            rows={5}
+            style={{ ...getInp(), width: '100%', resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+          />
+        </div>
+
+        {/* Save */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={async () => {
+            try {
+              await api.updateAutomod(serverId, automod);
+              setAutomodSaved('Saved!');
+              setTimeout(() => setAutomodSaved(''), 2000);
+            } catch { setAutomodSaved('Error saving'); setTimeout(() => setAutomodSaved(''), 2000); }
+          }} style={{ ...btn(true), padding: '8px 18px' }}>Save AutoMod Config</button>
+          {automodSaved && <span style={{ fontSize: 12, color: T.ac, fontWeight: 600 }}>{automodSaved}</span>}
+        </div>
+      </>)}
     </>)}
 
     {modTab === 'permissions' && (<>

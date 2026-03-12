@@ -652,7 +652,6 @@ pub async fn ban_user(
         .await?;
 
     // Revoke sessions in Redis so in-flight JWTs are rejected.
-    let revoked_key = format!("revoked_sessions:{}", target_id);
     let mut redis_conn = state.redis.clone();
     // Set a blanket revocation flag (checked by auth middleware).
     let _: Result<String, _> = redis::cmd("SET")
