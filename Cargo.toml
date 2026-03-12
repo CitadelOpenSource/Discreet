@@ -65,7 +65,7 @@ hkdf = { version = "0.12", optional = true }
 # See: https://crates.io/crates/ml-kem / https://crates.io/crates/ml-dsa
 
 # ── Crypto — future: MLS (behind feature flag) ───────────
-openmls = { version = "0.5", optional = true }
+openmls = { version = "0.8", optional = true }
 openmls_rust_crypto = { version = "0.2", optional = true }
 
 # ── Utilities ─────────────────────────────────────────────
