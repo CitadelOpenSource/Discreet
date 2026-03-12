@@ -23,7 +23,7 @@ post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek", "dep:hkdf"]
 # ── Web framework ─────────────────────────────────────────
 axum = { version = "0.7", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
-tower = "0.4"
+tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "fs"] }
 hyper = { version = "1.0", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
