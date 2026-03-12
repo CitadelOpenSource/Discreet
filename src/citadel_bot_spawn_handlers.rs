@@ -23,6 +23,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
+use crate::citadel_agent_config::{load_server_agent_config, store_encrypted_api_key};
+use crate::citadel_agent_memory::{agent_memory_fact_count, build_context, clear_agent_memory};
+use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata};
 
 // ─── Personas ──────────────────────────────────────────────────────────
 
@@ -137,6 +140,23 @@ pub struct AddBotToServerRequest {
     pub knowledge_base: Option<String>,
     pub response_mode: Option<String>,
     pub auto_thread: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentConfigRequest {
+    pub provider_type:         Option<String>,
+    pub model_id:              Option<String>,
+    pub endpoint_url:          Option<String>,
+    pub temperature:           Option<f32>,
+    pub context_message_count: Option<i32>,
+    pub trigger_keywords:      Option<serde_json::Value>,
+    pub memory_mode:           Option<String>,
+    pub system_prompt:         Option<String>,
+    pub disclosure_text:       Option<String>,
+    pub nsfw_allowed:          Option<bool>,
+    pub mcp_tool_urls:         Option<serde_json::Value>,
+    /// Plaintext API key — encrypted and stored; never echoed back.
+    pub api_key:               Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -270,6 +290,22 @@ pub async fn spawn_bot_channel(
         user_id = %auth.user_id, bot = %persona.id, channel = %bc_id,
         "AI bot channel spawned (patent claim 1)"
     );
+
+    // Emit disclosure so clients can surface the AI-in-channel notice.
+    // Private bot channels have no server_id; Uuid::nil() targets no WS bus
+    // (fire-and-forget, silently dropped if no subscriber).
+    let disclosure_text = format!(
+        "AI Agent {} is active in this channel. Messages you send may be processed by \
+         the configured AI provider. Agent responses are encrypted like all other messages.",
+        persona.name
+    );
+    state.ws_broadcast(Uuid::nil(), serde_json::json!({
+        "type":             "agent_disclosure",
+        "channel_id":       bc_id,
+        "agent_id":         bot_id,
+        "display_name":     persona.name,
+        "disclosure_text":  disclosure_text,
+    })).await;
 
     Ok((StatusCode::CREATED, Json(serde_json::json!({
         "id": bc_id,
@@ -502,6 +538,20 @@ pub async fn add_bot_to_server(
         ).execute(&state.db).await?;
     }
 
+    // Emit disclosure to all server members so clients can surface the AI-in-server notice.
+    let disclosure_text = format!(
+        "AI Agent {} is active in this channel. Messages you send may be processed by \
+         the configured AI provider. Agent responses are encrypted like all other messages.",
+        display_name
+    );
+    state.ws_broadcast(server_id, serde_json::json!({
+        "type":             "agent_disclosure",
+        "channel_id":       Uuid::nil(),
+        "agent_id":         bot_id,
+        "display_name":     display_name,
+        "disclosure_text":  disclosure_text,
+    })).await;
+
     Ok((StatusCode::CREATED, Json(serde_json::json!({
         "bot_id": bot_id, "persona": persona.id, "name": persona.name,
     }))))
@@ -695,9 +745,43 @@ pub async fn prompt_bot(
         .ok_or_else(|| AppError::NotFound("No text channel found in server".into()))?
     };
 
-    // Build the canned response. Truncate long prompts in the preview so the
-    // message stays readable.
-    let display_name = bot.display_name.clone();
+    // Attempt to load the full agent config (provider, encrypted API key, memory
+    // mode, etc.).  Falls back to the placeholder response when not yet configured.
+    let agent_config = load_server_agent_config(
+        &state.db,
+        bot_id,
+        server_id,
+        state.config.agent_key_secret.as_bytes(),
+    ).await;
+
+    // When agent config loaded successfully, build the LLM context window:
+    // load the last N channel messages, append the current user prompt, then
+    // strip user-identifying metadata before any LLM call sees the content.
+    let messages: Vec<AgentMessage> = if let Ok(ref cfg) = agent_config {
+        let mut msgs = build_context(
+            &state.db,
+            channel_id,
+            bot_id,
+            cfg.context_message_count,
+            cfg.memory_mode == crate::citadel_agent_config::MemoryMode::Summary,
+        ).await.unwrap_or_default();
+        msgs.push(AgentMessage {
+            role: "user".into(),
+            content: req.prompt.clone(),
+        });
+        strip_metadata(&mut msgs);
+        msgs
+    } else {
+        Vec::new()
+    };
+
+    // Build the response text. When agent config is available, use its resolved
+    // display name; otherwise fall back to the bot_configs row values so the
+    // placeholder message still looks correct.
+    let display_name = match &agent_config {
+        Ok(cfg) => cfg.display_name.clone(),
+        Err(_)  => bot.display_name.clone(),
+    };
     let persona = bot.persona.clone();
     let temperature = bot.temperature.unwrap_or(0.7);
 
@@ -708,11 +792,29 @@ pub async fn prompt_bot(
         req.prompt.clone()
     };
 
-    let response_text = format!(
+    let placeholder = format!(
         "{display_name}: I received your message about '{prompt_preview}'. \
          [AI responses will be connected soon — this bot is configured as a \
          {persona} with temperature {temperature:.1}]"
     );
+
+    let response_text = if let Ok(ref cfg) = agent_config {
+        let provider = create_provider(&cfg.provider_type);
+        match provider.complete(&cfg.system_prompt, messages, &cfg.model_config).await {
+            Ok(completion) => completion.text,
+            Err(e) => {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    server_id = %server_id,
+                    error = %e,
+                    "LLM provider call failed — falling back to placeholder response"
+                );
+                placeholder
+            }
+        }
+    } else {
+        placeholder
+    };
 
     // Insert the bot's reply as a message in the channel.
     // content_ciphertext stores the plaintext bytes for bot messages (bots are
@@ -754,4 +856,260 @@ pub async fn prompt_bot(
         "content":    response_text,
         "author_id":  bot_id,
     })))
+}
+
+// ─── GET /servers/:server_id/ai-bots/:bot_id/config ────────────────────
+//
+// Returns the agent's provider configuration for display in the server
+// settings UI. The encrypted API key is NEVER returned — only a boolean
+// indicating whether one has been stored.
+
+pub async fn get_agent_config(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((server_id, bot_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let is_owner = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM servers WHERE id = $1 AND owner_id = $2)",
+        server_id, auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !is_owner {
+        return Err(AppError::Forbidden("Only server owner can view agent config".into()));
+    }
+
+    let row = sqlx::query!(
+        r#"SELECT
+               provider_type,
+               model_id,
+               endpoint_url,
+               temperature,
+               context_message_count,
+               trigger_keywords,
+               memory_mode,
+               disclosure_text,
+               nsfw_allowed,
+               mcp_tool_urls,
+               api_key_encrypted
+           FROM bot_configs
+           WHERE bot_user_id = $1 AND server_id = $2"#,
+        bot_id, server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Agent config not found".into()))?;
+
+    let has_api_key = row.api_key_encrypted.as_ref().map_or(false, |b| !b.is_empty());
+    let fact_count = agent_memory_fact_count(&state.db, bot_id).await;
+
+    Ok(Json(serde_json::json!({
+        "provider_type":          row.provider_type,
+        "model_id":               row.model_id,
+        "endpoint_url":           row.endpoint_url,
+        "temperature":            row.temperature,
+        "context_message_count":  row.context_message_count,
+        "trigger_keywords":       row.trigger_keywords,
+        "memory_mode":            row.memory_mode,
+        "disclosure_text":        row.disclosure_text,
+        "nsfw_allowed":           row.nsfw_allowed,
+        "mcp_tool_urls":          row.mcp_tool_urls,
+        "has_api_key":            has_api_key,
+        "has_env_key":            false,
+        "fact_count":             fact_count,
+    })))
+}
+
+// ─── PUT /servers/:server_id/ai-bots/:bot_id/config ────────────────────
+//
+// Updates the agent's provider configuration. Each field is optional —
+// only supplied fields are written. The api_key field, when present, is
+// encrypted with AES-256-GCM and stored; it is never echoed back.
+// Response mirrors GET so the UI can refresh state from a single call.
+
+pub async fn update_agent_config(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((server_id, bot_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<UpdateAgentConfigRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let is_owner = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM servers WHERE id = $1 AND owner_id = $2)",
+        server_id, auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !is_owner {
+        return Err(AppError::Forbidden("Only server owner can update agent config".into()));
+    }
+
+    // Apply each supplied field individually, matching the pattern used by
+    // update_bot_config above. Absent fields are left at their current value.
+    if let Some(ref v) = req.provider_type {
+        sqlx::query!(
+            "UPDATE bot_configs SET provider_type = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.model_id {
+        sqlx::query!(
+            "UPDATE bot_configs SET model_id = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.endpoint_url {
+        sqlx::query!(
+            "UPDATE bot_configs SET endpoint_url = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(v) = req.temperature {
+        sqlx::query!(
+            "UPDATE bot_configs SET temperature = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(v) = req.context_message_count {
+        sqlx::query!(
+            "UPDATE bot_configs SET context_message_count = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.trigger_keywords {
+        sqlx::query!(
+            "UPDATE bot_configs SET trigger_keywords = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.memory_mode {
+        sqlx::query!(
+            "UPDATE bot_configs SET memory_mode = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.system_prompt {
+        sqlx::query!(
+            "UPDATE bot_configs SET system_prompt = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.disclosure_text {
+        sqlx::query!(
+            "UPDATE bot_configs SET disclosure_text = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(v) = req.nsfw_allowed {
+        sqlx::query!(
+            "UPDATE bot_configs SET nsfw_allowed = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+    if let Some(ref v) = req.mcp_tool_urls {
+        sqlx::query!(
+            "UPDATE bot_configs SET mcp_tool_urls = $1 WHERE bot_user_id = $2 AND server_id = $3",
+            v, bot_id, server_id,
+        ).execute(&state.db).await?;
+    }
+
+    // API key: encrypt and store — never echo back.
+    if let Some(ref plaintext_key) = req.api_key {
+        store_encrypted_api_key(
+            &state.db,
+            bot_id,
+            server_id,
+            plaintext_key,
+            state.config.agent_key_secret.as_bytes(),
+        )
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    // Re-query to return the current state in the same shape as GET.
+    let row = sqlx::query!(
+        r#"SELECT
+               provider_type,
+               model_id,
+               endpoint_url,
+               temperature,
+               context_message_count,
+               trigger_keywords,
+               memory_mode,
+               disclosure_text,
+               nsfw_allowed,
+               mcp_tool_urls,
+               api_key_encrypted
+           FROM bot_configs
+           WHERE bot_user_id = $1 AND server_id = $2"#,
+        bot_id, server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Agent config not found".into()))?;
+
+    let has_api_key = row.api_key_encrypted.as_ref().map_or(false, |b| !b.is_empty());
+    let fact_count = agent_memory_fact_count(&state.db, bot_id).await;
+
+    tracing::info!(
+        bot_id = %bot_id,
+        server_id = %server_id,
+        "Agent config updated"
+    );
+
+    Ok(Json(serde_json::json!({
+        "provider_type":          row.provider_type,
+        "model_id":               row.model_id,
+        "endpoint_url":           row.endpoint_url,
+        "temperature":            row.temperature,
+        "context_message_count":  row.context_message_count,
+        "trigger_keywords":       row.trigger_keywords,
+        "memory_mode":            row.memory_mode,
+        "disclosure_text":        row.disclosure_text,
+        "nsfw_allowed":           row.nsfw_allowed,
+        "mcp_tool_urls":          row.mcp_tool_urls,
+        "has_api_key":            has_api_key,
+        "has_env_key":            false,
+        "fact_count":             fact_count,
+    })))
+}
+
+// ─── DELETE /servers/:server_id/ai-bots/:bot_id/memory ─────────────────
+//
+// Clears all context summaries (long-term memory) for the bot.
+// Sliding-window memory (live message history) is unaffected.
+// Restricted to server owner.
+
+pub async fn delete_agent_memory(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((server_id, bot_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let is_owner = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM servers WHERE id = $1 AND owner_id = $2)",
+        server_id, auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !is_owner {
+        return Err(AppError::Forbidden("Only server owner can clear agent memory".into()));
+    }
+
+    let rows_deleted = clear_agent_memory(&state.db, bot_id)
+        .await
+        .map_err(AppError::from)?;
+
+    tracing::info!(
+        bot_id = %bot_id,
+        server_id = %server_id,
+        rows_deleted,
+        "Agent memory cleared by owner"
+    );
+
+    Ok(Json(serde_json::json!({ "cleared": rows_deleted })))
 }

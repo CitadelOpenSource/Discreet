@@ -284,6 +284,7 @@ export default function App() {
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [agentDisclosures, setAgentDisclosures] = useState<Record<string, { agent_id: string; display_name: string; disclosure_text: string }>>({});
   // Server organization: favorites, folders, custom order
   const [serverFavorites, setServerFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('d_srv_favs') || '[]'));
   const [serverFolders, setServerFolders] = useState<Record<string, string[]>>(() => JSON.parse(localStorage.getItem('d_srv_folders') || '{}'));
@@ -632,6 +633,17 @@ export default function App() {
       }
       if (evt.type === 'stream_viewer_count' && evt.channel_id) {
         setStreamStatus(p => ({ ...p, [evt.channel_id]: { ...(p[evt.channel_id] ?? { active: true, viewerCount: 0 }), viewerCount: evt.viewer_count ?? 0 } }));
+      }
+      // Agent disclosure — surface AI-in-channel notice when a bot joins
+      if (evt.type === 'agent_disclosure' && evt.channel_id) {
+        setAgentDisclosures(p => ({
+          ...p,
+          [evt.channel_id]: {
+            agent_id:       evt.agent_id       ?? '',
+            display_name:   evt.display_name   ?? 'AI Agent',
+            disclosure_text: evt.disclosure_text ?? '',
+          },
+        }));
       }
       // Force voice join — server re-broadcasts as voice_join so presence
       // is already handled above; here we only need to move *this* client.
@@ -1951,6 +1963,19 @@ export default function App() {
             }
           }} style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
             {loadingMore && <div style={{ textAlign: 'center', padding: 8, fontSize: 11, color: T.mt }}>Loading older messages...</div>}
+            {curChannel && agentDisclosures[curChannel.id] && (
+              <div style={{ background: '#1a1a2e', borderLeft: '3px solid #f0b232', borderRadius: 8, padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>🛡️</span>
+                <span style={{ flex: 1, fontSize: 13, color: '#e0e0e0', lineHeight: 1.5 }}>
+                  {agentDisclosures[curChannel.id].disclosure_text}
+                </span>
+                <span
+                  onClick={() => setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; })}
+                  title="Dismiss"
+                  style={{ cursor: 'pointer', color: '#888', fontSize: 15, flexShrink: 0, lineHeight: 1, paddingTop: 1 }}
+                >✕</span>
+              </div>
+            )}
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', padding: 40, color: T.mt }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>#</div>
@@ -2901,6 +2926,7 @@ export default function App() {
           <BotConfigModal
             bot={selectedBot}
             serverId={curServer?.id}
+            channelId={curChannel?.id}
             onClose={() => { setModal(null); setSelectedBot(null); }}
             showConfirm={showConfirm}
           />

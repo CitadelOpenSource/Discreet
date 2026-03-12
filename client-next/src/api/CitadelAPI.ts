@@ -282,6 +282,9 @@ export class CitadelAPI {
   async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async updateBotConfig(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async removeBotFromServer(sid: string, bid: string) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'DELETE' }); }
+  async getAgentConfig(sid: string, bid: string) { try { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/config`); return r.ok ? r.json() : null; } catch { return null; } }
+  async putAgentConfig(sid: string, bid: string, data: any) { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/config`, { method: 'PUT', body: JSON.stringify(data) }); return r.ok ? r.json() : null; }
+  async deleteAgentMemory(sid: string, bid: string) { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/memory`, { method: 'DELETE' }); return r.ok ? r.json() : null; }
 
   // ── Reactions ──
   async addReaction(cid: string, mid: string, emoji: string) { return this.fetch(`/channels/${cid}/messages/${mid}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' }); }

@@ -25,7 +25,7 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::citadel_agent_provider::{AgentError, AgentMessage};
@@ -471,6 +471,41 @@ pub fn should_agent_respond(
     }
 
     false
+}
+
+/// Delete all context summaries for a bot, effectively resetting its long-term memory.
+/// Sliding-window memory (raw message history) is unaffected — it reads live DB rows.
+pub async fn clear_agent_memory(
+    db: &PgPool,
+    bot_user_id: Uuid,
+) -> Result<u64, AgentError> {
+    let result = sqlx::query!(
+        "DELETE FROM agent_context_summaries WHERE bot_user_id = $1",
+        bot_user_id,
+    )
+    .execute(db)
+    .await
+    .map_err(|e| AgentError::Internal(format!("Failed to clear agent memory: {e}")))?;
+
+    let rows = result.rows_affected();
+    info!(bot_user_id = %bot_user_id, rows_deleted = rows, "Agent memory cleared");
+    Ok(rows)
+}
+
+/// Count total messages tracked in context summaries for a bot (across all channels).
+/// Returns 0 if no summaries exist yet.
+pub async fn agent_memory_fact_count(
+    db: &PgPool,
+    bot_user_id: Uuid,
+) -> i64 {
+    sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(message_count), 0)::BIGINT FROM agent_context_summaries WHERE bot_user_id = $1",
+        bot_user_id,
+    )
+    .fetch_one(db)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(0)
 }
 
 // ─── SQL for Summary Table ──────────────────────────────────────────────

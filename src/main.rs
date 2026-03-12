@@ -207,6 +207,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/ai-bots", axum::routing::get(citadel_bot_spawn_handlers::list_server_bots).post(citadel_bot_spawn_handlers::add_bot_to_server))
         .route("/servers/:server_id/ai-bots/:bot_id", axum::routing::patch(citadel_bot_spawn_handlers::update_bot_config).delete(citadel_bot_spawn_handlers::remove_bot_from_server))
         .route("/servers/:server_id/ai-bots/:bot_id/prompt", axum::routing::post(citadel_bot_spawn_handlers::prompt_bot))
+        .route("/servers/:server_id/ai-bots/:bot_id/config", axum::routing::get(citadel_bot_spawn_handlers::get_agent_config).put(citadel_bot_spawn_handlers::update_agent_config))
+        .route("/servers/:server_id/ai-bots/:bot_id/memory", axum::routing::delete(citadel_bot_spawn_handlers::delete_agent_memory))
         // Meetings (Zoom-style)
         .route("/meetings", axum::routing::post(citadel_meeting_handlers::create_meeting).get(citadel_meeting_handlers::list_my_meetings))
         .route("/meetings/:code", axum::routing::get(citadel_meeting_handlers::get_meeting_info).delete(citadel_meeting_handlers::end_meeting))

@@ -102,8 +102,8 @@ pub async fn get_me(
         email: user.email,
         avatar_url: user.avatar_url,
         created_at: user.created_at.to_rfc3339(),
-        account_tier: user.account_tier.unwrap_or_else(|| "registered".into()),
-        is_guest: user.is_guest.unwrap_or(false),
+        account_tier: user.account_tier.clone(),
+        is_guest: user.is_guest,
     }))
 }
 
@@ -155,7 +155,7 @@ pub async fn update_me(
 
     // Return updated profile.
     let user = sqlx::query!(
-        "SELECT id, username, display_name, email, avatar_url, created_at
+        "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest
          FROM users WHERE id = $1",
         auth.user_id,
     )
@@ -169,6 +169,8 @@ pub async fn update_me(
         email: user.email,
         avatar_url: user.avatar_url,
         created_at: user.created_at.to_rfc3339(),
+        account_tier: user.account_tier.clone(),
+        is_guest: user.is_guest,
     }))
 }
 

@@ -67,6 +67,7 @@ interface BotConfig {
 export interface BotConfigModalProps {
   bot: BotInfo;
   serverId?: string;
+  channelId?: string;
   onClose: () => void;
   onSave?: (cfg: BotConfig) => void;
   showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
@@ -255,7 +256,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 
 // ─── Component ────────────────────────────────────────────
 
-export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: BotConfigModalProps) {
+export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, showConfirm }: BotConfigModalProps) {
   const [tab, setTab] = useState('general');
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // Seed cfg from the prop (minimal member-list data) as a starting point.
@@ -431,8 +432,6 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
     return '~$0.003 / msg (est.)';
   }
 
-  const llmStorageKey = (k: string) => `d_bot_llm_${k}_${bot?.bot_user_id || 'default'}`;
-
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('none');
   const [llmEndpoint, setLlmEndpoint] = useState('');
   const [llmApiKey,   setLlmApiKey]   = useState('');
@@ -442,22 +441,27 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
   const [llmTestLoading,  setLlmTestLoading]  = useState(false);
   const [llmTestError,    setLlmTestError]    = useState('');
   const [llmKeyVisible,   setLlmKeyVisible]   = useState(false);
+  const [llmHasApiKey,      setLlmHasApiKey]      = useState(false);
+  const [llmHasEnvKey,      setLlmHasEnvKey]      = useState(false);
+  const [llmSaveLoading,    setLlmSaveLoading]    = useState(false);
+  const [llmSaveSuccess,    setLlmSaveSuccess]    = useState(false);
+  const [llmFactCount,      setLlmFactCount]      = useState<number | null>(null);
+  const [llmClearingMemory, setLlmClearingMemory] = useState(false);
 
-  // Load LLM settings from localStorage on mount
+  // Load LLM settings from server on mount
   useEffect(() => {
-    const p = (localStorage.getItem(llmStorageKey('provider')) || 'none') as LlmProvider;
-    setLlmProvider(p);
-    setLlmEndpoint(localStorage.getItem(llmStorageKey('endpoint')) || PROVIDER_DEFAULTS[p]?.endpoint || '');
-    setLlmApiKey(localStorage.getItem(llmStorageKey('key')) || '');
-    setLlmModel(localStorage.getItem(llmStorageKey('model')) || PROVIDER_DEFAULTS[p]?.model || '');
-  }, []);
-
-  const saveLlmSettings = (p: LlmProvider, ep: string, key: string, m: string) => {
-    localStorage.setItem(llmStorageKey('provider'), p);
-    localStorage.setItem(llmStorageKey('endpoint'), ep);
-    localStorage.setItem(llmStorageKey('key'), key);      // key stored locally only
-    localStorage.setItem(llmStorageKey('model'), m);
-  };
+    if (!serverId || !bot?.bot_user_id) return;
+    api.getAgentConfig(serverId, bot.bot_user_id).then((data: any) => {
+      if (!data) return;
+      const p = (data.provider_type || 'none') as LlmProvider;
+      setLlmProvider(p);
+      setLlmEndpoint(data.endpoint_url || PROVIDER_DEFAULTS[p]?.endpoint || '');
+      setLlmModel(data.model_id || PROVIDER_DEFAULTS[p]?.model || '');
+      setLlmHasApiKey(!!data.has_api_key);
+      setLlmHasEnvKey(!!data.has_env_key);
+      setLlmFactCount(data.fact_count ?? 0);
+    });
+  }, [serverId, bot?.bot_user_id]);
 
   const selectProvider = (p: LlmProvider) => {
     const defaults = PROVIDER_DEFAULTS[p];
@@ -466,74 +470,22 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
     setLlmProvider(p);
     setLlmEndpoint(ep);
     setLlmModel(m);
-    saveLlmSettings(p, ep, llmApiKey, m);
   };
 
   const runLlmTest = async () => {
-    if (!llmTestPrompt.trim()) return;
+    if (!llmTestPrompt.trim() || !serverId || !bot?.bot_user_id) return;
     setLlmTestLoading(true);
     setLlmTestResponse('');
     setLlmTestError('');
     try {
-      if (llmProvider === 'none') {
-        // Simulate a placeholder response
-        await new Promise(r => setTimeout(r, 600));
-        setLlmTestResponse('[Placeholder mode] I am a bot using placeholder responses. Configure an AI provider in the AI Engine tab to enable real responses.');
-        setLlmTestLoading(false);
-        return;
-      }
-
-      if (llmProvider === 'anthropic') {
-        // Anthropic Messages API
-        const res = await fetch(`${llmEndpoint}/v1/messages`, {
-          method: 'POST',
-          headers: {
-            'x-api-key': llmApiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: llmModel,
-            max_tokens: 256,
-            system: cfg.system_prompt || 'You are a helpful assistant.',
-            messages: [{ role: 'user', content: llmTestPrompt }],
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error?.message || `HTTP ${res.status}`);
-        }
-        const d = await res.json();
-        setLlmTestResponse(d?.content?.[0]?.text ?? JSON.stringify(d));
-      } else {
-        // OpenAI-compatible (openai / ollama / custom)
-        const endpoint = llmProvider === 'ollama'
-          ? `${llmEndpoint}/api/chat`
-          : `${llmEndpoint}/chat/completions`;
-
-        const body: Record<string, any> = {
-          model: llmModel,
-          messages: [
-            ...(cfg.system_prompt ? [{ role: 'system', content: cfg.system_prompt }] : []),
-            { role: 'user', content: llmTestPrompt },
-          ],
-          max_tokens: 256,
-          stream: false,
-        };
-
-        const headers: Record<string, string> = { 'content-type': 'application/json' };
-        if (llmApiKey) headers['authorization'] = `Bearer ${llmApiKey}`;
-
-        const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error?.message || `HTTP ${res.status}`);
-        }
-        const d = await res.json();
-        // Ollama: d.message.content, OpenAI: d.choices[0].message.content
-        const text = d?.message?.content ?? d?.choices?.[0]?.message?.content ?? JSON.stringify(d);
-        setLlmTestResponse(text);
-      }
+      const result = await api.promptBot(
+        serverId,
+        bot.bot_user_id,
+        llmTestPrompt,
+        channelId || undefined,
+      );
+      if (!result) throw new Error('No response from server');
+      setLlmTestResponse(result.content ?? JSON.stringify(result));
     } catch (e: any) {
       setLlmTestError(e?.message || String(e));
     } finally {
@@ -803,13 +755,13 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
       {/* ══ AI Engine tab ═══════════════════════════════════ */}
       {tab === 'ai-engine' && (<>
 
-        {/* E2EE notice */}
+        {/* Server-side LLM notice */}
         <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: `${T.ac}0d`, border: `1px solid ${T.ac}30`, borderRadius: 10, marginBottom: 16, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 18, flexShrink: 0 }}>🔒</span>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.ac, marginBottom: 2 }}>Client-Side LLM — E2EE Preserved</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.ac, marginBottom: 2 }}>Server-Side LLM — API Key Encrypted at Rest</div>
             <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5 }}>
-              All LLM API calls are made directly from your browser. The Discreet server never sees your plaintext messages or your API key. Keys are stored in <code style={{ background: T.sf2, borderRadius: 3, padding: '1px 4px' }}>localStorage</code> only — never transmitted to our server.
+              LLM calls are made by the server on behalf of the bot. Your API key is encrypted with AES-256-GCM before storage — the plaintext key is never stored. Bot responses are E2EE like all other messages.
             </div>
           </div>
         </div>
@@ -852,7 +804,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
           </label>
           <input
             value={llmEndpoint}
-            onChange={e => { setLlmEndpoint(e.target.value); saveLlmSettings(llmProvider, e.target.value, llmApiKey, llmModel); }}
+            onChange={e => setLlmEndpoint(e.target.value)}
             placeholder={PROVIDER_DEFAULTS[llmProvider].endpoint || 'https://your-endpoint.example.com/v1'}
             style={{ ...getInp(), marginBottom: 12, fontFamily: 'monospace', fontSize: 12 }}
           />
@@ -862,14 +814,24 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
             <>
               <label style={lbl}>
                 API Key
-                <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— stored in localStorage only</span>
+                <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— encrypted and stored on server</span>
               </label>
+              {llmHasApiKey && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#22c55e', marginBottom: 6 }}>
+                  <span>✅</span> API key configured (encrypted)
+                </div>
+              )}
+              {!llmHasApiKey && llmHasEnvKey && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.mt, marginBottom: 6 }}>
+                  <span>🔑</span> Using server API key
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                 <input
                   type={llmKeyVisible ? 'text' : 'password'}
                   value={llmApiKey}
-                  onChange={e => { setLlmApiKey(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, e.target.value, llmModel); }}
-                  placeholder={llmProvider === 'openai' ? 'sk-...' : llmProvider === 'anthropic' ? 'sk-ant-...' : 'Your API key'}
+                  onChange={e => setLlmApiKey(e.target.value)}
+                  placeholder={llmHasApiKey ? '••••••••  (leave blank to keep existing)' : llmProvider === 'openai' ? 'sk-...' : llmProvider === 'anthropic' ? 'sk-ant-...' : 'Your API key'}
                   style={{ ...getInp(), flex: 1, fontFamily: 'monospace', fontSize: 12 }}
                   autoComplete="off"
                 />
@@ -882,7 +844,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
                 </button>
               </div>
               <div style={{ fontSize: 10, color: T.mt, marginBottom: 12, display: 'flex', gap: 4, alignItems: 'center' }}>
-                <span>🔐</span> Never sent to the Discreet server. Saved to <code style={{ background: T.sf2, borderRadius: 3, padding: '1px 4px' }}>localStorage</code> as <code style={{ background: T.sf2, borderRadius: 3, padding: '1px 4px' }}>{llmStorageKey('key')}</code>.
+                <span>🔐</span> Encrypted with AES-256-GCM before storage. Leave blank to keep existing key.
               </div>
             </>
           )}
@@ -890,7 +852,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
           {/* Model */}
           <label style={lbl}>Model</label>
           {llmProvider === 'openai' ? (
-            <select value={llmModel} onChange={e => { setLlmModel(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, llmApiKey, e.target.value); }} style={{ ...sel, marginBottom: 4 }}>
+            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
               <option value="gpt-4o">gpt-4o — flagship, best quality</option>
               <option value="gpt-4o-mini">gpt-4o-mini — fast &amp; cheap</option>
               <option value="gpt-4-turbo">gpt-4-turbo — high quality</option>
@@ -899,13 +861,13 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
               <option value="o1-mini">o1-mini — fast reasoning</option>
             </select>
           ) : llmProvider === 'anthropic' ? (
-            <select value={llmModel} onChange={e => { setLlmModel(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, llmApiKey, e.target.value); }} style={{ ...sel, marginBottom: 4 }}>
+            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
               <option value="claude-opus-4-6">claude-opus-4-6 — most capable</option>
               <option value="claude-sonnet-4-6">claude-sonnet-4-6 — balanced (recommended)</option>
               <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 — fastest &amp; cheapest</option>
             </select>
           ) : llmProvider === 'ollama' ? (
-            <select value={llmModel} onChange={e => { setLlmModel(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, llmApiKey, e.target.value); }} style={{ ...sel, marginBottom: 4 }}>
+            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
               <option value="llama3">llama3 — Meta Llama 3 (8B)</option>
               <option value="llama3:70b">llama3:70b — Meta Llama 3 (70B)</option>
               <option value="mistral">mistral — Mistral 7B</option>
@@ -918,7 +880,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
           ) : (
             <input
               value={llmModel}
-              onChange={e => { setLlmModel(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, llmApiKey, e.target.value); }}
+              onChange={e => setLlmModel(e.target.value)}
               placeholder="e.g. gpt-4o, mistral-7b, your-custom-model"
               style={{ ...getInp(), marginBottom: 4, fontFamily: 'monospace', fontSize: 12 }}
             />
@@ -928,7 +890,7 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
             <div style={{ marginBottom: 4 }}>
               <input
                 value={llmModel}
-                onChange={e => { setLlmModel(e.target.value); saveLlmSettings(llmProvider, llmEndpoint, llmApiKey, e.target.value); }}
+                onChange={e => setLlmModel(e.target.value)}
                 placeholder="Or type a model name directly"
                 style={{ ...getInp(), fontSize: 12, fontFamily: 'monospace' }}
               />
@@ -945,6 +907,43 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
           </div>
 
         </>)}
+
+        {/* ── Save LLM Config ────────────────────────────────── */}
+        {serverId && bot?.bot_user_id && (
+          <div style={{ borderTop: `1px solid ${T.bd}`, paddingTop: 14, marginTop: 4, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={async () => {
+                  setLlmSaveLoading(true);
+                  setLlmSaveSuccess(false);
+                  const body: any = {
+                    provider_type: llmProvider,
+                    model_id:      llmModel,
+                    endpoint_url:  llmEndpoint || null,
+                    temperature:   cfg.temperature,
+                  };
+                  if (llmApiKey.trim()) body.api_key = llmApiKey.trim();
+                  const result = await api.putAgentConfig(serverId, bot.bot_user_id!, body);
+                  setLlmSaveLoading(false);
+                  if (result) {
+                    setLlmApiKey('');
+                    setLlmHasApiKey(!!result.has_api_key);
+                    setLlmHasEnvKey(!!result.has_env_key);
+                    setLlmSaveSuccess(true);
+                    setTimeout(() => setLlmSaveSuccess(false), 3000);
+                  }
+                }}
+                disabled={llmSaveLoading}
+                style={{ padding: '8px 20px', background: llmSaveLoading ? T.sf2 : T.ac, color: llmSaveLoading ? T.mt : '#000', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: llmSaveLoading ? 'default' : 'pointer' }}
+              >
+                {llmSaveLoading ? '⟳ Saving…' : '💾 Save LLM Config'}
+              </button>
+              {llmSaveSuccess && (
+                <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>✅ Saved successfully</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Test Connection ────────────────────────────────── */}
         <div style={{ borderTop: `1px solid ${T.bd}`, paddingTop: 14 }}>
@@ -974,33 +973,71 @@ export function BotConfigModal({ bot, serverId, onClose, onSave, showConfirm }: 
           {llmTestLoading && (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: T.mt, fontSize: 12, padding: '8px 0' }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.ac, animation: 'pulse 1s infinite' }} />
-              Waiting for response from {PROVIDER_DEFAULTS[llmProvider]?.label ?? llmProvider}…
+              Waiting for response…
             </div>
           )}
           {llmTestError && !llmTestLoading && (
             <div style={{ background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.err, marginBottom: 4 }}>Connection Failed</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.err, marginBottom: 4 }}>Request Failed</div>
               <div style={{ fontSize: 12, color: T.err, lineHeight: 1.5, fontFamily: 'monospace', wordBreak: 'break-word' }}>{llmTestError}</div>
-              {llmProvider === 'ollama' && (
-                <div style={{ marginTop: 8, fontSize: 11, color: T.mt }}>
-                  Make sure Ollama is running: <code style={{ background: T.sf2, borderRadius: 3, padding: '1px 5px', color: T.ac }}>ollama serve</code> and CORS is enabled for your browser origin.
-                </div>
-              )}
-              {(llmProvider === 'openai' || llmProvider === 'anthropic') && !llmApiKey && (
-                <div style={{ marginTop: 8, fontSize: 11, color: T.mt }}>Enter your API key above to authenticate.</div>
-              )}
             </div>
           )}
           {llmTestResponse && !llmTestLoading && !llmTestError && (
             <div style={{ background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.ac }}>{cfg.display_name} via {PROVIDER_DEFAULTS[llmProvider]?.label}</div>
-                <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>{llmModel || '—'}</div>
-              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ac, marginBottom: 6 }}>{cfg.display_name}</div>
               <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{llmTestResponse}</div>
             </div>
           )}
         </div>
+
+        {/* ── Agent Memory ────────────────────────────────────── */}
+        {serverId && bot?.bot_user_id && (
+          <div style={{ borderTop: `1px solid ${T.bd}`, paddingTop: 14, marginTop: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
+              Agent Memory
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 10, marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 18 }}>🧠</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>
+                    {llmFactCount === null
+                      ? 'Loading…'
+                      : llmFactCount === 0
+                        ? 'No summarised context stored'
+                        : `${llmFactCount} messages tracked in summaries`}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>
+                    Sliding-window memory (live history) is always active and unaffected by clearing.
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  if (llmClearingMemory) return;
+                  setLlmClearingMemory(true);
+                  await api.deleteAgentMemory(serverId, bot.bot_user_id!);
+                  setLlmFactCount(0);
+                  setLlmClearingMemory(false);
+                }}
+                disabled={llmClearingMemory || llmFactCount === 0}
+                style={{
+                  padding: '6px 14px',
+                  background: llmClearingMemory || llmFactCount === 0 ? T.sf2 : 'rgba(255,71,87,0.12)',
+                  color: llmClearingMemory || llmFactCount === 0 ? T.mt : '#ff4757',
+                  border: `1px solid ${llmClearingMemory || llmFactCount === 0 ? T.bd : 'rgba(255,71,87,0.35)'}`,
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: llmClearingMemory || llmFactCount === 0 ? 'default' : 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {llmClearingMemory ? '⟳ Clearing…' : '🗑 Clear Memory'}
+              </button>
+            </div>
+          </div>
+        )}
       </>)}
 
       {tab === 'behavior' && (<>

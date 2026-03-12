@@ -131,7 +131,7 @@ pub async fn ws_connect(
     .await?;
 
     let username = user_row.as_ref().map(|r| r.username.clone()).unwrap_or_else(|| "unknown".into());
-    let is_guest = user_row.as_ref().and_then(|r| r.is_guest).unwrap_or(false);
+    let is_guest = user_row.as_ref().map(|r| r.is_guest).unwrap_or(false);
 
     let server_id = params.server_id;
     let state_clone = state.clone();
