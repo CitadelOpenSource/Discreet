@@ -26,8 +26,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::citadel_auth::AuthUser;
 use crate::citadel_error::AppError;
+use crate::citadel_platform_admin_handlers::require_staff_role;
+use crate::citadel_platform_permissions::PlatformUser;
 use crate::citadel_state::AppState;
 
 // ─── Request / Response Types ────────────────────────────────────────────
@@ -89,10 +90,11 @@ fn generate_token() -> (String, String, String) {
 // ─── POST /dev/tokens ────────────────────────────────────────────────────
 
 pub async fn create_token(
-    auth: AuthUser,
+    caller: PlatformUser,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
     let name = req.name.trim().to_string();
     if name.is_empty() || name.len() > 100 {
         return Err(AppError::BadRequest("Token name must be 1–100 characters".into()));
@@ -109,7 +111,7 @@ pub async fn create_token(
                (id, user_id, token_hash, token_prefix, name, permissions, expires_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
         id,
-        auth.user_id,
+        caller.user_id,
         token_hash,
         token_prefix,
         name,
@@ -120,7 +122,7 @@ pub async fn create_token(
     .await?;
 
     tracing::info!(
-        user_id  = %auth.user_id,
+        user_id  = %caller.user_id,
         token_id = %id,
         prefix   = %token_prefix,
         "Developer API token created"
@@ -143,15 +145,16 @@ pub async fn create_token(
 // ─── GET /dev/tokens ─────────────────────────────────────────────────────
 
 pub async fn list_tokens(
-    auth: AuthUser,
+    caller: PlatformUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
     let rows = sqlx::query!(
         r#"SELECT id, token_prefix, name, permissions, created_at, expires_at, revoked_at
            FROM dev_tokens
            WHERE user_id = $1
            ORDER BY created_at DESC"#,
-        auth.user_id,
+        caller.user_id,
     )
     .fetch_all(&state.db)
     .await?;
@@ -175,16 +178,17 @@ pub async fn list_tokens(
 // ─── DELETE /dev/tokens/:id ──────────────────────────────────────────────
 
 pub async fn revoke_token(
-    auth: AuthUser,
+    caller: PlatformUser,
     State(state): State<Arc<AppState>>,
     Path(token_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
     let result = sqlx::query!(
         r#"UPDATE dev_tokens
            SET revoked_at = NOW()
            WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL"#,
         token_id,
-        auth.user_id,
+        caller.user_id,
     )
     .execute(&state.db)
     .await?;
@@ -194,7 +198,7 @@ pub async fn revoke_token(
     }
 
     tracing::info!(
-        user_id  = %auth.user_id,
+        user_id  = %caller.user_id,
         token_id = %token_id,
         "Developer API token revoked"
     );

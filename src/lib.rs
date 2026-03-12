@@ -34,6 +34,8 @@ pub mod citadel_meeting_handlers;
 pub mod citadel_message_handlers;
 pub mod citadel_mls_handlers;
 pub mod citadel_permissions;
+pub mod citadel_platform_admin_handlers;
+pub mod citadel_platform_permissions;
 pub mod citadel_pin_handlers;
 pub mod citadel_poll_handlers;
 pub mod citadel_post_quantum;

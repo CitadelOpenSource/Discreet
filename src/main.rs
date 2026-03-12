@@ -66,6 +66,7 @@ use citadel_server::citadel_state::AppState;
 use citadel_server::citadel_typing;
 use citadel_server::citadel_user_handlers;
 use citadel_server::citadel_dev_token_handlers;
+use citadel_server::citadel_platform_admin_handlers;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
 
@@ -300,7 +301,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Developer API Tokens ──
         .route("/dev/tokens", axum::routing::post(citadel_dev_token_handlers::create_token)
             .get(citadel_dev_token_handlers::list_tokens))
-        .route("/dev/tokens/:id", axum::routing::delete(citadel_dev_token_handlers::revoke_token));
+        .route("/dev/tokens/:id", axum::routing::delete(citadel_dev_token_handlers::revoke_token))
+        // ── Platform identity & admin ──
+        // /platform/*       — any authenticated user
+        // /admin/* /dev/*   — require platform_role = 'admin' or 'dev'
+        //                     (enforced inside each handler via require_staff_role)
+        .route("/platform/me", axum::routing::get(citadel_platform_admin_handlers::platform_me))
+        .route("/admin/stats", axum::routing::get(citadel_platform_admin_handlers::admin_stats))
+        .route("/admin/users", axum::routing::get(citadel_platform_admin_handlers::list_users))
+        .route("/admin/users/:user_id/role", axum::routing::post(citadel_platform_admin_handlers::set_user_role))
+        .route("/admin/registrations", axum::routing::get(citadel_platform_admin_handlers::registration_trend))
+        .route("/admin/generate-dev-accounts", axum::routing::post(citadel_platform_admin_handlers::generate_dev_accounts));
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000

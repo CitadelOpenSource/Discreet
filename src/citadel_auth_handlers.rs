@@ -29,6 +29,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -338,7 +339,17 @@ pub async fn register(
             // Development mode: auto-verify and log the token so developers
             // can see it without needing an SMTP server.
             sqlx::query!(
-                "UPDATE users SET email_verified = TRUE WHERE id = $1",
+                "UPDATE users
+                 SET email_verified = TRUE,
+                     account_tier = CASE
+                         WHEN account_tier IN ('guest', 'unverified') THEN 'verified'
+                         ELSE account_tier
+                     END,
+                     badge_type = CASE
+                         WHEN account_tier IN ('guest', 'unverified') THEN 'shield'
+                         ELSE badge_type
+                     END
+                 WHERE id = $1",
                 user_id,
             )
             .execute(&state.db)
@@ -412,7 +423,26 @@ pub async fn register_guest(
     ).execute(&state.db).await.ok();
 
     let user_id = Uuid::new_v4();
-    let guest_name = format!("Guest-{}", &user_id.to_string()[..8]);
+
+    // Generate display name from the guest_name_pool (e.g. "SwiftFox247").
+    // Falls back to the UUID-prefix format if the pool is empty.
+    let guest_name = {
+        let pool_row = sqlx::query!(
+            "SELECT adjective, noun FROM guest_name_pool ORDER BY RANDOM() LIMIT 1"
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+
+        match pool_row {
+            Some(row) => {
+                let n: u16 = rand::thread_rng().gen_range(100..=999);
+                format!("{}{}{}", row.adjective, row.noun, n)
+            }
+            None => format!("Guest-{}", &user_id.to_string()[..8]),
+        }
+    };
 
     sqlx::query!(
         "INSERT INTO users (id, username, display_name, password_hash, account_tier, is_guest, last_active_at)
@@ -476,12 +506,12 @@ pub async fn upgrade_account(
 
         let hash = hash_password(password)?;
         sqlx::query!(
-            "UPDATE users SET username = $1, password_hash = $2, account_tier = 'registered', is_guest = FALSE WHERE id = $3",
+            "UPDATE users SET username = $1, password_hash = $2, account_tier = 'unverified', is_guest = FALSE WHERE id = $3",
             username, hash, auth.user_id,
         ).execute(&state.db).await?;
 
-        tracing::info!(user_id = %auth.user_id, "Guest upgraded to registered: {}", username);
-        return Ok(Json(serde_json::json!({ "tier": "registered", "username": username })));
+        tracing::info!(user_id = %auth.user_id, "Guest upgraded to unverified: {}", username);
+        return Ok(Json(serde_json::json!({ "tier": "unverified", "username": username })));
     }
 
     // Registered → Verified: email confirmation handled by verify-email endpoints

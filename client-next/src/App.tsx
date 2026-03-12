@@ -280,6 +280,9 @@ export default function App() {
   const [curGroupDm, setCurGroupDm] = useState<any | null>(null);
   const [dmMsgs, setDmMsgs] = useState<any[]>([]);
   const [userMap, setUserMap] = useState<Record<string, string>>({});
+  const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null }>>({});
+  const [platformUser, setPlatformUser] = useState<any>(null);
+  const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
@@ -491,6 +494,7 @@ export default function App() {
       }
     } catch {}
     loadServers(); loadDms(); api.getMe().then(setMe).catch(() => {});
+    api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null } })); } }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
       if (e.type === 'ice_candidate' && api.ws?.readyState === 1) {
@@ -734,7 +738,7 @@ export default function App() {
   const loadCategories = async (sid: string) => { try { const c = await api.listCategories(sid); if (Array.isArray(c)) setCategories(c); } catch {} };
   const loadMembers = async (sid: string) => {
     setLoadingMembers(true);
-    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; m.forEach((u: any) => { map[u.user_id] = u.display_name || u.username; }); setUserMap(p => ({ ...p, ...map })); } } catch {} finally { setLoadingMembers(false); }
+    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.display_name || u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setBadgeMap(prev => ({ ...prev, ...bm })); } } catch {} finally { setLoadingMembers(false); }
   };
   const loadRoles = async (sid: string) => {
     try { const r = await api.listRoles(sid); if (Array.isArray(r)) setRoles(r); } catch {}
@@ -795,6 +799,21 @@ export default function App() {
   };
   const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setMobileMenuOpen(false); };
   const getName = (uid: string) => userMap[uid] || uid?.slice(0, 8) || '?';
+
+  // Inline badge shown after a username. badge_type drives the emoji; account_tier
+  // drives the text label for users with no special badge.
+  const renderPlatformBadge = (uid: string) => {
+    const e = uid === api.userId ? badgeMap[uid] : badgeMap[uid];
+    if (!e) return null;
+    const { badge_type: bt, account_tier: at } = e;
+    if (bt === 'crown')  return <span title="Platform Admin" style={{ marginLeft: 3, fontSize: 11, color: '#faa61a', verticalAlign: 'middle' }}>👑</span>;
+    if (bt === 'wrench') return <span title="Developer"      style={{ marginLeft: 3, fontSize: 11, color: '#5865F2', verticalAlign: 'middle' }}>🔧</span>;
+    if (bt === 'gem')    return <span title="Premium"        style={{ marginLeft: 3, fontSize: 11, color: '#a855f7', verticalAlign: 'middle' }}>💎</span>;
+    if (bt === 'shield') return <span title="Verified"       style={{ marginLeft: 3, fontSize: 11, color: '#10b981', verticalAlign: 'middle' }}>🛡️</span>;
+    if (at === 'unverified') return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Unverified</span>;
+    if (at === 'guest')      return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Guest</span>;
+    return null;
+  };
 
   const pushNotif = (n: AppNotification) => {
     setNotifications(prev => {
@@ -956,7 +975,10 @@ export default function App() {
     .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isDev = (me?.email && _devEmails.includes(me.email.toLowerCase())) ||
     localStorage.getItem('d_dev_local') === 'true';
-  const effectiveTier: Tier = isDev && tierRank(tier) < tierRank('verified') ? 'verified' : tier;
+  const isPlatformDevOrAdmin = platformUser?.platform_role === 'dev' || platformUser?.platform_role === 'admin';
+  const effectiveTier: Tier = (isPlatformDevOrAdmin && devTierOverride)
+    ? devTierOverride
+    : (isDev && tierRank(tier) < tierRank('verified') ? 'verified' : tier);
   const tierLimits = TIER_LIMITS[effectiveTier];
 
   const createServer = async () => {
@@ -1879,6 +1901,7 @@ export default function App() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{m.author_id === api.userId ? (api.username || '?') : getName(m.author_id)}</span>
+                    {renderPlatformBadge(m.author_id)}
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{m.text || m.content || m.content_ciphertext}</div>
@@ -2040,6 +2063,7 @@ export default function App() {
                   {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingLeft: 12, borderLeft: `2px solid ${T.bd}` }}>↩ replying to a message</div>}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
+                    {renderPlatformBadge(m.author_id)}
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div className="msg-text" style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{renderText(msgText)}</div>
@@ -2309,6 +2333,7 @@ export default function App() {
                     <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: m.user_id === curServer?.owner_id ? '#faa61a' : T.tx }}>
                       {m.display_name || m.username}
                       {m.user_id === curServer?.owner_id && ' 👑'}
+                      {renderPlatformBadge(m.user_id)}
                       {m.user_id === api.userId && <span style={{ color: T.ac, fontSize: 10 }}> (you)</span>}
                       {m.is_bot && <>
                         {showBotBadge && <span style={{ background: '#5865F2', color: '#fff', fontSize: 8, padding: '1px 4px', borderRadius: 3, marginLeft: 4, verticalAlign: 'middle' }}>BOT</span>}
@@ -2521,6 +2546,13 @@ export default function App() {
             setUserMap={setUserMap}
             curServer={curServer}
             onLogout={async () => { await api.logout(); setAuthed(false); setModal(null); }}
+            platformUser={platformUser}
+            devTierOverride={devTierOverride}
+            onSetDevTierOverride={(t) => {
+              setDevTierOverride(t);
+              if (t) localStorage.setItem('d_dev_tier_override', t);
+              else localStorage.removeItem('d_dev_tier_override');
+            }}
           />
         </Suspense>
       )}
