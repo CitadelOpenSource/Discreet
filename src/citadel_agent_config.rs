@@ -37,7 +37,7 @@ use aes_gcm::{
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::citadel_agent_provider::{AgentError, AgentModelConfig, ProviderType};
@@ -49,7 +49,7 @@ use crate::citadel_agent_provider::{AgentError, AgentModelConfig, ProviderType};
 #[derive(Debug, Clone)]
 pub struct AgentConfigRow {
     pub agent_id: Uuid,
-    pub server_id: Uuid,
+    pub server_id: Option<Uuid>,
     pub display_name: String,
     pub provider_type: String,
     pub api_key_encrypted: Option<Vec<u8>>,
@@ -244,7 +244,7 @@ pub async fn load_agent_config(
             COALESCE(bc.model_id, 'claude-haiku-4-5-20251001') AS "model_id!",
             bc.endpoint_url,
             bc.mcp_tool_urls,
-            COALESCE(bc.temperature, 0.7) AS "temperature!",
+            COALESCE(bc.temperature, 0.7::REAL) AS "temperature!",
             COALESCE(bc.context_message_count, 20) AS "context_message_count!",
             bc.trigger_keywords,
             COALESCE(bc.memory_mode, 'sliding_window') AS "memory_mode!",
@@ -292,7 +292,7 @@ pub async fn load_server_agent_config(
             COALESCE(bc.model_id, 'claude-haiku-4-5-20251001') AS "model_id!",
             bc.endpoint_url,
             bc.mcp_tool_urls,
-            COALESCE(bc.temperature, 0.7) AS "temperature!",
+            COALESCE(bc.temperature, 0.7::REAL) AS "temperature!",
             COALESCE(bc.context_message_count, 20) AS "context_message_count!",
             bc.trigger_keywords,
             COALESCE(bc.memory_mode, 'sliding_window') AS "memory_mode!",
@@ -403,7 +403,7 @@ fn resolve_config(
     Ok(ResolvedAgentConfig {
         agent_id: row.agent_id,
         bot_user_id: row.bot_user_id,
-        server_id: row.server_id,
+        server_id: row.server_id.unwrap_or_default(),
         display_name: row.display_name,
         provider_type,
         model_config,

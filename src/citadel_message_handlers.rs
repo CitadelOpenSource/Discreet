@@ -27,6 +27,9 @@ use crate::citadel_permissions::{
     PERM_VIEW_CHANNEL,
 };
 use crate::citadel_state::AppState;
+use crate::citadel_agent_config::load_server_agent_config;
+use crate::citadel_agent_memory::{build_context, should_agent_respond};
+use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata};
 
 // ─── Request Types ──────────────────────────────────────────────────────
 
@@ -146,7 +149,7 @@ pub async fn send_message(
     .execute(&state.db)
     .await?;
 
-    // Fire WebSocket notification (stub for alpha — clients poll for now).
+    // Fire WebSocket notification so connected clients render the message.
     state
         .ws_broadcast(
             channel.server_id,
@@ -159,6 +162,144 @@ pub async fn send_message(
             }),
         )
         .await;
+
+    // After storing and broadcasting the user's message, check whether any
+    // enabled bots in this server should auto-respond. Joining server_members
+    // ensures we only consider bots that are actual server participants.
+    // This block is entirely best-effort — failures must never error the sender.
+    let server_bots = sqlx::query!(
+        r#"SELECT
+               bc.bot_user_id,
+               bc.display_name,
+               bc.trigger_keywords
+           FROM bot_configs bc
+           JOIN server_members sm
+             ON  sm.user_id   = bc.bot_user_id
+             AND sm.server_id = bc.server_id
+           WHERE bc.server_id = $1
+             AND bc.enabled   = TRUE"#,
+        channel.server_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for bot in server_bots {
+        let keywords: Vec<String> = bot
+            .trigger_keywords
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+
+        // content_ciphertext is base64-encoded MLS ciphertext; keyword matching
+        // against plaintext will only work once MLS decryption is wired in.
+        // @mention matching (UUID pattern in the raw string) works now.
+        if should_agent_respond(
+            &req.content_ciphertext,
+            &bot.bot_user_id,
+            &bot.display_name,
+            &keywords,
+            false, // server channel — not a DM
+        ) {
+            let state_task   = state.clone();
+            let bot_user_id  = bot.bot_user_id;
+            let server_id    = channel.server_id;
+            let task_channel = channel_id;
+            let user_content = req.content_ciphertext.clone();
+
+            tokio::spawn(async move {
+                // ── 1. Load agent config ────────────────────────────────
+                let cfg = match load_server_agent_config(
+                    &state_task.db,
+                    bot_user_id,
+                    server_id,
+                    state_task.config.agent_key_secret.as_bytes(),
+                ).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::debug!(
+                            bot_id = %bot_user_id,
+                            error  = %e,
+                            "Agent config load failed — skipping auto-response"
+                        );
+                        return;
+                    }
+                };
+
+                // ── 2. Build context window ─────────────────────────────
+                let use_summary = cfg.memory_mode
+                    == crate::citadel_agent_config::MemoryMode::Summary;
+                let mut messages = build_context(
+                    &state_task.db,
+                    task_channel,
+                    bot_user_id,
+                    cfg.context_message_count,
+                    use_summary,
+                ).await.unwrap_or_default();
+
+                messages.push(AgentMessage {
+                    role:    "user".into(),
+                    content: user_content,
+                });
+                strip_metadata(&mut messages);
+
+                // ── 3. Call LLM provider ────────────────────────────────
+                let provider = create_provider(&cfg.provider_type);
+                let reply_text = match provider.complete(
+                    &cfg.system_prompt,
+                    messages,
+                    &cfg.model_config,
+                ).await {
+                    Ok(result) => result.text,
+                    Err(e) => {
+                        tracing::warn!(
+                            bot_id = %bot_user_id,
+                            error  = %e,
+                            "LLM provider call failed — no auto-response sent"
+                        );
+                        return;
+                    }
+                };
+
+                // ── 4. Persist reply as a bot-authored message ──────────
+                let reply_id      = Uuid::new_v4();
+                let content_bytes = reply_text.as_bytes().to_vec();
+
+                if let Err(e) = sqlx::query!(
+                    "INSERT INTO messages
+                         (id, channel_id, author_id, content_ciphertext, mls_epoch)
+                     VALUES ($1, $2, $3, $4, 0)",
+                    reply_id,
+                    task_channel,
+                    bot_user_id,
+                    &content_bytes,
+                ).execute(&state_task.db).await {
+                    tracing::error!(
+                        bot_id = %bot_user_id,
+                        error  = %e,
+                        "Failed to insert bot reply into messages"
+                    );
+                    return;
+                }
+
+                // ── 5. Broadcast so connected clients render it live ────
+                state_task.ws_broadcast(server_id, serde_json::json!({
+                    "type":       "message_create",
+                    "channel_id": task_channel,
+                    "message_id": reply_id,
+                    "author_id":  bot_user_id,
+                    "content":    reply_text,
+                })).await;
+
+                tracing::info!(
+                    bot_id     = %bot_user_id,
+                    server_id  = %server_id,
+                    channel_id = %task_channel,
+                    reply_id   = %reply_id,
+                    "Bot auto-response sent"
+                );
+            });
+        }
+    }
 
     Ok((
         StatusCode::CREATED,

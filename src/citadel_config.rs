@@ -55,6 +55,11 @@ pub struct Config {
     pub agents_enabled: bool,
 
     // ── AI Agents ────────────────────────────────────────
+    /// Master secret for AES-256-GCM encryption of agent API keys at rest.
+    /// Each agent derives a unique key via SHA-256(secret || ":" || agent_id).
+    /// Generate with: openssl rand -hex 32
+    #[serde(default = "default_agent_key_secret")]
+    pub agent_key_secret: String,
     /// LLM inference endpoint for Citadel-hosted agents
     pub agent_llm_endpoint: Option<String>,
     /// Max concurrent agents per server
@@ -94,6 +99,7 @@ fn default_db_pool() -> u32 { 20 }
 fn default_jwt_expiry() -> u64 { 900 }
 fn default_refresh_expiry() -> u64 { 604_800 }
 fn default_pq_level() -> u8 { 3 }
+fn default_agent_key_secret() -> String { "CHANGE_ME_generate_with_openssl_rand_hex_32".into() }
 fn default_max_agents() -> u32 { 50 }
 fn default_federation_port() -> u16 { 8448 }
 fn default_rate_limit() -> u32 { 120 }

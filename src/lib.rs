@@ -3,7 +3,10 @@
 // Each module is a self-contained file with a unique name.
 // No ambiguous mod.rs files. Every file is identifiable at a glance.
 
+pub mod citadel_agent_config;
 pub mod citadel_agent_handlers;
+pub mod citadel_agent_memory;
+pub mod citadel_agent_provider;
 pub mod citadel_agent_types;
 pub mod citadel_audit;
 pub mod citadel_auth;

@@ -19,7 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 // ─── Error Types ────────────────────────────────────────────────────────
 

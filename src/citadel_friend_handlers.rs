@@ -68,7 +68,7 @@ pub async fn send_friend_request(
     .fetch_one(&state.db)
     .await?;
 
-    if is_guest.unwrap_or(false) {
+    if is_guest {
         return Err(AppError::Forbidden("Guests cannot send friend requests. Register an account first (Settings → Profile → Upgrade).".into()));
     }
 
