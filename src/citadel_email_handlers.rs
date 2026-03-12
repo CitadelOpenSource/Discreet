@@ -1,9 +1,8 @@
 // citadel_email_handlers.rs — Email verification and password reset.
 //
-// SMTP integration for auth flows. Works with any SMTP provider:
-// - Resend (free tier: 100 emails/day)
-// - SendGrid (free tier: 100 emails/day)
-// - Self-hosted Postfix / mailcow
+// Email delivery:
+//   RESEND_API_KEY set → Resend HTTP API (https://api.resend.com/emails)
+//   Neither set        → log-only (dev mode, token returned in response)
 //
 // Endpoints:
 //   POST /api/v1/auth/verify-email/send    — Send verification email
@@ -17,6 +16,12 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
+
+/// Returns true if any email delivery provider is configured (env vars present).
+/// Used to decide whether dev_token / dev_link fields should be exposed.
+fn email_provider_configured() -> bool {
+    std::env::var("RESEND_API_KEY").map(|v| !v.is_empty()).unwrap_or(false)
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SendVerificationRequest {
@@ -77,9 +82,12 @@ pub async fn send_verification(
 
     if sent {
         Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
+    } else if email_provider_configured() {
+        // Provider configured but send failed — do NOT leak the token.
+        Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
     } else {
-        // SMTP not configured — return token directly in dev mode
-        tracing::warn!("SMTP not configured — returning token in response (dev mode only)");
+        // No email provider — return token directly so dev/test flows can proceed.
+        tracing::warn!("Email provider not configured — returning token in response (dev mode only)");
         Ok(Json(serde_json::json!({ "message": "Verification email sent", "dev_token": &token })))
     }
 }
@@ -345,13 +353,17 @@ pub async fn resend_verification(
     if sent {
         tracing::info!(user_id = %auth.user_id, "Verification email resent (attempt {})", count);
         Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
+    } else if email_provider_configured() {
+        // Provider configured but send failed — do NOT leak the token.
+        tracing::warn!(user_id = %auth.user_id, "Verification email send failed (provider configured)");
+        Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
     } else {
-        // Development mode: log the token and return it in the response.
+        // No email provider configured — return token/link so dev flows can proceed.
         tracing::info!(
             user_id = %auth.user_id,
             token   = %token,
             link    = %verify_link,
-            "[DEV] SMTP not configured — verification link logged here.",
+            "[DEV] Email provider not configured — verification link logged here.",
         );
         Ok(Json(serde_json::json!({
             "message": "Verification email sent",
@@ -384,22 +396,62 @@ pub async fn send_verification_link_email(state: &AppState, to: &str, link: &str
 }
 
 // ─── Email Sender ──────────────────────────────────────────────────────
+//
+// Priority:
+//   1. RESEND_API_KEY set → POST to Resend HTTP API (https://api.resend.com/emails)
+//   2. Neither configured  → log and return false (dev mode)
 
-async fn send_email(_state: &AppState, to: &str, subject: &str, _body: &str) -> bool {
-    let smtp_host = std::env::var("SMTP_HOST").unwrap_or_default();
-    if smtp_host.is_empty() {
-        tracing::info!("SMTP not configured — email to {} would have subject: {}", to, subject);
-        return false;
+async fn send_email(_state: &AppState, to: &str, subject: &str, body: &str) -> bool {
+    // ── Resend HTTP API ───────────────────────────────────────────────
+    if let Ok(api_key) = std::env::var("RESEND_API_KEY") {
+        if !api_key.is_empty() {
+            let from = std::env::var("SMTP_FROM")
+                .unwrap_or_else(|_| "noreply@discreetai.net".to_string());
+
+            let html = format!("<p>{}</p>", body.replace('\n', "<br>"));
+
+            let payload = serde_json::json!({
+                "from":    from,
+                "to":      to,
+                "subject": subject,
+                "html":    html,
+            });
+
+            match reqwest::Client::new()
+                .post("https://api.resend.com/emails")
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    tracing::info!(to = to, subject = subject, "Email sent via Resend");
+                    return true;
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    tracing::error!(
+                        to = to,
+                        status = %status,
+                        body = %body,
+                        "Resend API error"
+                    );
+                    return false;
+                }
+                Err(e) => {
+                    tracing::error!(to = to, error = %e, "Resend API request failed");
+                    return false;
+                }
+            }
+        }
     }
 
-    // Use lettre or reqwest to send via SMTP/API
-    // For now, log the email (SMTP integration wired when provider is chosen)
+    // ── No provider configured — dev mode ─────────────────────────────
     tracing::info!(
-        to = to,
-        subject = subject,
-        "Email queued for delivery via {}",
-        smtp_host
+        "Email provider not configured — email to {} would have subject: {}",
+        to,
+        subject
     );
-
-    true
+    false
 }

@@ -8,6 +8,7 @@
 //     → CORS                 (tower_http::cors::CorsLayer)
 //     → Rate Limit           (citadel_rate_limit)
 //     → Security Headers     (citadel_security_headers — CSP, HSTS, X-Frame-Options, …)
+//     → Request ID           (request_id_middleware — UUID span + X-Request-ID header)
 //     → Tracing              (tower_http::trace::TraceLayer)
 //     → Compression          (tower_http::compression::CompressionLayer)
 //     → Body Limit           (axum::extract::DefaultBodyLimit, 100 MB)
@@ -28,6 +29,7 @@ use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use uuid::Uuid;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use citadel_server::citadel_agent_handlers;
@@ -70,20 +72,65 @@ use citadel_server::citadel_platform_admin_handlers;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
 
+/// Middleware: generate a UUID request ID, add it to the tracing span,
+/// and return it as X-Request-ID on the response.
+async fn request_id_middleware(
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use tracing::Instrument;
+
+    let request_id = Uuid::new_v4().to_string();
+    let span = tracing::info_span!("request", request_id = %request_id);
+    let rid = request_id.clone();
+
+    let mut resp = next.run(req).instrument(span).await;
+    resp.headers_mut().insert(
+        axum::http::HeaderName::from_static("x-request-id"),
+        axum::http::HeaderValue::from_str(&rid).unwrap(),
+    );
+    resp
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize structured logging.
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "citadel_server=debug,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // LOG_FORMAT=json → machine-readable JSON lines (for SIEM / log aggregators).
+    // LOG_FORMAT=pretty (default) → human-readable colored output.
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "citadel_server=debug,tower_http=debug".into());
+
+    let log_format = std::env::var("LOG_FORMAT").unwrap_or_default();
+    if log_format.eq_ignore_ascii_case("json") {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer().json())
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+    }
 
     // Load configuration.
     let config = Config::from_env();
     let bind_addr = format!("{}:{}", config.host, config.port);
+
+    // Warn if TOTP encryption key is missing in production-like environments.
+    // The server still starts (key is derived from JWT_SECRET as fallback),
+    // but a dedicated key is strongly recommended for production.
+    if config.totp_encryption_key.is_none() {
+        let cors = std::env::var("CORS_ORIGINS").unwrap_or_default();
+        let is_prod = (cors != "*" && !cors.is_empty()) || config.host == "0.0.0.0";
+        if is_prod {
+            tracing::warn!(
+                "TOTP_ENCRYPTION_KEY is not set — TOTP secrets are encrypted with a key \
+                 derived from JWT_SECRET. Set a dedicated 64-hex-char key in production: \
+                 TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+            );
+        }
+    }
 
     // Initialize shared state (connects to Postgres + Redis).
     let state = Arc::new(AppState::new(config).await?);
@@ -311,7 +358,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/users", axum::routing::get(citadel_platform_admin_handlers::list_users))
         .route("/admin/users/:user_id/role", axum::routing::post(citadel_platform_admin_handlers::set_user_role))
         .route("/admin/registrations", axum::routing::get(citadel_platform_admin_handlers::registration_trend))
-        .route("/admin/generate-dev-accounts", axum::routing::post(citadel_platform_admin_handlers::generate_dev_accounts));
+        .route("/admin/generate-dev-accounts", axum::routing::post(citadel_platform_admin_handlers::generate_dev_accounts))
+        .route("/admin/users/:user_id/ban", axum::routing::post(citadel_platform_admin_handlers::ban_user)
+            .delete(citadel_platform_admin_handlers::unban_user));
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000
@@ -386,7 +435,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // the first to process each incoming request.
         //
         // Processing order:
-        //   CORS → Rate Limit → Security Headers → CSRF → Trace → Compression → Body Limit → Handler
+        //   CORS → Rate Limit → Security Headers → CSRF → Request ID → Trace → Compression → Body Limit → Handler
         //
         // Security headers (CSP, HSTS, X-Frame-Options, Referrer-Policy,
         // Permissions-Policy, X-Content-Type-Options) are injected after CORS
@@ -399,6 +448,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::extract::DefaultBodyLimit::max(35 * 1024 * 1024)) // 35 MB — 25 MB file limit + base64 overhead
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn(request_id_middleware))
         .layer(axum::middleware::from_fn(citadel_csrf::csrf_middleware))
         .layer(axum::middleware::from_fn(
             citadel_security_headers::security_headers,

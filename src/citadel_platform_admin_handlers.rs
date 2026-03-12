@@ -10,6 +10,8 @@
 //                                               (ACCESS_ADMIN_DASHBOARD + MANAGE_USERS).
 //   POST /api/v1/admin/generate-dev-accounts  — Bulk-create dev_NNN test accounts with
 //                                               random passwords shown once (MANAGE_USERS).
+//   POST /api/v1/admin/users/:id/ban          — Ban user account, optionally IP ban (MANAGE_USERS).
+//   DELETE /api/v1/admin/users/:id/ban        — Unban user account, remove IP bans (MANAGE_USERS).
 //
 // Guards:
 //   require_staff_role           — In-memory check: platform_role must be admin or dev.
@@ -34,6 +36,7 @@ use uuid::Uuid;
 use crate::citadel_error::AppError;
 use crate::citadel_platform_permissions::{check_platform_permission, PlatformRole, PlatformUser};
 use crate::citadel_state::AppState;
+use chrono::Utc;
 
 // ─── Serde helper — double Option ────────────────────────────────────────────
 //
@@ -585,4 +588,178 @@ pub async fn registration_trend(
         .collect();
 
     Ok(Json(trend))
+}
+
+// ─── POST /api/v1/admin/users/:user_id/ban ──────────────────────────────────
+//
+// Ban a user account. Optionally ban their IP address too.
+// Sets banned_at, ban_reason, ban_expires_at on the user row,
+// deletes all active sessions, and optionally inserts an IP ban.
+
+#[derive(Debug, Deserialize)]
+pub struct BanUserRequest {
+    pub reason: String,
+    pub duration_hours: Option<i64>,
+    #[serde(default)]
+    pub ip_ban: bool,
+}
+
+pub async fn ban_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<BanUserRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Prevent banning yourself.
+    if target_id == caller.user_id {
+        return Err(AppError::BadRequest("Cannot ban your own account".into()));
+    }
+
+    // Check target exists.
+    let target = sqlx::query!(
+        "SELECT id, platform_role FROM users WHERE id = $1",
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // Prevent banning other admins/devs.
+    if let Some(ref role) = target.platform_role {
+        if role == "admin" || role == "dev" {
+            return Err(AppError::Forbidden("Cannot ban staff accounts".into()));
+        }
+    }
+
+    let ban_expires = req.duration_hours.map(|h| Utc::now() + chrono::Duration::hours(h));
+
+    // Set ban columns on user.
+    sqlx::query!(
+        "UPDATE users SET banned_at = NOW(), ban_reason = $1, ban_expires_at = $2 WHERE id = $3",
+        req.reason,
+        ban_expires,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Delete all sessions to force immediate logout.
+    sqlx::query!("DELETE FROM sessions WHERE user_id = $1", target_id)
+        .execute(&state.db)
+        .await?;
+
+    // Revoke sessions in Redis so in-flight JWTs are rejected.
+    let revoked_key = format!("revoked_sessions:{}", target_id);
+    let mut redis_conn = state.redis.clone();
+    // Set a blanket revocation flag (checked by auth middleware).
+    let _: Result<String, _> = redis::cmd("SET")
+        .arg(format!("banned:{}", target_id))
+        .arg("1")
+        .arg("EX")
+        .arg(if let Some(h) = req.duration_hours { h * 3600 } else { 86400 * 365 })
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Optional IP ban.
+    if req.ip_ban {
+        // Get the user's most recent session IP (cast INET → TEXT).
+        let recent_ip = sqlx::query_scalar!(
+            "SELECT ip_address::text FROM sessions WHERE user_id = $1 AND ip_address IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+            target_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .flatten();
+
+        if let Some(ip_str) = recent_ip {
+            sqlx::query!(
+                "INSERT INTO platform_ip_bans (ip_address, reason, banned_by, expires_at) VALUES ($1, $2, $3, $4)",
+                ip_str,
+                req.reason,
+                caller.user_id,
+                ban_expires,
+            )
+            .execute(&state.db)
+            .await?;
+            tracing::warn!(
+                admin = %caller.user_id,
+                target = %target_id,
+                ip = %ip_str,
+                "IP ban applied"
+            );
+        }
+    }
+
+    tracing::warn!(
+        admin = %caller.user_id,
+        target = %target_id,
+        reason = %req.reason,
+        duration_hours = ?req.duration_hours,
+        ip_ban = req.ip_ban,
+        "User banned"
+    );
+
+    Ok(Json(json!({ "message": "User banned", "banned_at": Utc::now().to_rfc3339() })))
+}
+
+// ─── DELETE /api/v1/admin/users/:user_id/ban ─────────────────────────────────
+//
+// Unban a user. Clears ban columns and removes any IP bans associated
+// with the user's recent session IPs.
+
+pub async fn unban_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Clear ban columns.
+    sqlx::query!(
+        "UPDATE users SET banned_at = NULL, ban_reason = NULL, ban_expires_at = NULL WHERE id = $1",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Remove Redis ban flag.
+    let mut redis_conn = state.redis.clone();
+    let _: Result<i64, _> = redis::cmd("DEL")
+        .arg(format!("banned:{}", target_id))
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Remove IP bans that were created for this user's IPs.
+    // Find their session IPs and delete matching IP ban rows.
+    let session_ips: Vec<Option<String>> = sqlx::query_scalar!(
+        "SELECT DISTINCT ip_address::text FROM sessions WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for ip_opt in &session_ips {
+        if let Some(ip) = ip_opt {
+            sqlx::query!(
+                "DELETE FROM platform_ip_bans WHERE ip_address = $1",
+                ip,
+            )
+            .execute(&state.db)
+            .await
+            .ok();
+        }
+    }
+
+    tracing::info!(
+        admin = %caller.user_id,
+        target = %target_id,
+        "User unbanned"
+    );
+
+    Ok(Json(json!({ "message": "User unbanned" })))
 }

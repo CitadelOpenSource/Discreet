@@ -3,17 +3,24 @@
 # Usage:
 #   1. Generate SQLx offline metadata locally:
 #      cargo sqlx prepare
-#   2. Build and start:
-#      JWT_SECRET=$(openssl rand -hex 64) docker compose -f docker-compose.prod.yml up -d --build
-#   3. Apply migrations (first time only):
+#   2. Export required secrets:
+#      export POSTGRES_PASSWORD=$(openssl rand -hex 32)
+#      export JWT_SECRET=$(openssl rand -hex 64)
+#      export CORS_ORIGINS=https://yourdomain.com
+#   3. Build and start:
+#      docker compose -f docker-compose.prod.yml up -d --build
+#   4. Apply migrations (first time only):
 #      docker compose -f docker-compose.prod.yml exec server /migrate.sh
+#
+# All three env vars (POSTGRES_PASSWORD, JWT_SECRET, CORS_ORIGINS) are required.
+# Docker Compose will abort with a clear error if any is missing.
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: citadel
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-citadel_prod_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — generate with: openssl rand -hex 32}
       POSTGRES_DB: citadel
     volumes:
       - citadel_pg:/var/lib/postgresql/data
@@ -48,10 +55,10 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: postgres://citadel:${POSTGRES_PASSWORD:-citadel_prod_change_me}@postgres:5432/citadel
+      DATABASE_URL: postgres://citadel:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/citadel
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — generate with: openssl rand -hex 64}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required — set to your domain e.g. https://yourdomain.com}
       AGENTS_ENABLED: "true"
       PQ_ENABLED: "false"
       FEDERATION_ENABLED: "false"
