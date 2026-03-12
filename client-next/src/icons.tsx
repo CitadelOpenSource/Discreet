@@ -19,6 +19,7 @@ import {
   EyeOff as LEyeOff, ChevronDown as LChevD, ChevronRight as LChevR,
   Star as LStar,
   ShieldCheck as LShieldCheck, ShieldAlert as LShieldAlert,
+  Bug as LBug,
 } from 'lucide-react';
 
 // Backward-compatible wrapper: accepts `s` (size) prop
@@ -73,6 +74,7 @@ export const ChevR = w(LChevR);
 export const Star = w(LStar);
 export const ShieldCheck = w(LShieldCheck);
 export const ShieldAlert = w(LShieldAlert);
+export const BugIcon = w(LBug);
 
 // Bundle export (same as before — import { I } from './icons')
 export const I = {
@@ -80,5 +82,5 @@ export const I = {
   Home, Msg, Search, Trash, Out, Edit, Mic, MicOff, Smile, Paperclip,
   Shield, Clock, Download, Eye, EyeOff, Zap, Bot, Reply, Sliders, At, Bell, BellOff,
   Pin, Check, Vol, Camera, Monitor, Headphones, PhoneOff, UserPlus,
-  Link, Globe, ChevD, ChevR, Star, ShieldCheck, ShieldAlert,
+  Link, Globe, ChevD, ChevR, Star, ShieldCheck, ShieldAlert, BugIcon,
 };

@@ -42,6 +42,9 @@ pub struct CreateChannelRequest {
     pub channel_type: String,
     /// Optional category to place channel in.
     pub category_id: Option<Uuid>,
+    /// Mark channel as NSFW (skips bad-word filter in AutoMod).
+    #[serde(default)]
+    pub nsfw: bool,
 }
 
 fn default_channel_type() -> String { "text".into() }
@@ -113,14 +116,15 @@ pub async fn create_channel(
 
     let channel_id = Uuid::new_v4();
     sqlx::query!(
-        "INSERT INTO channels (id, server_id, name, topic, channel_type, position)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO channels (id, server_id, name, topic, channel_type, position, nsfw)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
         channel_id,
         server_id,
         name,
         req.topic,
         req.channel_type,
         position,
+        req.nsfw,
     )
     .execute(&state.db)
     .await?;
@@ -155,7 +159,7 @@ pub async fn create_channel(
         locked: false,
         min_role_position: 0,
         slowmode_seconds: 0,
-        nsfw: false,
+        nsfw: req.nsfw,
         message_ttl_seconds: 0,
         created_at: chrono::Utc::now().to_rfc3339(),
     })))

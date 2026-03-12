@@ -8,6 +8,7 @@
 //   PATCH /api/v1/users/@me              — Update own profile
 //   GET   /api/v1/users/{id}             — Get another user's public profile
 //   GET   /api/v1/users/@me/servers      — List servers the current user is in
+//   PUT   /api/v1/users/@me/email       — Change email with re-verification
 
 use axum::{
     body::Body,
@@ -891,13 +892,137 @@ pub async fn update_user_settings(
     }))
 }
 
+// ─── PUT /api/v1/users/@me/email ────────────────────────────────────────
+//
+// Change the caller's email address. Requires password confirmation.
+// Rate-limited to 1 change per 24 hours via Redis.
+// Sets email_verified = false and sends a new verification email.
+
+#[derive(Debug, Deserialize)]
+pub struct ChangeEmailRequest {
+    pub new_email: String,
+    pub password: String,
+}
+
+pub async fn change_email(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ChangeEmailRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::citadel_auth_handlers::{generate_hex_token, verify_password_pub};
+    use crate::citadel_email_handlers::send_verification_link_email;
+
+    // ── 1. Validate email format ─────────────────────────────────────────
+    let new_email = req.new_email.trim().to_lowercase();
+    if !new_email.contains('@') || !new_email.contains('.') {
+        return Err(AppError::BadRequest("Invalid email address".into()));
+    }
+    if new_email.len() > 254 {
+        return Err(AppError::BadRequest("Email address too long".into()));
+    }
+
+    // ── 2. Verify password ───────────────────────────────────────────────
+    let user = sqlx::query!(
+        "SELECT password_hash, email FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    if !verify_password_pub(&req.password, &user.password_hash)? {
+        return Err(AppError::Unauthorized("Incorrect password".into()));
+    }
+
+    // ── 3. Check if email is unchanged ───────────────────────────────────
+    if user.email.as_deref() == Some(&new_email) {
+        return Err(AppError::BadRequest("New email is the same as current email".into()));
+    }
+
+    // ── 4. Rate limit: 1 change per 24 hours ────────────────────────────
+    let rate_key = format!("email_change:{}", auth.user_id);
+    let mut redis_conn = state.redis.clone();
+    let already: Option<String> = redis::cmd("GET")
+        .arg(&rate_key)
+        .query_async(&mut redis_conn)
+        .await
+        .ok();
+
+    if already.is_some() {
+        return Err(AppError::RateLimited(
+            "Email can only be changed once every 24 hours".into(),
+        ));
+    }
+
+    // ── 5. Check uniqueness ──────────────────────────────────────────────
+    let email_taken = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(email) = $1 AND id != $2)",
+        new_email,
+        auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if email_taken {
+        return Err(AppError::Conflict("Email address is already in use".into()));
+    }
+
+    // ── 6. Update email, reset verified flag ─────────────────────────────
+    sqlx::query!(
+        "UPDATE users SET email = $1, email_verified = FALSE, updated_at = NOW() WHERE id = $2",
+        new_email,
+        auth.user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // ── 7. Set rate-limit key in Redis (86400s = 24h) ────────────────────
+    let _: Result<String, _> = redis::cmd("SET")
+        .arg(&rate_key)
+        .arg("1")
+        .arg("EX")
+        .arg(86400_i64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // ── 8. Generate verification token and send email ────────────────────
+    let token = generate_hex_token();
+    let base_url = std::env::var("BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let verify_link = format!("{}/verify?token={}", base_url, token);
+
+    sqlx::query!(
+        "INSERT INTO email_tokens (user_id, email, token, token_type, expires_at)
+         VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '24 hours')
+         ON CONFLICT (user_id, token_type) DO UPDATE
+             SET token = $3, email = $2, expires_at = NOW() + INTERVAL '24 hours'",
+        auth.user_id, new_email, token,
+    )
+    .execute(&state.db)
+    .await?;
+
+    let _ = send_verification_link_email(&state, &new_email, &verify_link).await;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        new_email = %new_email,
+        "Email address changed — verification email sent"
+    );
+
+    Ok(Json(serde_json::json!({
+        "message": "Email updated. Please check your new email for a verification link."
+    })))
+}
+
 // ─── Route Registration ────────────────────────────────────────────────
 
 pub fn user_routes() -> axum::Router<Arc<AppState>> {
-    use axum::routing::{get, post};
+    use axum::routing::{get, post, put};
     axum::Router::new()
         .route("/users/@me", get(get_me).patch(update_me).delete(delete_account))
         .route("/users/@me/password", post(change_password))
+        .route("/users/@me/email", put(change_email))
         .route("/users/@me/settings", get(get_user_settings).put(update_user_settings))
         .route("/users/@me/servers", get(list_my_servers))
         .route("/users/:id", get(get_user))

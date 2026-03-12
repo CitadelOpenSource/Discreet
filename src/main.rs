@@ -34,9 +34,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use citadel_server::citadel_agent_handlers;
 use citadel_server::citadel_audit;
+use citadel_server::citadel_automod;
 use citadel_server::citadel_auth_handlers;
 use citadel_server::citadel_ban_handlers;
 use citadel_server::citadel_bot_spawn_handlers;
+use citadel_server::citadel_bug_report_handlers;
 use citadel_server::citadel_channel_handlers;
 use citadel_server::citadel_category_handlers;
 use citadel_server::citadel_config::Config;
@@ -245,6 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/events/:event_id", axum::routing::patch(citadel_event_handlers::update_event).delete(citadel_event_handlers::delete_event))
         .route("/events/:event_id/rsvp", axum::routing::post(citadel_event_handlers::rsvp_event))
         // Soundboard
+        .route("/servers/:server_id/automod", axum::routing::get(citadel_automod::get_automod_config).put(citadel_automod::update_automod_config))
         .route("/servers/:server_id/soundboard", axum::routing::get(citadel_soundboard_handlers::list_clips).post(citadel_soundboard_handlers::upload_clip))
         .route("/servers/:server_id/soundboard/:id", axum::routing::delete(citadel_soundboard_handlers::delete_clip))
         .route("/servers/:server_id/soundboard/:id/play", axum::routing::post(citadel_soundboard_handlers::play_clip))
@@ -360,7 +363,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/registrations", axum::routing::get(citadel_platform_admin_handlers::registration_trend))
         .route("/admin/generate-dev-accounts", axum::routing::post(citadel_platform_admin_handlers::generate_dev_accounts))
         .route("/admin/users/:user_id/ban", axum::routing::post(citadel_platform_admin_handlers::ban_user)
-            .delete(citadel_platform_admin_handlers::unban_user));
+            .delete(citadel_platform_admin_handlers::unban_user))
+        // ── Bug Reports ──
+        .route("/bug-reports", axum::routing::post(citadel_bug_report_handlers::submit_bug_report))
+        .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports));
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000

@@ -9,6 +9,7 @@ import { I } from './icons';
 import { initCrypto, isMlsAvailable, encryptMessage, decryptMessage } from './crypto/mls';
 import { sframeService } from './services/SFrameService';
 import { AuthScreen } from './components/AuthScreen';
+import { BugReportButton } from './components/BugReportButton';
 import { Av } from './components/Av';
 import { Modal } from './components/Modal';
 import { CtxMenu } from './components/CtxMenu';
@@ -970,6 +971,7 @@ export default function App() {
 
   const [serverPreset, setServerPreset] = useState<string | null>(null);
   const [serverCreating, setServerCreating] = useState(false);
+  const [enableAutomod, setEnableAutomod] = useState(true);
   const tier = getUserTier(me);
   const _devEmails = (localStorage.getItem('d_dev_emails') || 'admin@discreet.chat')
     .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
@@ -989,7 +991,7 @@ export default function App() {
     }
     setServerCreating(true);
     try {
-      const s = await api.createServer(sanitizeInput(createName.trim()));
+      const s = await api.createServer(sanitizeInput(createName.trim()), { enable_automod: enableAutomod });
     if (s?.id) {
       // Apply preset channels
       if (serverPreset === 'gaming') {
@@ -1130,8 +1132,8 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
-  if (authLoading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div>;
-  if (!authed) return <AuthScreen onAuth={() => setAuthed(true)} />;
+  if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
+  if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
 
   const isOwner = curServer?.owner_id === api.userId;
   const isAnyOwner = servers.some(s => s.owner_id === api.userId);
@@ -2384,6 +2386,13 @@ export default function App() {
                   ✨ This template will auto-create channels and spawn an AI bot for your server.
                 </div>
               )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={enableAutomod} onChange={e => setEnableAutomod(e.target.checked)} style={{ accentColor: T.ac }} />
+                <div>
+                  <div style={{ fontWeight: 600, color: T.tx }}>Enable AutoMod <span style={{ fontSize: 10, color: T.ac, fontWeight: 700 }}>RECOMMENDED</span></div>
+                  <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Blocks slurs, invite spam, and mention flooding</div>
+                </div>
+              </label>
               <button onClick={createServer} style={btn(!!createName.trim())}>Create Server</button>
             </>)}
           </div>
@@ -3185,6 +3194,8 @@ export default function App() {
 
       {/* CSS for hover actions */}
       <style>{`.msg-row:hover .msg-actions, div:hover > .msg-actions { display: flex !important; }`}</style>
+
+      <BugReportButton />
     </div>
   );
 }

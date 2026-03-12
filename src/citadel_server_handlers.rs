@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 use crate::citadel_audit;
 use crate::citadel_auth::AuthUser;
+use crate::citadel_automod::{AutoModConfig, save_automod_config};
 use crate::citadel_error::AppError;
 use crate::citadel_permissions::Permission;
 use crate::citadel_state::AppState;
@@ -40,7 +41,12 @@ pub struct CreateServerRequest {
     pub description: Option<String>,
     /// Optional icon URL.
     pub icon_url: Option<String>,
+    /// Enable AutoMod with sensible defaults (default: true).
+    #[serde(default = "default_true")]
+    pub enable_automod: bool,
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateServerRequest {
@@ -294,6 +300,23 @@ pub async fn create_server(
     )
     .execute(&state.db)
     .await?;
+
+    // Auto-enable AutoMod with sensible defaults.
+    if req.enable_automod {
+        let automod = AutoModConfig {
+            enabled: true,
+            bad_words: vec![
+                "nigger".into(), "nigga".into(), "faggot".into(), "retard".into(),
+                "kys".into(), "kill yourself".into(),
+            ],
+            spam_threshold_per_minute: 5,
+            block_invites: true,
+            block_links: false,
+            max_mentions: 10,
+            max_caps_percent: 0.8,
+        };
+        save_automod_config(&state.db, server_id, &automod).await.ok();
+    }
 
     tracing::info!(
         server_id = %server_id,

@@ -169,7 +169,7 @@ pub async fn forgot_password(
         send_email(
             &state,
             &email,
-            "Reset your Citadel password",
+            "Reset your Discreet password",
             &format!(
                 "Your password reset code: {}\n\nThis code expires in 1 hour.\n\nIf you didn't request this, ignore this email.",
                 &token

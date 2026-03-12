@@ -28,6 +28,7 @@ use crate::citadel_permissions::{
 };
 use crate::citadel_state::AppState;
 use crate::citadel_agent_config::load_server_agent_config;
+use crate::citadel_automod::{load_automod_config, check_message, AutoModAction};
 use crate::citadel_agent_memory::{build_context, should_agent_respond};
 use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata};
 
@@ -121,16 +122,72 @@ pub async fn send_message(
         return Err(AppError::BadRequest("Message exceeds 256KB limit".into()));
     }
 
-    // Look up channel to get server_id, then verify membership.
-    let channel = sqlx::query!("SELECT server_id FROM channels WHERE id = $1", channel_id,)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+    // Look up channel to get server_id and nsfw flag, then verify membership.
+    let channel = sqlx::query!(
+        "SELECT server_id, nsfw FROM channels WHERE id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
 
     require_permission(&state, channel.server_id, auth.user_id, PERM_SEND_MESSAGES).await?;
 
     if req.attachment_blob_id.is_some() {
         require_permission(&state, channel.server_id, auth.user_id, PERM_ATTACH_FILES).await?;
+    }
+
+    // ── AutoMod check ─────────────────────────────────────────────────────
+    // Skip automod for DM and group-DM channels — those are E2EE and private.
+    // DM channels live in dm_channels/group_dm_channels, not the channels table,
+    // so they won't normally reach here. This guard is belt-and-suspenders.
+    //
+    // NOTE: content_ciphertext is base64-encoded MLS ciphertext. AutoMod runs
+    // against the raw base64 string, which means keyword detection only works
+    // for unencrypted bot channels. For E2EE channels, AutoMod rules that
+    // inspect content (bad words, links) are ineffective by design — the
+    // server cannot read encrypted messages. Structural rules (mentions via
+    // @-patterns in ciphertext) may still trigger.
+    {
+        // Skip automod if this is a DM or group DM channel.
+        let is_dm = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM dm_channels WHERE id = $1) OR EXISTS(SELECT 1 FROM group_dm_channels WHERE id = $1)",
+            channel_id,
+        )
+        .fetch_one(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+
+        if is_dm {
+            // DMs are private — skip automod entirely.
+        } else {
+        let automod_config = load_automod_config(&state.db, channel.server_id).await;
+        if automod_config.enabled {
+            match check_message(&automod_config, &req.content_ciphertext, channel.nsfw) {
+                AutoModAction::Allow => {}
+                AutoModAction::Warn(reason) => {
+                    // Allow the message but notify the author via WebSocket.
+                    // target_user_id lets the client filter — only the author sees this.
+                    state.ws_broadcast(
+                        channel.server_id,
+                        serde_json::json!({
+                            "type": "automod_warn",
+                            "target_user_id": auth.user_id,
+                            "channel_id": channel_id,
+                            "reason": reason,
+                        }),
+                    ).await;
+                }
+                AutoModAction::Delete(reason) => {
+                    return Err(AppError::Forbidden(
+                        format!("Message blocked by AutoMod: {reason}"),
+                    ));
+                }
+            }
+        }
+        }
     }
 
     // Store the message. The server never sees plaintext.

@@ -302,6 +302,9 @@ function ChannelRow({
       >
         {chIcon(ch)}
         {ch.name}
+        {ch.nsfw && (
+          <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#ff4757', color: '#fff', fontWeight: 700, flexShrink: 0, letterSpacing: '0.3px' }}>NSFW</span>
+        )}
         {ch.locked && <I.Lock s={10} />}
         {(ch.message_ttl_seconds ?? 0) > 0 && <I.Clock />}
         {isMuted && <span style={{ color: T.mt, marginLeft: 2 }} title="Muted"><I.BellOff /></span>}

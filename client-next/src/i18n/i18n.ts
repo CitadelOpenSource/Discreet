@@ -11,7 +11,7 @@
 
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import en from './en.json';
+import en from './locales/en.json';
 
 // Languages that read right-to-left.
 const RTL_LANGS = new Set(['ar', 'fa']);
@@ -29,7 +29,7 @@ const lng = SUPPORTED.includes(detected) ? detected : 'en';
 async function loadLocale(lang: string): Promise<void> {
   if (lang === 'en') return; // already bundled
   try {
-    const mod = await import(`./${lang}.json`);
+    const mod = await import(`./locales/${lang}.json`);
     i18n.addResourceBundle(lang, 'translation', mod.default ?? mod, true, true);
   } catch {
     console.warn(`[i18n] Failed to load locale: ${lang}`);

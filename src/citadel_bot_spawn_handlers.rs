@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
 use crate::citadel_agent_config::{load_server_agent_config, store_encrypted_api_key};
 use crate::citadel_agent_memory::{agent_memory_fact_count, build_context, clear_agent_memory};
-use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata};
+use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata, sanitize_agent_input, cap_response, check_agent_rate_limit};
 
 // ─── Personas ──────────────────────────────────────────────────────────
 
@@ -722,6 +722,12 @@ pub async fn prompt_bot(
         return Err(AppError::BadRequest("This bot is currently disabled".into()));
     }
 
+    // Per-user per-server agent rate limit (30/hour).
+    check_agent_rate_limit(&mut state.redis.clone(), auth.user_id, server_id).await?;
+
+    // Sanitize user input before any LLM processing.
+    let sanitized_prompt = sanitize_agent_input(&req.prompt);
+
     // Resolve the target channel: use the provided channel_id if present,
     // otherwise fall back to the server's first text channel.
     let channel_id: Uuid = if let Some(cid) = req.channel_id {
@@ -767,7 +773,7 @@ pub async fn prompt_bot(
         ).await.unwrap_or_default();
         msgs.push(AgentMessage {
             role: "user".into(),
-            content: req.prompt.clone(),
+            content: sanitized_prompt.clone(),
         });
         strip_metadata(&mut msgs);
         msgs
@@ -785,11 +791,11 @@ pub async fn prompt_bot(
     let persona = bot.persona.clone();
     let temperature = bot.temperature.unwrap_or(0.7);
 
-    let prompt_preview = if req.prompt.chars().count() > 60 {
-        let truncated: String = req.prompt.chars().take(60).collect();
+    let prompt_preview = if sanitized_prompt.chars().count() > 60 {
+        let truncated: String = sanitized_prompt.chars().take(60).collect();
         format!("{truncated}…")
     } else {
-        req.prompt.clone()
+        sanitized_prompt.clone()
     };
 
     let placeholder = format!(
@@ -815,6 +821,7 @@ pub async fn prompt_bot(
     } else {
         placeholder
     };
+    let response_text = cap_response(response_text);
 
     // Insert the bot's reply as a message in the channel.
     // content_ciphertext stores the plaintext bytes for bot messages (bots are

@@ -85,6 +85,15 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [rememberMe, setRememberMe]   = useState(false);
   const [forgotShown, setForgotShown] = useState(false);
 
+  // Forgot password flow
+  const [fpStep, setFpStep] = useState<'email' | 'token' | 'done'>('email');
+  const [fpEmail, setFpEmail] = useState('');
+  const [fpToken, setFpToken] = useState('');
+  const [fpNewPw, setFpNewPw] = useState('');
+  const [fpError, setFpError] = useState('');
+  const [fpMsg, setFpMsg]     = useState('');
+  const [fpLoading, setFpLoading] = useState(false);
+
   const usernameErr = mode === 'register' ? validateUsername(username) : '';
   const strength    = useMemo(() => passwordStrength(password), [password]);
 
@@ -103,6 +112,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     setMode(m);
     setError('');
     setForgotShown(false);
+    setFpStep('email'); setFpEmail(''); setFpToken(''); setFpNewPw(''); setFpError(''); setFpMsg('');
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -174,15 +184,80 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                 </label>
 
                 {/* Forgot password */}
-                <span onClick={() => setForgotShown(v => !v)}
+                <span onClick={() => { setForgotShown(v => !v); setFpStep('email'); setFpError(''); setFpMsg(''); }}
                   style={{ fontSize: 12, color: T.ac, cursor: 'pointer', fontWeight: 500 }}>
                   Forgot password?
                 </span>
               </div>
 
               {forgotShown && (
-                <div style={{ padding: '10px 14px', background: 'rgba(0,212,170,0.06)', border: `1px solid rgba(0,212,170,0.2)`, borderRadius: 8, fontSize: 12, color: T.mt, lineHeight: 1.6, marginBottom: 14 }}>
-                  If your account has a verified email address, contact support or use the recovery link sent to that email. Accounts registered without an email cannot be recovered — this is by design for zero-knowledge privacy.
+                <div style={{ padding: '14px', background: 'rgba(0,212,170,0.06)', border: `1px solid rgba(0,212,170,0.2)`, borderRadius: 8, marginBottom: 14 }}>
+
+                  {fpStep === 'email' && (<>
+                    <div style={{ fontSize: 12, color: T.mt, lineHeight: 1.6, marginBottom: 10 }}>
+                      Enter the email address on your account. We'll send a reset code if it exists.
+                    </div>
+                    <input
+                      type="email" placeholder="Email address" value={fpEmail}
+                      onChange={e => { setFpEmail(e.target.value); setFpError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('fp-send-btn')?.click(); } }}
+                      style={{ ...getInp(), marginBottom: 8 }} autoFocus />
+                    {fpError && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{fpError}</div>}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button id="fp-send-btn" type="button" disabled={fpLoading || !fpEmail.includes('@')} onClick={async () => {
+                        setFpError(''); setFpLoading(true);
+                        try {
+                          const res = await api.forgotPassword(fpEmail.trim());
+                          setFpMsg(res.message || 'Check your email for a reset code.');
+                          setFpStep('token');
+                        } catch (e: any) { setFpError(e.message || 'Failed to send reset email'); }
+                        setFpLoading(false);
+                      }} style={btn(!fpLoading && fpEmail.includes('@'))}>
+                        {fpLoading ? 'Sending…' : 'Send Reset Code'}
+                      </button>
+                      <button type="button" onClick={() => { setForgotShown(false); setFpStep('email'); setFpError(''); setFpMsg(''); }}
+                        style={{ ...btn(true), background: T.sf2, color: T.mt, border: `1px solid ${T.bd}` }}>Cancel</button>
+                    </div>
+                  </>)}
+
+                  {fpStep === 'token' && (<>
+                    {fpMsg && <div style={{ fontSize: 12, color: T.ac, marginBottom: 10, lineHeight: 1.5 }}>{fpMsg}</div>}
+                    <label style={label()}>Reset Code</label>
+                    <input
+                      placeholder="Paste the code from your email" value={fpToken}
+                      onChange={e => { setFpToken(e.target.value); setFpError(''); }}
+                      style={{ ...getInp(), marginBottom: 10, fontFamily: 'monospace' }} autoFocus />
+                    <label style={label()}>New Password</label>
+                    <input
+                      type="password" placeholder="Minimum 8 characters" value={fpNewPw}
+                      onChange={e => { setFpNewPw(e.target.value); setFpError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('fp-reset-btn')?.click(); } }}
+                      style={{ ...getInp(), marginBottom: 8 }} autoComplete="new-password" />
+                    {fpError && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{fpError}</div>}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button id="fp-reset-btn" type="button" disabled={fpLoading || !fpToken.trim() || fpNewPw.length < 8} onClick={async () => {
+                        setFpError(''); setFpLoading(true);
+                        try {
+                          await api.resetPassword(fpToken.trim(), fpNewPw);
+                          setFpStep('done');
+                        } catch (e: any) { setFpError(e.message || 'Reset failed'); }
+                        setFpLoading(false);
+                      }} style={btn(!fpLoading && !!fpToken.trim() && fpNewPw.length >= 8)}>
+                        {fpLoading ? 'Resetting…' : 'Reset Password'}
+                      </button>
+                      <button type="button" onClick={() => { setFpStep('email'); setFpToken(''); setFpNewPw(''); setFpError(''); }}
+                        style={{ ...btn(true), background: T.sf2, color: T.mt, border: `1px solid ${T.bd}` }}>Back</button>
+                    </div>
+                  </>)}
+
+                  {fpStep === 'done' && (<>
+                    <div style={{ fontSize: 13, color: T.ac, fontWeight: 600, marginBottom: 8 }}>Password reset successfully!</div>
+                    <div style={{ fontSize: 12, color: T.mt, marginBottom: 10, lineHeight: 1.5 }}>You can now log in with your new password.</div>
+                    <button type="button" onClick={() => {
+                      setForgotShown(false); setFpStep('email'); setFpEmail(''); setFpToken(''); setFpNewPw(''); setFpError(''); setFpMsg('');
+                    }} style={btn(true)}>Back to Login</button>
+                  </>)}
+
                 </div>
               )}
             </>
