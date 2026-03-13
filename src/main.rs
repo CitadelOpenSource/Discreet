@@ -25,6 +25,8 @@
 //   DATABASE_URL=postgres://... REDIS_URL=redis://... JWT_SECRET=... cargo run
 
 use std::sync::Arc;
+use axum::extract::State;
+use axum::response::IntoResponse;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
@@ -71,8 +73,59 @@ use citadel_server::citadel_typing;
 use citadel_server::citadel_user_handlers;
 use citadel_server::citadel_dev_token_handlers;
 use citadel_server::citadel_platform_admin_handlers;
+use citadel_server::citadel_platform_settings;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
+
+/// Middleware: maintenance mode gate.
+/// If maintenance_mode is enabled in platform_settings (cached in Redis),
+/// reject all requests except /health and /api/v1/admin/* with 503.
+async fn maintenance_middleware(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path().to_string();
+
+    // Always allow admin endpoints and health check through.
+    if path == "/health" || path.starts_with("/api/v1/admin/") {
+        return next.run(request).await;
+    }
+
+    // Check Redis for cached maintenance flag (avoids DB hit).
+    // Single GET — parse both maintenance_mode and maintenance_message from the same JSON.
+    let mut redis = state.redis.clone();
+    let cached: Option<serde_json::Value> = redis::cmd("GET")
+        .arg("platform_settings")
+        .query_async::<_, Option<String>>(&mut redis)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    let in_maintenance = cached
+        .as_ref()
+        .and_then(|v| v.get("maintenance_mode")?.as_bool())
+        .unwrap_or(false);
+
+    if in_maintenance {
+        let message = cached
+            .as_ref()
+            .and_then(|v| v.get("maintenance_message")?.as_str().map(String::from))
+            .unwrap_or_else(|| "Discreet is undergoing scheduled maintenance. Please try again shortly.".into());
+
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "error": message,
+                "maintenance": true,
+            })),
+        )
+            .into_response();
+    }
+
+    next.run(request).await
+}
 
 /// Middleware: generate a UUID request ID, add it to the tracing span,
 /// and return it as X-Request-ID on the response.
@@ -367,7 +420,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .delete(citadel_platform_admin_handlers::unban_user))
         // ── Bug Reports ──
         .route("/bug-reports", axum::routing::post(citadel_bug_report_handlers::submit_bug_report))
-        .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports));
+        .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports))
+        // ── Platform settings (kill switches) ──
+        .route("/admin/settings", axum::routing::get(citadel_platform_settings::get_settings)
+            .put(citadel_platform_settings::update_settings));
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000
@@ -448,7 +504,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // the first to process each incoming request.
         //
         // Processing order:
-        //   CORS → Rate Limit → Security Headers → CSRF → Request ID → Trace → Compression → Body Limit → Handler
+        //   CORS → Rate Limit → Security Headers → CSRF → Request ID → Maintenance → Trace → Compression → Body Limit → Handler
         //
         // Security headers (CSP, HSTS, X-Frame-Options, Referrer-Policy,
         // Permissions-Policy, X-Content-Type-Options) are injected after CORS
@@ -461,6 +517,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::extract::DefaultBodyLimit::max(35 * 1024 * 1024)) // 35 MB — 25 MB file limit + base64 overhead
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn_with_state(state.clone(), maintenance_middleware))
         .layer(axum::middleware::from_fn(request_id_middleware))
         .layer(axum::middleware::from_fn(citadel_csrf::csrf_middleware))
         .layer(axum::middleware::from_fn(
