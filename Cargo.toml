@@ -34,10 +34,10 @@ serde_json = "1"
 
 # ── Database ──────────────────────────────────────────────
 # NOTE: "migrate" feature is REQUIRED for sqlx::migrate!() macro in main.rs
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.7", default-features = false, features = [
     "runtime-tokio-rustls", "postgres",
     "uuid", "chrono", "json",
-    "migrate", "ipnetwork"
+    "macros", "migrate", "ipnetwork"
 ] }
 
 # ── Cache / Pubsub ────────────────────────────────────────

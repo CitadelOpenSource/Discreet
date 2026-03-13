@@ -222,13 +222,14 @@ export class CitadelAPI {
   async deleteChannel(cid: string) { return this.fetch(`/channels/${cid}`, { method: 'DELETE' }); }
 
   // ── Messages ──
-  async sendMessage(cid: string, ct: string, ep: number, replyId?: string) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined }) })).json(); }
+  async sendMessage(cid: string, ct: string, ep: number, replyId?: string, parentId?: string, mentionedIds?: string[]) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined, parent_message_id: parentId || undefined, mentioned_user_ids: mentionedIds?.length ? mentionedIds : undefined }) })).json(); }
   async getMessages(cid: string, limit = 50) { return (await this.fetch(`/channels/${cid}/messages?limit=${limit}`)).json(); }
   async editMessage(mid: string, content: string, epoch: number) { return this.fetch(`/messages/${mid}`, { method: 'PATCH', body: JSON.stringify({ content_ciphertext: content, mls_epoch: epoch }) }); }
   async deleteMessage(mid: string) { return this.fetch(`/messages/${mid}`, { method: 'DELETE' }); }
   async bulkDeleteMessages(cid: string, ids: string[], reason?: string) { return (await this.fetch(`/channels/${cid}/messages/bulk-delete`, { method: 'POST', body: JSON.stringify({ message_ids: ids, reason }) })).json(); }
   async getMessagesBatch(cid: string, limit = 200, before?: string) { const params = [`limit=${limit}`]; if (before) params.push(`before=${before}`); try { const r = await this.fetch(`/channels/${cid}/messages?${params.join('&')}`); return r.ok ? r.json() : []; } catch { return []; } }
   async searchMessages(cid: string, q: string, limit = 50) { return (await this.fetch(`/channels/${cid}/messages/search?q=${encodeURIComponent(q)}&limit=${limit}`)).json(); }
+  async getThreadReplies(mid: string) { return (await this.fetch(`/messages/${mid}/thread`)).json(); }
 
   // ── Roles ──
   async listRoles(sid: string) { try { const r = await this.fetch(`/servers/${sid}/roles`); return r.ok ? r.json() : []; } catch { return []; } }

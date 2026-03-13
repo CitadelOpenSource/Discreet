@@ -3,7 +3,8 @@
 // Endpoints:
 //   POST /channels/{id}/typing — Signal that the user is typing
 //
-// This triggers a WebSocket broadcast to all members in the channel's server.
+// This triggers a WebSocket broadcast to all members in the channel's server,
+// EXCLUDING users who have blocked the sender (privacy requirement).
 // No database persistence — typing indicators are ephemeral.
 //
 // Clients should:
@@ -61,14 +62,24 @@ pub async fn broadcast_typing_start(
         return Ok(());
     }
 
-    // Broadcast to all WebSocket clients in this server.
-    state.ws_broadcast(row.server_id, serde_json::json!({
+    // Fetch user IDs who have blocked the sender — they must NOT see the
+    // typing indicator (privacy requirement).
+    let blocked_by: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'blocked'",
+        user_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    // Broadcast to all WebSocket clients in this server, excluding blockers.
+    state.ws_broadcast_filtered(row.server_id, serde_json::json!({
         "type": "TYPING_START",
         "channel_id": channel_id,
         "user_id": user_id,
         "username": row.username,
         "timestamp": chrono::Utc::now().to_rfc3339(),
-    })).await;
+    }), &blocked_by).await;
 
     Ok(())
 }

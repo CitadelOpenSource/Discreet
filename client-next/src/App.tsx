@@ -53,7 +53,7 @@ import type { CtxMenuItem } from './components/CtxMenu';
 // ── Types ─────────────────────────────────────────────────
 interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; message_retention_days?: number | null; disappearing_messages_default?: string | null; last_activity_at?: string | null; is_archived?: boolean; archived_at?: string | null; scheduled_deletion_at?: string | null; }
 interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; }
-interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; text?: string; authorName?: string; }
+interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; }
 interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; }
 
 // ── Crypto ────────────────────────────────────────────────
@@ -476,6 +476,7 @@ export default function App() {
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [mentionCounts, setMentionCounts] = useState<Record<string, number>>({});
   const [agentDisclosures, setAgentDisclosures] = useState<Record<string, { agent_id: string; display_name: string; disclosure_text: string }>>({});
   // Server organization: favorites, folders, custom order
   const [serverFavorites, setServerFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('d_srv_favs') || '[]'));
@@ -578,7 +579,9 @@ export default function App() {
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
   const [editMsg, setEditMsg] = useState<Msg | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [panel, setPanel] = useState<'members' | 'search' | null>('members');
+  const [panel, setPanel] = useState<'members' | 'search' | 'thread' | null>('members');
+  const [threadParent, setThreadParent] = useState<Msg | null>(null);
+  const [threadReplies, setThreadReplies] = useState<Msg[]>([]);
   const [profileCard, setProfileCard] = useState<{ userId: string; pos: { x: number; y: number } } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [upgradeFeature, setUpgradeFeature] = useState<string | null>(null);
@@ -751,6 +754,9 @@ export default function App() {
       }
       if ((evt.type === 'typing_start' || evt.type === 'typing') && evt.channel_id === ch?.id && evt.user_id !== api.userId) {
         setTypingUsers(p => ({ ...p, [evt.user_id]: Date.now() }));
+      }
+      if (evt.type === 'mention_notification' && evt.mentioned_user_id === api.userId && evt.channel_id !== ch?.id) {
+        setMentionCounts(p => ({ ...p, [evt.channel_id]: (p[evt.channel_id] || 0) + 1 }));
       }
       if (evt.type === 'reaction_add' && evt.channel_id === ch?.id) {
         setReactions(p => ({ ...p, [evt.message_id]: [...(p[evt.message_id] || []), { emoji: evt.emoji, user_id: evt.user_id }] }));
@@ -997,6 +1003,7 @@ export default function App() {
     localStorage.setItem(`d_channel_last_read_${ch.id}`, now);
     setCurChannel(ch); setOpenThread(null); setMobileMenuOpen(false); setTypingUsers({});
     setUnreadCounts(p => { const n = { ...p }; delete n[ch.id]; return n; });
+    setMentionCounts(p => { const n = { ...p }; delete n[ch.id]; return n; });
     setChannelFadeKey(k => k + 1); setMsgScrollTop(0);
     await loadMessages(ch); inputRef.current?.focus();
   };
@@ -1099,7 +1106,17 @@ export default function App() {
         console.log('[send] encrypting for channel:', curChannel.id);
         const ct = await enc(curChannel.id, text);
         console.log('[send] ciphertext length:', ct.length);
-        const res = await api.sendMessage(curChannel.id, ct, 0, replyTo?.id);
+        // Extract mentioned user IDs from @mentions in text
+        const mentionIds: string[] = [];
+        const mentionRe2 = /@([\w.-]+)/g;
+        let mm2;
+        while ((mm2 = mentionRe2.exec(text)) !== null) {
+          const name = mm2[1].toLowerCase();
+          if (name === 'everyone') { mentionIds.push('00000000-0000-0000-0000-000000000000'); continue; }
+          const found = members.find((mb: any) => mb.username?.toLowerCase() === name || mb.display_name?.toLowerCase() === name);
+          if (found) mentionIds.push(found.user_id);
+        }
+        const res = await api.sendMessage(curChannel.id, ct, 0, replyTo?.id, replyTo?.id, mentionIds.length ? mentionIds : undefined);
         console.log('[send] response:', res);
         setMsgInput(''); setReplyTo(null); playSound('send'); await loadMessages(curChannel);
         // Trigger bot responses for any @mentioned bots in this message
@@ -1137,7 +1154,7 @@ export default function App() {
   // Purge stale typing indicators every 2 s (remove entries older than 6 s)
   useEffect(() => {
     const t = setInterval(() => {
-      const cutoff = Date.now() - 6000;
+      const cutoff = Date.now() - 5000;
       setTypingUsers(p => {
         const next = Object.fromEntries(Object.entries(p).filter(([, ts]) => ts > cutoff));
         return Object.keys(next).length === Object.keys(p).length ? p : next;
@@ -1602,6 +1619,7 @@ export default function App() {
                 [api.userId!, { name: api.username || '?', isBot: false }],
               ])}
               unreadCounts={unreadCounts}
+              mentionCounts={mentionCounts}
               mutedChannels={{}}
               videoStreams={{}}
               streamStatus={streamStatus}
@@ -2308,7 +2326,7 @@ export default function App() {
                     <div style={{ flex: 1, height: 1, background: T.bd }} />
                   </div>
                 )}
-                <div data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: 10, padding: '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : 'transparent', transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
+                <div data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: 10, padding: '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
                   onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
                   onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}>
                 <div onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer' }}>
@@ -2403,6 +2421,15 @@ export default function App() {
                       })}
                     </div>
                   )}
+                  {/* Thread reply count badge */}
+                  {(m.reply_count ?? 0) > 0 && (
+                    <div onClick={async () => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const dec = await Promise.all((r as any[]).map(async (rm: any) => { try { rm.text = await (window as any).__decryptMsg?.(curChannel!.id, rm.content_ciphertext) ?? rm.content_ciphertext; } catch { rm.text = rm.content_ciphertext; } return rm; })); setThreadReplies(dec); } catch { setThreadReplies([]); } }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 8px', background: `${T.ac}14`, borderRadius: 8, cursor: 'pointer', fontSize: 11, color: T.ac, fontWeight: 600, border: `1px solid ${T.ac}22`, transition: 'background .15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = `${T.ac}22`}
+                      onMouseLeave={e => e.currentTarget.style.background = `${T.ac}14`}>
+                      <I.Reply /> {m.reply_count} {m.reply_count === 1 ? 'reply' : 'replies'}
+                    </div>
+                  )}
                 </div>
                 {/* Quick react bar on hover */}
                 <div className="msg-actions" style={{ position: 'absolute', top: -4, right: 16, display: 'none', gap: 2, background: T.sf, borderRadius: 4, border: `1px solid ${T.bd}`, padding: 2, zIndex: 10 }}>
@@ -2412,6 +2439,7 @@ export default function App() {
                   <span onClick={() => setEmojiTarget(m.id)} style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 12, color: T.mt }} title="More reactions">＋</span>
                   <span style={{ width: 1, background: T.bd, margin: '0 2px' }} />
                   <span onClick={() => { setReplyTo(m); inputRef.current?.focus(); }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Reply"><I.Reply /></span>
+                  {curServer && curChannel && <span onClick={async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Pin">📌</span>}
                   <span onClick={e => openMsgCtx(e, m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="More">⋯</span>
                 </div>
               </div>
@@ -2432,7 +2460,7 @@ export default function App() {
               ? `${names[0]} is typing`
               : uids.length === 2
                 ? `${names[0]} and ${names[1]} are typing`
-                : 'Several people are typing';
+                : `${names[0]} and ${uids.length - 1} others are typing`;
             return (
               <div style={{ padding: '2px 16px 4px', minHeight: 22, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 12, color: T.mt, fontStyle: 'italic' }}>{label}</span>
@@ -2534,7 +2562,7 @@ export default function App() {
                 }} />
               </label>
               <input ref={inputRef} value={msgInput}
-                onChange={e => { setMsgInput(e.target.value); if (Date.now() - typingRef.current > 5000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
+                onChange={e => { setMsgInput(e.target.value); if (Date.now() - typingRef.current > 3000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
                 onKeyDown={e => { if (e.key === 'Escape') { setSlashTool(null); } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
                 style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
@@ -3355,6 +3383,43 @@ export default function App() {
             }}
             onClose={() => setPanel('members')}
           />
+      )}
+
+      {/* Thread Panel */}
+      {panel === 'thread' && threadParent && (
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, background: T.sf, borderLeft: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.bd}` }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: T.tx }}>Thread</div>
+            <button onClick={() => { setPanel('members'); setThreadParent(null); setThreadReplies([]); }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
+          </div>
+          {/* Parent message */}
+          <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.bd}`, background: T.sf2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Av name={getName(threadParent.author_id)} size={24} />
+              <span style={{ fontWeight: 600, fontSize: 13, color: T.tx }}>{getName(threadParent.author_id)}</span>
+              <span style={{ fontSize: 10, color: T.mt }}>{new Date(threadParent.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word' }}>{threadParent.text || threadParent.content_ciphertext}</div>
+          </div>
+          {/* Replies */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+            {threadReplies.length === 0 && (
+              <div style={{ padding: 24, textAlign: 'center', color: T.mt, fontSize: 13 }}>No replies yet</div>
+            )}
+            {threadReplies.map(r => (
+              <div key={r.id} style={{ padding: '6px 16px 6px 28px', display: 'flex', gap: 8, borderLeft: `2px solid ${T.bd}`, marginLeft: 16 }}>
+                <Av name={getName(r.author_id)} size={20} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{getName(r.author_id)}</span>
+                    <span style={{ fontSize: 9, color: T.mt }}>{new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.4, wordBreak: 'break-word' }}>{r.text || r.content_ciphertext}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Pinned Messages Panel */}

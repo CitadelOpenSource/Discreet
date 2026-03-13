@@ -122,6 +122,18 @@ impl AppState {
         let _ = tx.send(msg);
     }
 
+    /// Broadcast a JSON event excluding specific user IDs (e.g. blocked-by list).
+    /// Adds an `_exclude` array to the payload; the WebSocket forwarder strips it.
+    pub async fn ws_broadcast_filtered(&self, server_id: Uuid, mut payload: serde_json::Value, exclude: &[Uuid]) {
+        if !exclude.is_empty() {
+            let ids: Vec<String> = exclude.iter().map(|id| id.to_string()).collect();
+            payload.as_object_mut().map(|o| o.insert("_exclude".into(), serde_json::json!(ids)));
+        }
+        let msg = payload.to_string();
+        let tx = self.get_server_bus(server_id).await;
+        let _ = tx.send(msg);
+    }
+
     /// Set a user's presence and broadcast the change to all their servers.
     pub async fn set_presence(&self, user_id: Uuid, status: PresenceStatus, server_id: Uuid) {
         let mut map = self.presence.write().await;

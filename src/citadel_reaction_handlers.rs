@@ -97,6 +97,25 @@ pub async fn add_reaction(
         return Err(AppError::BadRequest("Invalid emoji".into()));
     }
 
+    // Rate limit: 5 reactions per user per message per 10 seconds.
+    let rate_key = format!("react_rl:{}:{}", auth.user_id, message_id);
+    let mut redis_conn = state.redis.clone();
+    let count: i64 = redis::cmd("INCR")
+        .arg(&rate_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(1);
+    if count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&rate_key)
+            .arg(10i64)
+            .query_async(&mut redis_conn)
+            .await;
+    }
+    if count > 5 {
+        return Err(AppError::RateLimited("Too many reactions — slow down".into()));
+    }
+
     let server_id = verify_channel_access(&state.db, channel_id, auth.user_id).await?;
     verify_message(&state.db, channel_id, message_id).await?;
 

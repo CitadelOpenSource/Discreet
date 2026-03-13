@@ -47,6 +47,9 @@ pub mod Permission {
     pub const MOVE_MEMBERS: i64       = 1 << 33;  // Drag users between voice channels
     pub const PRIORITY_SPEAKER: i64   = 1 << 34;  // Priority speaker in voice
 
+    // ── Mention ──
+    pub const MENTION_EVERYONE: i64   = 1 << 6;   // Use @everyone (rate-limited)
+
     // ── Dangerous ──
     pub const ADMINISTRATOR: i64      = 1 << 40;  // Bypasses all permission checks
     pub const DELETE_SERVER: i64       = 1 << 41;  // Can delete the server (owner can delegate)
@@ -183,3 +186,4 @@ pub const PERM_ATTACH_FILES: i64 = Permission::ATTACH_FILES;
 pub const PERM_MANAGE_CHANNELS: i64 = Permission::MANAGE_CHANNELS;
 pub const PERM_MANAGE_MESSAGES: i64 = Permission::MANAGE_MESSAGES;
 pub const PERM_USE_AGENTS: i64 = Permission::MANAGE_AGENTS;
+pub const PERM_MENTION_EVERYONE: i64 = Permission::MENTION_EVERYONE;

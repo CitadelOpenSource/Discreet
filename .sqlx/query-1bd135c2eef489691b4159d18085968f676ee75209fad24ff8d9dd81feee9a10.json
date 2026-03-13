@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext, m.mls_epoch,\n                    m.attachment_blob_id, m.edited_at, m.deleted, m.created_at,\n                    m.reply_to_id,\n                    r.content_ciphertext AS \"reply_ciphertext?\",\n                    r.author_id AS \"reply_author_id?\"\n             FROM messages m\n             LEFT JOIN messages r ON m.reply_to_id = r.id\n             WHERE m.channel_id = $1\n               AND m.created_at < (SELECT created_at FROM messages WHERE id = $2)\n             ORDER BY m.created_at DESC\n             LIMIT $3",
+  "query": "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext, m.mls_epoch,\n                m.attachment_blob_id, m.edited_at, m.deleted, m.created_at,\n                m.reply_to_id, m.parent_message_id, m.mentioned_user_ids,\n                r.content_ciphertext AS \"reply_ciphertext?\",\n                r.author_id AS \"reply_author_id?\"\n         FROM messages m\n         LEFT JOIN messages r ON m.reply_to_id = r.id\n         WHERE m.parent_message_id = $1\n         ORDER BY m.created_at ASC\n         LIMIT 100",
   "describe": {
     "columns": [
       {
@@ -55,20 +55,28 @@
       },
       {
         "ordinal": 10,
+        "name": "parent_message_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "mentioned_user_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
         "name": "reply_ciphertext?",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "reply_author_id?",
         "type_info": "Uuid"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -82,9 +90,11 @@
       false,
       false,
       true,
+      true,
+      false,
       false,
       false
     ]
   },
-  "hash": "e3a1b4cd1c808f3fcc23e368fab28d6c091dde72ad1e99782d35335402c25746"
+  "hash": "1bd135c2eef489691b4159d18085968f676ee75209fad24ff8d9dd81feee9a10"
 }

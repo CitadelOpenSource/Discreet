@@ -45,6 +45,11 @@ pub struct SendMessageRequest {
     pub attachment_blob_id: Option<Uuid>,
     /// Optional: ID of the message being replied to.
     pub reply_to_id: Option<Uuid>,
+    /// Optional: thread parent message ID (for threaded replies).
+    pub parent_message_id: Option<Uuid>,
+    /// Optional: UUIDs of mentioned users (client-provided, max 20).
+    /// Special value "00000000-0000-0000-0000-000000000000" means @everyone.
+    pub mentioned_user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +102,15 @@ pub struct MessageInfo {
     /// Author ID of the replied-to message.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_author_id: Option<Uuid>,
+    /// Thread parent message ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<Uuid>,
+    /// Number of threaded replies to this message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_count: Option<i64>,
+    /// UUIDs of mentioned users.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mentioned_user_ids: Option<serde_json::Value>,
 }
 
 // ─── POST /channels/:channel_id/messages ────────────────────────────────
@@ -239,9 +253,40 @@ pub async fn send_message(
             .map(|secs| chrono::Utc::now() + chrono::Duration::seconds(secs))
     };
 
+    // ── Mention validation ────────────────────────────────────────────────
+    let mentions = req.mentioned_user_ids.clone().unwrap_or_default();
+    let everyone_uuid = Uuid::nil(); // 00000000-... means @everyone
+    let has_everyone = mentions.contains(&everyone_uuid);
+
+    // Cap individual mentions at 20.
+    let individual_mentions: Vec<Uuid> = mentions.iter().filter(|&&id| id != everyone_uuid).cloned().collect();
+    if individual_mentions.len() > 20 {
+        return Err(AppError::BadRequest("Too many mentions — max 20 per message".into()));
+    }
+
+    // @everyone requires MENTION_EVERYONE permission + Redis rate limit (once per 5 min per channel).
+    if has_everyone {
+        crate::citadel_permissions::require_permission(
+            &state, channel.server_id, auth.user_id,
+            crate::citadel_permissions::PERM_MENTION_EVERYONE,
+        ).await?;
+
+        let rate_key = format!("mention_everyone:{}:{}:{}", auth.user_id, channel_id, channel.server_id);
+        let mut redis_conn = state.redis.clone();
+        let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
+        if count == 1 {
+            let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(300i64).query_async(&mut redis_conn).await;
+        }
+        if count > 1 {
+            return Err(AppError::RateLimited("@everyone can only be used once per 5 minutes in this channel".into()));
+        }
+    }
+
+    let mentions_json = serde_json::json!(mentions);
+
     sqlx::query!(
-        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id, parent_message_id, mentioned_user_ids, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         message_id,
         channel_id,
         auth.user_id,
@@ -249,6 +294,8 @@ pub async fn send_message(
         req.mls_epoch,
         req.attachment_blob_id,
         req.reply_to_id,
+        req.parent_message_id,
+        mentions_json,
         expires_at,
     )
     .execute(&state.db)
@@ -272,9 +319,23 @@ pub async fn send_message(
                 "message_id": message_id,
                 "author_id": auth.user_id,
                 "reply_to_id": req.reply_to_id,
+                "mentioned_user_ids": mentions,
             }),
         )
         .await;
+
+    // Push mention_notification for each mentioned user (excluding sender).
+    for &uid in &individual_mentions {
+        if uid != auth.user_id {
+            state.ws_broadcast(channel.server_id, serde_json::json!({
+                "type": "mention_notification",
+                "channel_id": channel_id,
+                "message_id": message_id,
+                "author_id": auth.user_id,
+                "mentioned_user_id": uid,
+            })).await;
+        }
+    }
 
     // After storing and broadcasting the user's message, check whether any
     // enabled bots in this server should auto-respond. Joining server_members
@@ -430,6 +491,9 @@ pub async fn send_message(
             reply_to_id: req.reply_to_id,
             reply_to_ciphertext: None,
             reply_to_author_id: None,
+            parent_message_id: req.parent_message_id,
+            reply_count: Some(0),
+            mentioned_user_ids: req.mentioned_user_ids.as_ref().map(|ids| serde_json::json!(ids)),
         }),
     ))
 }
@@ -457,9 +521,10 @@ pub async fn get_messages(
         sqlx::query!(
             "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext, m.mls_epoch,
                     m.attachment_blob_id, m.edited_at, m.deleted, m.created_at,
-                    m.reply_to_id,
+                    m.reply_to_id, m.parent_message_id, m.mentioned_user_ids,
                     r.content_ciphertext AS \"reply_ciphertext?\",
-                    r.author_id AS \"reply_author_id?\"
+                    r.author_id AS \"reply_author_id?\",
+                    (SELECT COUNT(*) FROM messages c WHERE c.parent_message_id = m.id) AS reply_count
              FROM messages m
              LEFT JOIN messages r ON m.reply_to_id = r.id
              WHERE m.channel_id = $1
@@ -486,6 +551,9 @@ pub async fn get_messages(
             reply_to_id: r.reply_to_id,
             reply_to_ciphertext: r.reply_ciphertext.map(|c| encode_base64(&c)),
             reply_to_author_id: r.reply_author_id,
+            parent_message_id: r.parent_message_id,
+            reply_count: r.reply_count,
+            mentioned_user_ids: Some(r.mentioned_user_ids),
         })
         .collect()
     } else {
@@ -493,9 +561,10 @@ pub async fn get_messages(
         sqlx::query!(
             "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext, m.mls_epoch,
                     m.attachment_blob_id, m.edited_at, m.deleted, m.created_at,
-                    m.reply_to_id,
+                    m.reply_to_id, m.parent_message_id, m.mentioned_user_ids,
                     r.content_ciphertext AS \"reply_ciphertext?\",
-                    r.author_id AS \"reply_author_id?\"
+                    r.author_id AS \"reply_author_id?\",
+                    (SELECT COUNT(*) FROM messages c WHERE c.parent_message_id = m.id) AS reply_count
              FROM messages m
              LEFT JOIN messages r ON m.reply_to_id = r.id
              WHERE m.channel_id = $1
@@ -520,6 +589,9 @@ pub async fn get_messages(
             reply_to_id: r.reply_to_id,
             reply_to_ciphertext: r.reply_ciphertext.map(|c| encode_base64(&c)),
             reply_to_author_id: r.reply_author_id,
+            parent_message_id: r.parent_message_id,
+            reply_count: r.reply_count,
+            mentioned_user_ids: Some(r.mentioned_user_ids),
         })
         .collect()
     };
@@ -784,6 +856,62 @@ fn encode_base64(data: &[u8]) -> String {
     STANDARD.encode(data)
 }
 
+// ─── GET /messages/:id/thread ─────────────────────────────────────────
+
+pub async fn get_thread_replies(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(message_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Look up the parent message to find its channel → server → verify membership.
+    let parent = sqlx::query!(
+        "SELECT m.channel_id, c.server_id FROM messages m JOIN channels c ON c.id = m.channel_id WHERE m.id = $1",
+        message_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Message not found".into()))?;
+
+    require_permission(&state, parent.server_id, auth.user_id, PERM_VIEW_CHANNEL).await?;
+
+    let replies = sqlx::query!(
+        "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext, m.mls_epoch,
+                m.attachment_blob_id, m.edited_at, m.deleted, m.created_at,
+                m.reply_to_id, m.parent_message_id, m.mentioned_user_ids,
+                r.content_ciphertext AS \"reply_ciphertext?\",
+                r.author_id AS \"reply_author_id?\"
+         FROM messages m
+         LEFT JOIN messages r ON m.reply_to_id = r.id
+         WHERE m.parent_message_id = $1
+         ORDER BY m.created_at ASC
+         LIMIT 100",
+        message_id,
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| MessageInfo {
+        id: r.id,
+        channel_id: r.channel_id,
+        author_id: r.author_id,
+        content_ciphertext: encode_base64(&r.content_ciphertext),
+        mls_epoch: r.mls_epoch,
+        attachment_blob_id: r.attachment_blob_id,
+        edited_at: r.edited_at.map(|t| t.to_rfc3339()),
+        deleted: r.deleted,
+        created_at: r.created_at.to_rfc3339(),
+        reply_to_id: r.reply_to_id,
+        reply_to_ciphertext: r.reply_ciphertext.map(|c| encode_base64(&c)),
+        reply_to_author_id: r.reply_author_id,
+        parent_message_id: r.parent_message_id,
+        reply_count: None,
+        mentioned_user_ids: Some(r.mentioned_user_ids),
+    })
+    .collect::<Vec<_>>();
+
+    Ok(Json(replies))
+}
+
 // ─── Route Registration ─────────────────────────────────────────────────
 
 pub fn message_routes() -> axum::Router<Arc<AppState>> {
@@ -795,4 +923,5 @@ pub fn message_routes() -> axum::Router<Arc<AppState>> {
         .route("/channels/:channel_id/messages/bulk-delete", post(bulk_delete_messages))
         .route("/messages/:id", patch(edit_message))
         .route("/messages/:id", delete(delete_message))
+        .route("/messages/:id/thread", get(get_thread_replies))
 }
