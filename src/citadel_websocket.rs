@@ -238,7 +238,21 @@ async fn handle_ws(
             result = rx.recv() => {
                 match result {
                     Ok(msg) => {
-                        if socket.send(Message::Text(msg)).await.is_err() {
+                        // Check _exclude list — skip if this user is excluded.
+                        let skip = serde_json::from_str::<serde_json::Value>(&msg)
+                            .ok()
+                            .and_then(|v| v.get("_exclude")?.as_array().cloned())
+                            .map(|arr| arr.iter().any(|id| id.as_str() == Some(&user_id.to_string())))
+                            .unwrap_or(false);
+                        if skip { continue; }
+                        // Strip _exclude before forwarding to client.
+                        let forwarded = if msg.contains("\"_exclude\"") {
+                            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&msg) {
+                                v.as_object_mut().map(|o| o.remove("_exclude"));
+                                v.to_string()
+                            } else { msg }
+                        } else { msg };
+                        if socket.send(Message::Text(forwarded)).await.is_err() {
                             break;
                         }
                     }

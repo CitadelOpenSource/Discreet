@@ -1302,7 +1302,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
           {[
             { key: 'compact_mode',       label: 'Compact Mode',                    desc: 'Reduce padding and margins throughout the UI',                          setting: true  },
-            { key: 'show_embeds',        label: 'Show Link Embeds',                desc: 'Preview links with title, description, and images',                     setting: true, def: true },
+            { key: 'd_show_embeds',      label: 'Show Link Previews',              desc: 'Preview links with title, description, and images',                     local: true,   def: true },
             { key: 'd_show_avatars',     label: 'Show Avatars in Chat',            desc: 'Display user avatars next to messages',                                 local: true,   def: true },
             { key: 'd_show_timestamps',  label: 'Show Timestamps',                 desc: 'Display time next to every message',                                    local: true,   def: true },
             { key: 'd_show_join_leave',  label: 'Show Join/Leave Messages',        desc: 'Display system messages when users join or leave',                      local: true,   def: true },

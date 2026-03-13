@@ -57,6 +57,7 @@ export interface ChannelSidebarProps {
   voicePresence:  Record<string, string[]>;
   memberMap:      Record<string, { name: string; isBot: boolean }>;
   unreadCounts:   Record<string, number>;
+  mentionCounts?: Record<string, number>;
   mutedChannels:  Record<string, boolean>;
   videoStreams:   Record<string, MediaStream | null>;
   /** Per-channel live stream status */
@@ -194,6 +195,7 @@ interface ChannelRowProps {
   memberMap:      Record<string, { name: string; isBot: boolean }>;
   videoStreams:   Record<string, MediaStream | null>;
   unreadCounts:   Record<string, number>;
+  mentionCounts?: Record<string, number>;
   mutedChannels:  Record<string, boolean>;
   streamStatus:   Record<string, StreamInfo>;
   isOwner:        boolean;
@@ -218,7 +220,7 @@ interface ChannelRowProps {
 
 function ChannelRow({
   ch, curChannel, voiceChannel, voicePeers, voicePresence, memberMap, videoStreams,
-  unreadCounts, mutedChannels, streamStatus, isOwner, canMoveMember,
+  unreadCounts, mentionCounts, mutedChannels, streamStatus, isOwner, canMoveMember,
   isDragOver, dragVoiceUser, indent,
   onClick, onVoiceClick, onWatchStream, onDragStart, onDragOver, onDragLeave,
   onDrop, onDragEnd, onCtx, onChannelSettings, onVoicePeerDragStart, onVoicePeerDragEnd,
@@ -229,6 +231,7 @@ function ChannelRow({
   const isInVoice = voiceChannel?.id === ch.id;
   const isMuted   = !!mutedChannels[ch.id];
   const unread    = unreadCounts[ch.id] ?? 0;
+  const mentions  = mentionCounts?.[ch.id] ?? 0;
   const liveInfo  = ch.channel_type === 'voice' ? (streamStatus[ch.id] ?? null) : null;
   const isLive    = liveInfo?.active ?? false;
 
@@ -309,8 +312,19 @@ function ChannelRow({
         {(ch.message_ttl_seconds ?? 0) > 0 && <I.Clock />}
         {isMuted && <span style={{ color: T.mt, marginLeft: 2 }} title="Muted"><I.BellOff /></span>}
 
+        {/* Mention badge */}
+        {mentions > 0 && !isActive && (
+          <span style={{
+            marginLeft: 'auto', background: '#ff4757',
+            color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8,
+            minWidth: 16, height: 16, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', padding: '0 4px',
+          }}>
+            @{mentions}
+          </span>
+        )}
         {/* Unread badge */}
-        {unread > 0 && !isActive && (
+        {unread > 0 && !isActive && mentions === 0 && (
           <span style={{
             marginLeft: 'auto', background: isMuted ? T.mt : T.ac,
             color: '#000', fontSize: 10, fontWeight: 700, borderRadius: 8,
@@ -426,7 +440,7 @@ export function ChannelSidebar({
   // ── Shared channel row props ──
   const rowProps = (ch: Channel) => ({
     ch, curChannel, voiceChannel, voicePeers, voicePresence, memberMap, videoStreams,
-    unreadCounts, mutedChannels, streamStatus, isOwner, canMoveMember,
+    unreadCounts, mentionCounts, mutedChannels, streamStatus, isOwner, canMoveMember,
     isDragOver: dragOverCh === ch.id,
     dragVoiceUser,
     onClick, onVoiceClick, onWatchStream,
