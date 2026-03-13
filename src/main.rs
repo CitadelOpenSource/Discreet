@@ -117,7 +117,10 @@ async fn maintenance_middleware(
         return (
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
             axum::Json(serde_json::json!({
-                "error": message,
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": message,
+                },
                 "maintenance": true,
             })),
         )
@@ -218,13 +221,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Background task: delete expired messages (TTL) every 60 seconds.
+    // Background task: message retention cleanup every 60 seconds.
+    // Handles: channel TTL, per-message expires_at (disappearing messages),
+    // and three-tier retention (channel > server > global).
+    // PROTECTED DATA: audit_log rows are never purged.
     {
         let db = state.db.clone();
+        let redis = state.redis.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 interval.tick().await;
+
+                // 1) Channel-level TTL (legacy message_ttl_seconds).
                 match sqlx::query!(
                     "DELETE FROM messages WHERE id IN (
                         SELECT m.id FROM messages m
@@ -236,13 +245,140 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .execute(&db)
                 .await
                 {
-                    Ok(result) => {
-                        let count = result.rows_affected();
-                        if count > 0 {
-                            tracing::info!("TTL cleanup: deleted {} expired messages", count);
-                        }
-                    }
+                    Ok(r) => { if r.rows_affected() > 0 { tracing::info!("TTL cleanup: deleted {} messages", r.rows_affected()); } }
                     Err(e) => tracing::warn!("TTL cleanup error: {}", e),
+                }
+
+                // 2) Per-message disappearing (expires_at).
+                match sqlx::query!(
+                    "DELETE FROM messages WHERE expires_at IS NOT NULL AND expires_at < NOW()"
+                )
+                .execute(&db)
+                .await
+                {
+                    Ok(r) => { if r.rows_affected() > 0 { tracing::info!("Disappearing cleanup: deleted {} messages", r.rows_affected()); } }
+                    Err(e) => tracing::warn!("Disappearing cleanup error: {}", e),
+                }
+
+                // 3) Three-tier retention (runs every cycle, but heavy query — only
+                //    deletes messages past their effective retention period).
+                //    Channel retention overrides server, server overrides global.
+                //    0 or NULL = inherit from parent tier. Global 0 = forever.
+                let global_days: i32 = {
+                    let mut r = redis.clone();
+                    let cached: Option<String> = redis::cmd("GET")
+                        .arg("platform_settings")
+                        .query_async::<_, Option<String>>(&mut r)
+                        .await
+                        .ok()
+                        .flatten();
+                    cached
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                        .and_then(|v| v.get("default_retention_days")?.as_i64())
+                        .unwrap_or(0) as i32
+                };
+
+                if global_days > 0 {
+                    // Delete messages older than global retention where no tighter
+                    // server/channel override exists.
+                    let res: Result<sqlx::postgres::PgQueryResult, sqlx::Error> = sqlx::query!(
+                        "DELETE FROM messages WHERE id IN (
+                            SELECT m.id FROM messages m
+                            JOIN channels c ON c.id = m.channel_id
+                            JOIN servers s ON s.id = c.server_id
+                            WHERE m.created_at < NOW() - make_interval(days => $1)
+                              AND COALESCE(c.message_retention_days, s.message_retention_days, $1) <= $1
+                              AND m.created_at < NOW() - make_interval(days => COALESCE(c.message_retention_days, s.message_retention_days, $1))
+                        )",
+                        global_days,
+                    )
+                    .execute(&db)
+                    .await;
+                    match res {
+                        Ok(r) => { if r.rows_affected() > 0 { tracing::info!("Retention cleanup: deleted {} messages (global {} days)", r.rows_affected(), global_days); } }
+                        Err(e) => tracing::warn!("Retention cleanup error: {}", e),
+                    }
+                }
+
+                // Server-level retention (where global is forever but server has a limit).
+                match sqlx::query!(
+                    "DELETE FROM messages WHERE id IN (
+                        SELECT m.id FROM messages m
+                        JOIN channels c ON c.id = m.channel_id
+                        JOIN servers s ON s.id = c.server_id
+                        WHERE s.message_retention_days IS NOT NULL
+                          AND s.message_retention_days > 0
+                          AND c.message_retention_days IS NULL
+                          AND m.created_at < NOW() - make_interval(days => s.message_retention_days)
+                    )"
+                )
+                .execute(&db)
+                .await
+                {
+                    Ok(r) => { if r.rows_affected() > 0 { tracing::info!("Server retention cleanup: deleted {} messages", r.rows_affected()); } }
+                    Err(e) => tracing::warn!("Server retention cleanup error: {}", e),
+                }
+
+                // Channel-level retention override.
+                match sqlx::query!(
+                    "DELETE FROM messages WHERE id IN (
+                        SELECT m.id FROM messages m
+                        JOIN channels c ON c.id = m.channel_id
+                        WHERE c.message_retention_days IS NOT NULL
+                          AND c.message_retention_days > 0
+                          AND m.created_at < NOW() - make_interval(days => c.message_retention_days)
+                    )"
+                )
+                .execute(&db)
+                .await
+                {
+                    Ok(r) => { if r.rows_affected() > 0 { tracing::info!("Channel retention cleanup: deleted {} messages", r.rows_affected()); } }
+                    Err(e) => tracing::warn!("Channel retention cleanup error: {}", e),
+                }
+            }
+        });
+    }
+
+    // Background task: execute scheduled server deletions every 5 minutes.
+    // Servers past their scheduled_deletion_at are fully deleted:
+    // messages/channels/roles removed, audit tombstone preserved.
+    {
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+
+                // Find servers past their deletion date.
+                let due = match sqlx::query!(
+                    "SELECT id, name, owner_id FROM servers WHERE scheduled_deletion_at IS NOT NULL AND scheduled_deletion_at <= NOW()"
+                )
+                .fetch_all(&db)
+                .await
+                {
+                    Ok(rows) => rows,
+                    Err(e) => { tracing::warn!("Scheduled deletion query error: {}", e); continue; }
+                };
+
+                for server in due {
+                    tracing::info!(server_id = %server.id, name = %server.name, "Executing scheduled server deletion");
+
+                    // Insert audit tombstone before deletion.
+                    let _ = citadel_audit::log_action(
+                        &db, server.id, server.owner_id, "SERVER_DELETED_SCHEDULED",
+                        Some("server"), Some(server.id),
+                        Some(serde_json::json!({ "name": server.name, "reason": "scheduled_deletion" })),
+                        Some("Automated: 30-day scheduled deletion"),
+                    ).await;
+
+                    // CASCADE delete removes messages, channels, roles, members, invites.
+                    match sqlx::query!("DELETE FROM servers WHERE id = $1", server.id)
+                        .execute(&db)
+                        .await
+                    {
+                        Ok(_) => tracing::info!(server_id = %server.id, "Scheduled server deletion complete"),
+                        Err(e) => tracing::error!(server_id = %server.id, error = %e, "Scheduled server deletion failed"),
+                    }
                 }
             }
         });
@@ -332,6 +468,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/channels/:channel_id", axum::routing::get(citadel_channel_handlers::get_channel).patch(citadel_channel_handlers::update_channel).delete(citadel_channel_handlers::delete_channel))
         // ── Messages ──
         .route("/channels/:channel_id/messages", axum::routing::post(citadel_message_handlers::send_message).get(citadel_message_handlers::get_messages))
+        .route("/channels/:channel_id/messages/search", axum::routing::get(citadel_message_handlers::search_messages))
         .route("/messages/:id", axum::routing::patch(citadel_message_handlers::edit_message).delete(citadel_message_handlers::delete_message))
         // ── Pins ──
         .route("/servers/:server_id/channels/:channel_id/pins/:message_id", axum::routing::post(citadel_pin_handlers::pin_message).delete(citadel_pin_handlers::unpin_message))
@@ -358,6 +495,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/agents", axum::routing::get(citadel_agent_handlers::list_agents))
         // ── Bots ──
         .route("/servers/:server_id/bots", axum::routing::post(citadel_server_handlers::create_bot).get(citadel_server_handlers::list_bots))
+        .route("/servers/:server_id/archive", axum::routing::post(citadel_server_handlers::archive_server))
+        .route("/servers/:server_id/schedule-deletion", axum::routing::post(citadel_server_handlers::schedule_server_deletion))
         // ── Users ──
         .route("/users/@me", axum::routing::get(citadel_user_handlers::get_me).patch(citadel_user_handlers::update_me).delete(citadel_user_handlers::delete_account))
         .route("/users/@me/servers", axum::routing::get(citadel_user_handlers::list_my_servers))
@@ -423,7 +562,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports))
         // ── Platform settings (kill switches) ──
         .route("/admin/settings", axum::routing::get(citadel_platform_settings::get_settings)
-            .put(citadel_platform_settings::update_settings));
+            .put(citadel_platform_settings::update_settings))
+        // ── Server lifecycle admin ──
+        .merge(citadel_server_handlers::server_admin_routes())
+        // ── API 404 fallback — consistent JSON for unknown routes ──
+        .fallback(|| async {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                axum::Json(serde_json::json!({
+                    "error": {
+                        "code": "NOT_FOUND",
+                        "message": "The requested API endpoint does not exist",
+                    }
+                })),
+            )
+        });
 
     // CORS: configurable via CORS_ORIGINS env var.
     // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000

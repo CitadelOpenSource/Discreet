@@ -69,36 +69,36 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
-            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg.clone()),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg.clone()),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", if msg.is_empty() { "Please log in".into() } else { msg.clone() }),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", if msg.is_empty() { "Access denied".into() } else { msg.clone() }),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", if msg.is_empty() { "Page not found".into() } else { msg.clone() }),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
-            AppError::RateLimited(msg) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", msg.clone()),
+            AppError::RateLimited(msg) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", if msg.is_empty() { "Too many requests — please slow down".into() } else { msg.clone() }),
             AppError::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", msg.clone()),
             AppError::Gone(msg) => (StatusCode::GONE, "GONE", msg.clone()),
             AppError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", msg.clone()),
             AppError::Database(e) => {
                 tracing::error!("Database error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR", "Internal database error".into())
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error — our team has been notified".into())
             }
             AppError::Serialization(e) => {
                 tracing::error!("Serialization error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "SERIALIZATION_ERROR", "Internal error".into())
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error — our team has been notified".into())
             }
             AppError::Jwt(e) => {
-                (StatusCode::UNAUTHORIZED, "JWT_ERROR", format!("Token error: {e}"))
+                (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", format!("Please log in (token expired: {e})"))
             }
             AppError::Crypto(msg) => {
                 tracing::error!("Crypto error: {msg}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR", "Cryptographic operation failed".into())
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error — our team has been notified".into())
             }
             AppError::AgentSpawn(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "AGENT_SPAWN_ERROR", msg.clone()),
             AppError::Federation(msg) => (StatusCode::BAD_GATEWAY, "FEDERATION_ERROR", msg.clone()),
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {msg}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal server error".into())
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error — our team has been notified".into())
             }
-            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", msg.clone()),
+            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", if msg.is_empty() { "Service temporarily unavailable".into() } else { msg.clone() }),
         };
 
         (status, Json(json!({

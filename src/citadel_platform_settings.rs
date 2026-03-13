@@ -41,6 +41,10 @@ pub struct PlatformSettings {
     pub ai_rate_limit_per_minute: u32,
     /// Emergency AI kill switch — immediately stops all bot responses.
     pub ai_emergency_stop: bool,
+    /// Global default message retention in days (0 = forever).
+    pub default_retention_days: u32,
+    /// Global disappearing messages default: "off", "24h", "7d", "30d".
+    pub global_disappearing_default: String,
 }
 
 impl Default for PlatformSettings {
@@ -55,6 +59,8 @@ impl Default for PlatformSettings {
             ai_global_model: String::new(),
             ai_rate_limit_per_minute: 0,
             ai_emergency_stop: false,
+            default_retention_days: 0,
+            global_disappearing_default: "off".into(),
         }
     }
 }
@@ -116,6 +122,12 @@ pub async fn get_platform_settings(state: &AppState) -> Result<PlatformSettings,
             "ai_emergency_stop" => {
                 settings.ai_emergency_stop = v.as_bool().unwrap_or(false);
             }
+            "default_retention_days" => {
+                settings.default_retention_days = v.as_u64().unwrap_or(0) as u32;
+            }
+            "global_disappearing_default" => {
+                settings.global_disappearing_default = v.as_str().unwrap_or("off").to_string();
+            }
             _ => {}
         }
     }
@@ -167,6 +179,10 @@ pub struct UpdateSettingsRequest {
     pub ai_rate_limit_per_minute: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ai_emergency_stop: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_retention_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_disappearing_default: Option<String>,
 }
 
 pub async fn update_settings(
@@ -187,6 +203,8 @@ pub async fn update_settings(
         req.ai_global_model.as_ref().map(|v| ("ai_global_model", json!(v))),
         req.ai_rate_limit_per_minute.map(|v| ("ai_rate_limit_per_minute", json!(v))),
         req.ai_emergency_stop.map(|v| ("ai_emergency_stop", json!(v))),
+        req.default_retention_days.map(|v| ("default_retention_days", json!(v))),
+        req.global_disappearing_default.as_ref().map(|v| ("global_disappearing_default", json!(v))),
     ]
     .into_iter()
     .flatten()

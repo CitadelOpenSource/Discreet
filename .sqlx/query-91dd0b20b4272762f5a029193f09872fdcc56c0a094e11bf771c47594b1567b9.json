@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, server_id, name, topic, channel_type, position,\n                locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,\n                created_at\n         FROM channels WHERE id = $1",
+  "query": "SELECT id, server_id, name, topic, channel_type, position,\n                locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,\n                message_retention_days, disappearing_messages, created_at\n         FROM channels\n         WHERE server_id = $1\n         ORDER BY position, created_at",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,16 @@
       },
       {
         "ordinal": 11,
+        "name": "message_retention_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "disappearing_messages",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -81,8 +91,10 @@
       false,
       false,
       false,
+      true,
+      true,
       false
     ]
   },
-  "hash": "3f6e205d7f7bf33fc8633687cdfbdedf173230a5af85a472e120fbf7df8c3845"
+  "hash": "91dd0b20b4272762f5a029193f09872fdcc56c0a094e11bf771c47594b1567b9"
 }

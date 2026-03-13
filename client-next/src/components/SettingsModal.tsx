@@ -15,6 +15,7 @@ import { Av } from './Av';
 import { Modal } from './Modal';
 import { AvatarCreator } from './AvatarCreator';
 import { AdminDashboard } from './AdminDashboard';
+import { DangerConfirmModal } from './DangerConfirmModal';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -130,12 +131,24 @@ function DeviceSelector({ label, kind, storageKey, onChange }: DeviceSelectorPro
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selected, setSelected] = useState(localStorage.getItem(storageKey) || 'default');
   useEffect(() => {
-    navigator.mediaDevices?.enumerateDevices().then(all => {
-      setDevices(all.filter(d => d.kind === kind));
-    }).catch(() => {});
-    navigator.mediaDevices?.addEventListener('devicechange', () => {
-      navigator.mediaDevices.enumerateDevices().then(all => setDevices(all.filter(d => d.kind === kind))).catch(() => {});
-    });
+    const enumerate = () => {
+      navigator.mediaDevices?.enumerateDevices().then(all => {
+        const filtered = all.filter(d => d.kind === kind);
+        // If labels are empty, request permission to get real names
+        if (filtered.length > 0 && !filtered[0].label && kind === 'audioinput') {
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+            s.getTracks().forEach(t => t.stop());
+            navigator.mediaDevices.enumerateDevices().then(all2 => setDevices(all2.filter(d => d.kind === kind))).catch(() => {});
+          }).catch(() => {});
+        } else {
+          setDevices(filtered);
+        }
+      }).catch(() => {});
+    };
+    enumerate();
+    const onDeviceChange = () => enumerate();
+    navigator.mediaDevices?.addEventListener('devicechange', onDeviceChange);
+    return () => { navigator.mediaDevices?.removeEventListener('devicechange', onDeviceChange); };
   }, [kind]);
   return (
     <div style={{ marginBottom: 10 }}>
@@ -146,6 +159,123 @@ function DeviceSelector({ label, kind, storageKey, onChange }: DeviceSelectorPro
         {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `${kind} ${d.deviceId.slice(0, 8)}`}</option>)}
       </select>
     </div>
+  );
+}
+
+// ─── Audio Test Buttons ──────────────────────────────────────
+
+function TestMicrophoneButton() {
+  const [state, setState] = useState<'idle' | 'recording' | 'playing'>('idle');
+  const [level, setLevel] = useState(0);
+  const recRef = React.useRef<{ stream: MediaStream; chunks: Blob[]; recorder: MediaRecorder } | null>(null);
+  const animRef = React.useRef(0);
+
+  const startRecording = async () => {
+    try {
+      const deviceId = localStorage.getItem('d_audioIn');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { ...(deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}) },
+      });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        cancelAnimationFrame(animRef.current);
+        setLevel(0);
+        if (chunks.length === 0) { setState('idle'); return; }
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        playBack(blob);
+      };
+      // Level meter via AnalyserNode
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setLevel(avg / 128);
+        animRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+
+      recRef.current = { stream, chunks, recorder };
+      recorder.start();
+      setState('recording');
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 3000);
+    } catch {
+      setState('idle');
+    }
+  };
+
+  const playBack = (blob: Blob) => {
+    setState('playing');
+    const audio = new Audio(URL.createObjectURL(blob));
+    const outDev = localStorage.getItem('d_audioOut');
+    if (outDev && outDev !== 'default' && (audio as any).setSinkId) {
+      (audio as any).setSinkId(outDev).catch(() => {});
+    }
+    audio.onended = () => { setState('idle'); URL.revokeObjectURL(audio.src); };
+    audio.onerror = () => setState('idle');
+    audio.play().catch(() => setState('idle'));
+  };
+
+  const stop = () => {
+    if (recRef.current?.recorder?.state === 'recording') recRef.current.recorder.stop();
+    setState('idle');
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+      <button onClick={state === 'idle' ? startRecording : stop}
+        style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: state === 'recording' ? 'rgba(255,71,87,0.15)' : state === 'playing' ? 'rgba(0,212,170,0.1)' : 'transparent', color: state === 'recording' ? '#ff4757' : T.ac, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        {state === 'idle' ? 'Test Mic' : state === 'recording' ? 'Recording...' : 'Playing back...'}
+      </button>
+      {state === 'recording' && (
+        <div style={{ flex: 1, height: 6, borderRadius: 3, background: T.bd, overflow: 'hidden' }}>
+          <div style={{ height: '100%', borderRadius: 3, background: `linear-gradient(90deg, ${T.ac}, #00ff88)`, width: `${Math.min(level * 100, 100)}%`, transition: 'width 0.05s' }} />
+        </div>
+      )}
+      {state === 'playing' && <span style={{ fontSize: 10, color: T.mt }}>Playing through selected output...</span>}
+    </div>
+  );
+}
+
+function TestSpeakerButton() {
+  const [playing, setPlaying] = useState(false);
+
+  const playTone = () => {
+    if (playing) return;
+    setPlaying(true);
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime + 0.5);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    // Route to selected output if setSinkId is available
+    const outDev = localStorage.getItem('d_audioOut');
+    if (outDev && outDev !== 'default' && (ctx as any).setSinkId) {
+      (ctx as any).setSinkId(outDev).catch(() => {});
+    }
+    osc.start();
+    osc.stop(ctx.currentTime + 0.8);
+    osc.onended = () => { ctx.close(); setPlaying(false); };
+  };
+
+  return (
+    <button onClick={playTone} disabled={playing}
+      style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: playing ? 'rgba(0,212,170,0.1)' : 'transparent', color: T.ac, fontSize: 11, fontWeight: 600, cursor: playing ? 'default' : 'pointer', opacity: playing ? 0.6 : 1, whiteSpace: 'nowrap', marginTop: 8 }}>
+      {playing ? 'Playing...' : 'Test Speaker'}
+    </button>
   );
 }
 
@@ -173,45 +303,164 @@ function AudioToggle({ label, storageKey, defaultVal, desc, onChange }: AudioTog
   );
 }
 
-interface DeleteAccountProps {
-  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
-}
+function RotateEncryptionKey() {
+  const [showModal, setShowModal] = useState(false);
+  const [rotating, setRotating] = useState(false);
 
-function DeleteAccount({ showConfirm }: DeleteAccountProps) {
-  const [confirmPw, setConfirmPw] = useState('');
-  const [showPwField, setShowPwField] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDelete = async () => {
-    if (!await showConfirm('⚠️ Delete Account', 'This will PERMANENTLY delete your account, all servers you own, all messages, DMs, and friend connections.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure?', true)) return;
-    if (!await showConfirm('⚠️ Final Confirmation', 'This is your ABSOLUTE LAST chance. Everything will be destroyed. Continue?', true)) return;
-    setShowPwField(true);
+  const handleRotate = async () => {
+    setRotating(true);
+    try {
+      const { generateIdentity, generateKeyPackages, isMlsAvailable } = await import('../crypto/mls');
+      if (isMlsAvailable() && api.userId && api.username) {
+        await generateIdentity(api.userId, api.username);
+        const packages = await generateKeyPackages(50);
+        const b64Packages = packages.map((p: Uint8Array) => btoa(String.fromCharCode(...p)));
+        await api.uploadKeyPackages(b64Packages);
+      }
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('d_msg_') || k.startsWith('d_cache_') || k.startsWith('d_channel_') || k.startsWith('messages_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      try {
+        const dbs = await indexedDB.databases();
+        for (const db of dbs) {
+          if (db.name && (db.name.includes('crypto') || db.name.includes('mls') || db.name.includes('key'))) {
+            indexedDB.deleteDatabase(db.name);
+          }
+        }
+      } catch { /* indexedDB.databases() not supported in all browsers */ }
+      setShowModal(false);
+      alert('Encryption key rotated. All previous messages are now permanently unreadable. The page will reload.');
+      window.location.reload();
+    } catch (e: any) {
+      alert('Key rotation failed: ' + (e.message || 'Unknown error'));
+    } finally {
+      setRotating(false);
+    }
   };
 
-  const confirmDelete = async () => {
-    if (!confirmPw.trim()) { alert('Please enter your password to confirm.'); return; }
+  return (
+    <>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: T.mt, marginBottom: 8, lineHeight: 1.6 }}>
+          Generate a new encryption identity. <strong style={{ color: T.err }}>All previous messages will become permanently unreadable</strong> — the server stores only ciphertext encrypted with your current key, and rotating destroys the old key material.
+        </div>
+        <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          Rotate Encryption Key
+        </button>
+      </div>
+      {showModal && (
+        <DangerConfirmModal
+          title="Rotate Encryption Key"
+          warningText="This will generate a new encryption identity and destroy your current key material. All previous messages become permanently unreadable. Server-side ciphertext cannot be decrypted with the new key. Local message cache will be cleared. This action cannot be undone."
+          confirmPhrase="ROTATE MY KEY"
+          confirmLabel="Rotate Key"
+          loadingLabel="Rotating..."
+          loading={rotating}
+          onConfirm={handleRotate}
+          onCancel={() => setShowModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function ClearLocalCache() {
+  const [showModal, setShowModal] = useState(false);
+
+  const handleClear = () => {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('d_msg_') || k.startsWith('d_cache_') || k.startsWith('d_channel_') || k.startsWith('messages_'))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    setShowModal(false);
+    alert(`Cleared ${keysToRemove.length} cached entries. Your encryption keys are unchanged.`);
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 12, color: T.mt, lineHeight: 1.6 }}>
+            Clear locally cached messages without affecting your encryption keys. Messages will be re-fetched from the server on next load.
+          </div>
+        </div>
+        <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,165,0,0.12)', color: '#ffa500', border: '1px solid rgba(255,165,0,0.3)', padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 12 }}>
+          Clear Cache
+        </button>
+      </div>
+      {showModal && (
+        <DangerConfirmModal
+          title="Clear Local Cache"
+          warningText="This will delete all locally cached messages. Your encryption keys are not affected. Messages will be re-fetched from the server on next load."
+          confirmPhrase="CLEAR ALL"
+          confirmLabel="Clear Cache"
+          onConfirm={handleClear}
+          onCancel={() => setShowModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function DeleteAccount() {
+  const [showModal, setShowModal] = useState(false);
+  const [confirmPw, setConfirmPw] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [pwError, setPwError] = useState('');
+
+  const handleDelete = async () => {
+    if (!confirmPw.trim()) { setPwError('Please enter your password.'); return; }
     setDeleting(true);
+    setPwError('');
     try {
       const check = await api.login(api.username, confirmPw);
-      if (!check.ok) { alert('Incorrect password. Account NOT deleted.'); setDeleting(false); return; }
+      if (!check.ok) { setPwError('Incorrect password. Account NOT deleted.'); setDeleting(false); return; }
       await api.deleteAccount();
       localStorage.clear();
       window.location.reload();
-    } catch (e: any) { alert('Account deletion failed: ' + (e.message || 'error')); setDeleting(false); }
+    } catch (e: any) {
+      setPwError('Account deletion failed: ' + (e.message || 'error'));
+      setDeleting(false);
+    }
   };
 
-  return showPwField ? (
-    <div style={{ background: 'rgba(255,71,87,0.08)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,71,87,0.2)' }}>
-      <div style={{ fontSize: 12, color: T.err, fontWeight: 600, marginBottom: 8 }}>Enter your password to confirm account deletion:</div>
-      <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Your password" autoFocus
-        style={{ width: '100%', padding: '10px 12px', background: T.bg, border: '1px solid rgba(255,71,87,0.3)', borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', marginBottom: 8, boxSizing: 'border-box' }} />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={confirmDelete} disabled={deleting} className="pill-btn" style={{ background: 'rgba(255,71,87,0.2)', color: T.err, border: '1px solid rgba(255,71,87,0.4)', padding: '8px 18px', fontSize: 12, fontWeight: 700 }}>{deleting ? 'Deleting...' : 'Permanently Delete Account'}</button>
-        <button onClick={() => { setShowPwField(false); setConfirmPw(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '8px 18px', fontSize: 12 }}>Cancel</button>
-      </div>
-    </div>
-  ) : (
-    <button onClick={handleDelete} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+  return (
+    <>
+      <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+      {showModal && (
+        <DangerConfirmModal
+          title="Delete Account"
+          warningText="This will PERMANENTLY delete your account, all servers you own, all messages, DMs, and friend connections. This action CANNOT be undone."
+          confirmPhrase="DELETE MY ACCOUNT"
+          confirmLabel="Permanently Delete Account"
+          loadingLabel="Deleting..."
+          loading={deleting}
+          onConfirm={handleDelete}
+          onCancel={() => { setShowModal(false); setConfirmPw(''); setPwError(''); }}
+        >
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: T.err, fontWeight: 600, marginBottom: 6 }}>Enter your password:</div>
+            <input
+              type="password"
+              value={confirmPw}
+              onChange={e => { setConfirmPw(e.target.value); setPwError(''); }}
+              placeholder="Your password"
+              style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${pwError ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+            {pwError && <div style={{ fontSize: 11, color: T.err, marginTop: 4 }}>{pwError}</div>}
+          </div>
+        </DangerConfirmModal>
+      )}
+    </>
   );
 }
 
@@ -336,6 +585,298 @@ function NRow({ label, sub, on, onToggle, disabled }: { label: string; sub: stri
 }
 
 // ─── Change Email ────────────────────────────────────────
+
+// ─── Security Status ──────────────────────────────────────
+
+interface SecurityStatusProps {
+  platformUser?: SettingsModalProps['platformUser'];
+  onSetupStep?: (step: string) => void;
+}
+
+function SecurityStatus({ platformUser, onSetupStep }: SecurityStatusProps) {
+  const [me, setMe] = useState<any>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  useEffect(() => {
+    api.getMe().then((u: any) => setMe(u)).catch(() => {});
+  }, []);
+
+  if (!me) return <div style={{ padding: 12, color: T.mt, fontSize: 12 }}>Loading security status...</div>;
+
+  const isGuest = me.is_guest;
+  const emailVerified = !!me.email_verified;
+  const totpEnabled = !!me.totp_enabled;
+  const hasRecoveryKey = !!me.has_recovery_key;
+  const hasEmail = !!me.email;
+  const tierKey = platformUser?.account_tier ?? me.account_tier ?? 'guest';
+  const tierMeta = (TIER_META as any)[tierKey];
+
+  // Security checks (guests get 0)
+  const checks = isGuest ? [] : [
+    { label: 'Email Verified', ok: emailVerified, action: 'verify-email', actionLabel: 'Verify' },
+    { label: '2FA Enabled', ok: totpEnabled, action: 'setup-2fa', actionLabel: 'Setup' },
+    { label: 'Recovery Key', ok: hasRecoveryKey, action: 'recovery-key', actionLabel: 'Generate' },
+  ];
+  const passed = checks.filter(c => c.ok).length;
+  const total = checks.length;
+  const score = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const allComplete = total > 0 && passed === total;
+
+  // Score ring color
+  const scoreColor = score >= 100 ? T.ac : score >= 66 ? '#ffa502' : T.err;
+
+  // Guest account view
+  if (isGuest) {
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Security Status</div>
+        <div style={{
+          background: `linear-gradient(135deg, #ffa50210, ${T.sf2})`,
+          border: '1px solid #ffa50233', borderRadius: 12, padding: 20,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 20,
+              background: '#ffa50220', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 20,
+            }}>👤</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#ffa502' }}>Guest Account</div>
+              <div style={{ fontSize: 12, color: T.mt }}>Limited features — create an account to unlock security settings</div>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14,
+          }}>
+            {['No email protection', 'No 2FA', 'No recovery key', 'Data not preserved'].map(item => (
+              <div key={item} style={{
+                fontSize: 11, color: 'rgba(255,71,87,0.7)', display: 'flex',
+                alignItems: 'center', gap: 4, padding: '3px 8px',
+                background: 'rgba(255,71,87,0.06)', borderRadius: 6,
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{'\u2717'}</span> {item}
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowUpgrade(true)}
+            style={{
+              width: '100%', padding: '10px 0',
+              background: `linear-gradient(135deg, ${T.ac}, ${T.ac2})`,
+              border: 'none', borderRadius: 8, color: '#000',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            Upgrade to Full Account
+          </button>
+        </div>
+        {showUpgrade && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999,
+          }} onClick={e => { if (e.target === e.currentTarget) setShowUpgrade(false); }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              width: 440, maxWidth: '92vw', background: T.sf, borderRadius: 14,
+              border: `1px solid ${T.bd}`, padding: 24,
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: T.tx, marginBottom: 16 }}>
+                Create Your Account
+              </div>
+              <GuestUpgradeForm username={me.username} onClose={() => setShowUpgrade(false)} />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Security Status</div>
+      <div style={{
+        background: T.sf2, borderRadius: 12, padding: 16,
+        border: `1px solid ${allComplete ? T.ac + '33' : T.bd}`,
+      }}>
+        {/* Score + tier badge row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+          {/* Score ring */}
+          <div style={{ position: 'relative', width: 52, height: 52, flexShrink: 0 }}>
+            <svg width="52" height="52" viewBox="0 0 52 52">
+              <circle cx="26" cy="26" r="22" fill="none" stroke={T.bd} strokeWidth="4" />
+              <circle cx="26" cy="26" r="22" fill="none" stroke={scoreColor} strokeWidth="4"
+                strokeDasharray={`${(score / 100) * 138.2} 138.2`}
+                strokeLinecap="round" transform="rotate(-90 26 26)" />
+            </svg>
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14, fontWeight: 800, color: scoreColor,
+            }}>{score}%</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              fontSize: 14, fontWeight: 700,
+              color: allComplete ? T.ac : '#ffa502',
+            }}>
+              {allComplete ? 'Account Fully Secured' : 'Account Security Incomplete'}
+            </div>
+            <div style={{ fontSize: 12, color: T.mt, marginTop: 2 }}>
+              {passed}/{total} security checks passed
+            </div>
+          </div>
+          {/* Tier badge */}
+          {tierMeta && (
+            <div style={{
+              padding: '4px 12px', borderRadius: 20,
+              background: `${tierMeta.color}18`,
+              border: `1px solid ${tierMeta.color}33`,
+              fontSize: 11, fontWeight: 700, color: tierMeta.color,
+              whiteSpace: 'nowrap',
+            }}>
+              {tierMeta.icon} {tierMeta.label}
+            </div>
+          )}
+        </div>
+
+        {/* Check rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {checks.map(c => (
+            <div key={c.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px', borderRadius: 8,
+              background: c.ok ? `${T.ac}08` : 'rgba(255,165,0,0.06)',
+              border: `1px solid ${c.ok ? T.ac + '22' : '#ffa50222'}`,
+            }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: 11,
+                background: c.ok ? `${T.ac}20` : '#ffa50220',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800,
+                color: c.ok ? T.ac : '#ffa502',
+              }}>
+                {c.ok ? '\u2713' : '!'}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{c.label}</div>
+              </div>
+              {c.ok ? (
+                <span style={{ fontSize: 11, color: T.ac, fontWeight: 600 }}>Enabled</span>
+              ) : (
+                <button
+                  onClick={() => onSetupStep?.(c.action)}
+                  className="pill-btn"
+                  style={{
+                    background: '#ffa50218', color: '#ffa502',
+                    border: '1px solid #ffa50233', padding: '4px 12px',
+                    fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  {c.actionLabel}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Complete Setup CTA */}
+        {!allComplete && (
+          <button
+            onClick={() => {
+              const first = checks.find(c => !c.ok);
+              if (first) onSetupStep?.(first.action);
+            }}
+            style={{
+              width: '100%', marginTop: 12, padding: '10px 0',
+              background: `linear-gradient(135deg, #ffa502, #e67e22)`,
+              border: 'none', borderRadius: 8, color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            Complete Setup
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Guest Upgrade Form ──────────────────────────────────
+
+function GuestUpgradeForm({ username, onClose }: { username: string; onClose: () => void }) {
+  const [newUsername, setNewUsername] = useState(username || '');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleUpgrade = async () => {
+    setErr('');
+    if (!newUsername.trim()) { setErr('Username is required'); return; }
+    if (password.length < 8) { setErr('Password must be at least 8 characters'); return; }
+    if (password !== confirm) { setErr('Passwords do not match'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`${window.location.origin}/api/v1/auth/upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.token}` },
+        body: JSON.stringify({ username: newUsername.trim(), password, email: email.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setErr(data.error || data.message || 'Upgrade failed');
+        return;
+      }
+      const data = await res.json();
+      if (data.access_token) {
+        api.token = data.access_token;
+        localStorage.setItem('d_token', data.access_token);
+      }
+      onClose();
+      window.location.reload();
+    } catch (e: any) {
+      setErr(e.message || 'Network error');
+    } finally { setSaving(false); }
+  };
+
+  const inp: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', background: T.bg,
+    border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx,
+    fontSize: 13, outline: 'none', boxSizing: 'border-box',
+    fontFamily: "'DM Sans',sans-serif", marginBottom: 10,
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.6 }}>
+        Upgrade your guest account to keep your messages and unlock all features.
+      </div>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Username</label>
+      <input value={newUsername} onChange={e => setNewUsername(e.target.value)} style={inp} placeholder="Choose a username" autoFocus />
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Email <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span></label>
+      <input value={email} onChange={e => setEmail(e.target.value)} type="email" style={inp} placeholder="you@example.com" />
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Password</label>
+      <input value={password} onChange={e => setPassword(e.target.value)} type="password" style={inp} placeholder="Min 8 characters" />
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Confirm Password</label>
+      <input value={confirm} onChange={e => setConfirm(e.target.value)} type="password" style={inp} placeholder="Re-enter password"
+        onKeyDown={e => { if (e.key === 'Enter') handleUpgrade(); }}
+      />
+      {err && <div style={{ color: T.err, fontSize: 12, marginBottom: 10 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+        <button onClick={onClose} style={{
+          flex: 1, padding: '10px 0', background: T.sf2, color: T.mt,
+          border: `1px solid ${T.bd}`, borderRadius: 8, fontSize: 13, cursor: 'pointer',
+        }}>Cancel</button>
+        <button onClick={handleUpgrade} disabled={saving} style={{
+          flex: 1, padding: '10px 0',
+          background: `linear-gradient(135deg, ${T.ac}, ${T.ac2})`,
+          border: 'none', borderRadius: 8, color: '#000',
+          fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+          opacity: saving ? 0.6 : 1,
+        }}>{saving ? 'Creating...' : 'Create Account'}</button>
+      </div>
+    </div>
+  );
+}
 
 function ChangeEmail() {
   const [editing, setEditing] = useState(false);
@@ -606,7 +1147,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { tab: 'profile',    keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
     { tab: 'profile',    keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
     { tab: 'privacy',    keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
-    { tab: 'account',    keywords: 'account security password change email two factor 2fa totp authentication sessions devices logout username delete', label: 'Account' },
+    { tab: 'account',    keywords: 'account security password change email two factor 2fa totp authentication sessions devices logout username delete security status score recovery key upgrade guest verified', label: 'Account' },
     { tab: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
     { tab: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
     { tab: 'keybinds',   keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
@@ -822,6 +1363,10 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             <DeviceSelector label="Input (Microphone)" kind="audioinput" storageKey="d_audioIn" onChange={id => voice.setInputDevice(id)} />
             <DeviceSelector label="Output (Speakers/Headphones)" kind="audiooutput" storageKey="d_audioOut" onChange={id => voice.setOutputDevice(id)} />
             <DeviceSelector label="Camera" kind="videoinput" storageKey="d_videoIn" onChange={() => {}} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              <TestMicrophoneButton />
+              <TestSpeakerButton />
+            </div>
           </div>
           <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}>Volume</div>
@@ -1087,6 +1632,27 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
         {/* ── Account ── */}
         {tab === 'account' && (<>
+          {/* ─ Security Status ─ */}
+          <SecurityStatus
+            platformUser={platformUser}
+            onSetupStep={(step) => {
+              if (step === 'verify-email') {
+                // Scroll to / highlight email section — for now just show a toast-like hint
+                const el = document.querySelector('[data-section="change-email"]');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              // 2FA and recovery key buttons are in the Security section below
+              if (step === 'setup-2fa') {
+                const el = document.querySelector('[data-section="2fa"]');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              if (step === 'recovery-key') {
+                const el = document.querySelector('[data-section="recovery-key"]');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }}
+          />
+
           {/* ─ Identity ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
@@ -1096,16 +1662,26 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             </div>
             <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>ID: {api.userId?.slice(0, 8) || '—'}</div>
           </div>
-          <ChangeEmail />
+          <div data-section="change-email"><ChangeEmail /></div>
+
+          {/* ─ Plan ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Your Plan</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.icon ?? '✅'} {(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.label ?? 'Free'}</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>See what's available on other plans</div>
+            </div>
+            <button onClick={() => window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>View Plans</button>
+          </div>
 
           {/* ─ Security ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
           <ChangePassword />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+          <div data-section="2fa" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
             <div><div style={{ fontSize: 13, fontWeight: 600 }}>Two-Factor Authentication (2FA)</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
             <button onClick={() => {}} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+          <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
             <div><div style={{ fontSize: 13, fontWeight: 600 }}>Encryption Key Fingerprint</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
             <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
           </div>
@@ -1116,11 +1692,15 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
           {/* ─ Danger Zone ─ */}
           <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 10 }}>Danger Zone</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 14 }}>Danger Zone</div>
+            <RotateEncryptionKey />
+            <div style={{ height: 1, background: 'rgba(255,71,87,0.1)', margin: '12px 0' }} />
+            <ClearLocalCache />
+            <div style={{ height: 1, background: 'rgba(255,71,87,0.1)', margin: '12px 0' }} />
             <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.6 }}>
               Permanently delete your account and <strong style={{ color: T.err }}>ALL</strong> associated data. <strong style={{ color: T.err }}>This action is irreversible.</strong>
             </div>
-            <DeleteAccount showConfirm={showConfirm} />
+            <DeleteAccount />
           </div>
         </>)}
 

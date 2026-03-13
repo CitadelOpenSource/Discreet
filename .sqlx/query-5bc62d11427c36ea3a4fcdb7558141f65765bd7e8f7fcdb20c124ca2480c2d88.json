@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, description, icon_url, banner_url, default_notification_level,\n                verification_level, explicit_content_filter, system_channel_id, vanity_code,\n                member_tab_label, slash_commands_enabled, owner_id, created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = servers.id) AS member_count\n         FROM servers WHERE id = $1",
+  "query": "SELECT id, name, description, icon_url, banner_url, default_notification_level,\n                verification_level, explicit_content_filter, system_channel_id, vanity_code,\n                member_tab_label, slash_commands_enabled, message_retention_days,\n                disappearing_messages_default, last_activity_at, is_archived,\n                archived_at, scheduled_deletion_at, owner_id, created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = servers.id) AS member_count\n         FROM servers WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -65,16 +65,46 @@
       },
       {
         "ordinal": 12,
+        "name": "message_retention_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "disappearing_messages_default",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_archived",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "archived_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "scheduled_deletion_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
         "name": "owner_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 13,
+        "ordinal": 19,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 20,
         "name": "member_count",
         "type_info": "Int8"
       }
@@ -97,10 +127,16 @@
       true,
       false,
       false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
       false,
       false,
       null
     ]
   },
-  "hash": "5e27bc83d827df65f1f3fdbcb11777401c073d351cfc9b59c47c05ed113d4cbe"
+  "hash": "5bc62d11427c36ea3a4fcdb7558141f65765bd7e8f7fcdb20c124ca2480c2d88"
 }

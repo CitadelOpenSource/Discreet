@@ -84,7 +84,7 @@ function highlightText(text: string, query: string): ReactNode {
 
 // ─── Component ────────────────────────────────────────────
 
-export function SearchPanel({ messages, dmMsgs, members, channels, curServer, view, getName, onNavigate, onClose }: SearchPanelProps) {
+export function SearchPanel({ messages, dmMsgs, members, channels, curServer, curChannel, view, getName, onNavigate, onClose }: SearchPanelProps) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('messages');
   const [results, setResults] = useState<Message[]>([]);
@@ -116,24 +116,40 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, vi
     setSearching(true);
 
     if (tab === 'messages') {
-      const parsed = parseQuery(query);
-      const allMsgs = view === 'server' ? messages : dmMsgs;
-      const filtered = allMsgs.filter(m => {
-        if (parsed.text && m.text && !m.text.toLowerCase().includes(parsed.text)) return false;
-        if (parsed.text && !m.text) return false;
-        if (parsed.author) {
-          const authorName = getName(m.author_id).toLowerCase();
-          if (!authorName.includes(parsed.author)) return false;
-        }
-        if (parsed.channel && view === 'server') {
-          const ch = channels.find(c => c.id === m.channel_id);
-          if (!ch || !ch.name.toLowerCase().includes(parsed.channel)) return false;
-        }
-        if (parsed.before && new Date(m.created_at) > parsed.before) return false;
-        if (parsed.after && new Date(m.created_at) < parsed.after) return false;
-        return true;
-      });
-      setResults(filtered.slice(0, 50));
+      // Try server-side search first (will return encrypted:true for E2EE channels)
+      let serverResults: Message[] | null = null;
+      if (curChannel) {
+        try {
+          const resp = await api.searchMessages(curChannel.id, query.trim(), 50);
+          if (resp && !resp.encrypted && Array.isArray(resp.results)) {
+            serverResults = resp.results;
+          }
+        } catch { /* fall back to client-side */ }
+      }
+
+      if (serverResults) {
+        setResults(serverResults.slice(0, 50));
+      } else {
+        // Client-side search on locally cached decrypted messages
+        const parsed = parseQuery(query);
+        const allMsgs = view === 'server' ? messages : dmMsgs;
+        const filtered = allMsgs.filter(m => {
+          if (parsed.text && m.text && !m.text.toLowerCase().includes(parsed.text)) return false;
+          if (parsed.text && !m.text) return false;
+          if (parsed.author) {
+            const authorName = getName(m.author_id).toLowerCase();
+            if (!authorName.includes(parsed.author)) return false;
+          }
+          if (parsed.channel && view === 'server') {
+            const ch = channels.find(c => c.id === m.channel_id);
+            if (!ch || !ch.name.toLowerCase().includes(parsed.channel)) return false;
+          }
+          if (parsed.before && new Date(m.created_at) > parsed.before) return false;
+          if (parsed.after && new Date(m.created_at) < parsed.after) return false;
+          return true;
+        });
+        setResults(filtered.slice(0, 50));
+      }
     }
 
     if (tab === 'members') {
@@ -213,7 +229,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, vi
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>before:2026-03-01</span> — before date</div>
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>after:2026-01-15</span> — after date</div>
           <div style={{ marginTop: 4, color: T.mt, fontStyle: 'italic' }}>Combine filters: <span style={{ color: T.ac }}>from:john in:#general hello</span></div>
-          <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(0,212,170,0.05)', borderRadius: 8, border: '1px solid rgba(0,212,170,0.15)', fontSize: 11, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(0,212,170,0.05)', borderRadius: 12, border: '1px solid rgba(0,212,170,0.15)', fontSize: 11, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <span style={{ fontSize: 14, lineHeight: 1 }}>🔒</span>
             <div>
               <div style={{ fontWeight: 700, color: T.ac, marginBottom: 2 }}>Search is local and private</div>
@@ -239,8 +255,8 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, vi
             let textPreview = m.text || '';
             if (textPreview.length > 200) textPreview = textPreview.slice(0, 200) + '...';
             return (
-              <div key={m.id} onClick={() => { if (ch && onNavigate) onNavigate({ type: 'channel', channel: ch, messageId: m.id }); }}
-                style={{ padding: '8px 10px', margin: '2px 0', borderRadius: 8, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}`, transition: 'background .15s' }}
+              <div key={m.id} onClick={() => { const target: NavigateTarget = { type: 'channel', messageId: m.id }; if (ch) target.channel = ch; else if (curChannel) target.channel = curChannel; if (onNavigate && target.channel) onNavigate(target); }}
+                style={{ padding: '8px 10px', margin: '2px 0', borderRadius: 12, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}`, transition: 'background .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
                 onMouseLeave={e => (e.currentTarget.style.background = T.sf2)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -268,7 +284,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, vi
             const uname = m.username || getName(uid);
             return (
               <div key={uid} onClick={() => onNavigate?.({ type: 'user', userId: uid })}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', margin: '2px 0', borderRadius: 8, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}` }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', margin: '2px 0', borderRadius: 12, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}` }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
                 onMouseLeave={e => (e.currentTarget.style.background = T.sf2)}>
                 <Av name={uname} size={32} />
@@ -295,7 +311,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, vi
             const shared = sharedServers[u.id] || [];
             return (
               <div key={u.id} onClick={() => onNavigate?.({ type: 'user', userId: u.id })}
-                style={{ padding: '10px 12px', margin: '2px 0', borderRadius: 8, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}` }}
+                style={{ padding: '10px 12px', margin: '2px 0', borderRadius: 12, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}` }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
                 onMouseLeave={e => (e.currentTarget.style.background = T.sf2)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

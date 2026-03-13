@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE servers SET scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38e1f44bad818a1c1a8e0133d9f033e46a9cfe8619c710e4919aeb72d6e5b7e1"
+}

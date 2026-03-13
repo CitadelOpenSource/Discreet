@@ -18,6 +18,8 @@ import { FriendsView } from './components/FriendsView';
 import { VideoGrid } from './components/VideoGrid';
 import { SearchPanel } from './components/SearchPanel';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { UpgradeModal } from './components/UpgradeModal';
+import { MaintenancePage } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { LinkPreview } from './components/LinkPreview';
 import { ChannelSidebar } from './components/ChannelSidebar';
@@ -49,7 +51,7 @@ import type { Tier } from './utils/tiers';
 import type { CtxMenuItem } from './components/CtxMenu';
 
 // ── Types ─────────────────────────────────────────────────
-interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; }
+interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; message_retention_days?: number | null; disappearing_messages_default?: string | null; last_activity_at?: string | null; is_archived?: boolean; archived_at?: string | null; scheduled_deletion_at?: string | null; }
 interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; }
 interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; text?: string; authorName?: string; }
 interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; }
@@ -110,23 +112,39 @@ function GlobalStyles() {
     <style>{`
       @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
       @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes spin{to{transform:rotate(360deg)}}
       @keyframes typingBounce{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
       .typing-dot{display:inline-block;font-weight:900;font-size:14px;line-height:1;animation:typingBounce 1.4s ease-in-out infinite}
       .typing-dot:nth-child(2){animation-delay:.2s}
       .typing-dot:nth-child(3){animation-delay:.4s}
 
-      /* ── Slim scrollbars ─────────────────────────────── */
-      ::-webkit-scrollbar { width: 6px; }
+      /* ── Slim translucent scrollbars ─────────────────── */
+      ::-webkit-scrollbar { width: 4px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
-      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
-      * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+      * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.06) transparent; }
 
       /* ── Structural helpers ───────────────────────────── */
       .chat-root  { height:100vh; display:flex; overflow:hidden; }
       .chat-main  { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
       .msg-actions:hover { display:flex !important; }
       div:hover > .msg-actions { display:flex !important; }
+
+      /* ── Server icon pill indicator (Discord-style) ──── */
+      .srv-icon { position:relative; }
+      .srv-icon::before {
+        content:''; position:absolute; left:-10px; top:50%; transform:translateY(-50%);
+        width:4px; height:0; border-radius:0 4px 4px 0;
+        background:currentColor; transition:height .15s ease;
+      }
+      .srv-icon:hover::before { height:20px; }
+      .srv-icon--active::before { height:36px !important; }
+      .srv-icon--unread::before { height:8px; }
+
+      /* ── Global transitions ─────────────────────────── */
+      .ch-row { transition:background .15s ease, color .15s ease, font-weight .15s ease; }
+      .ch-row:hover { background:rgba(255,255,255,0.04) !important; }
 
       /* ── Hamburger (hidden on desktop) ───────────────── */
       .hamburger { display:none; }
@@ -228,6 +246,23 @@ function SkeletonBar({ w = '100%', h = 14, mb = 8 }: { w?: string | number; h?: 
 }
 function SkeletonCircle({ size = 36 }: { size?: number }) {
   return <div style={{ ...shimBase, width: size, height: size, borderRadius: size / 2, flexShrink: 0 }} />;
+}
+function MessageSkeleton({ count = 8 }: { count?: number }) {
+  return (<>
+    {Array.from({ length: count }).map((_, i) => (
+      <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 16px', animation: `fadeIn 0.3s ${i * 0.04}s both` }}>
+        <SkeletonCircle size={36} />
+        <div style={{ flex: 1, paddingTop: 2 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+            <SkeletonBar w={`${60 + (i * 23) % 60}px`} h={12} mb={0} />
+            <SkeletonBar w={40} h={10} mb={0} />
+          </div>
+          <SkeletonBar w={`${40 + (i * 17) % 55}%`} h={13} mb={4} />
+          {i % 3 === 0 && <SkeletonBar w={`${25 + (i * 11) % 40}%`} h={13} mb={0} />}
+        </div>
+      </div>
+    ))}
+  </>);
 }
 /** Fallback shown while a lazy modal is loading */
 function ModalLoadingFallback() {
@@ -546,8 +581,10 @@ export default function App() {
   const [panel, setPanel] = useState<'members' | 'search' | null>('members');
   const [profileCard, setProfileCard] = useState<{ userId: string; pos: { x: number; y: number } } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [upgradeFeature, setUpgradeFeature] = useState<string | null>(null);
   const [quickSwitcher, setQuickSwitcher] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedMsg, setHighlightedMsg] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [roles, setRoles] = useState<any[]>([]);
@@ -572,6 +609,9 @@ export default function App() {
   const [loadingServers,  setLoadingServers]  = useState(false);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [loadingMembers,  setLoadingMembers]  = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [channelFadeKey,  setChannelFadeKey]  = useState(0); // bumped on channel switch for fade-in
+  const [membersLoaded,   setMembersLoaded]   = useState<string | null>(null); // server id for which members were loaded
 
   // ── Mobile nav ───────────────────────────────────────────
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -630,7 +670,9 @@ export default function App() {
     setModal(null);
   };
   const msgEndRef  = useRef<HTMLDivElement>(null);
+  const msgScrollRef = useRef<HTMLDivElement>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
+  const [msgScrollTop, setMsgScrollTop] = useState(0);
   const typingRef  = useRef(0); // timestamp of last typing event sent
 
   // ── Init ────────────────────────────────────────────────
@@ -831,6 +873,14 @@ export default function App() {
 
   useEffect(() => { msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, dmMsgs]);
 
+  // Lazy-load members when member panel is opened
+  useEffect(() => {
+    if (panel === 'members' && curServer && membersLoaded !== curServer.id) {
+      setMembersLoaded(curServer.id);
+      loadMembers(curServer.id);
+    }
+  }, [panel, curServer?.id]);
+
   // ── Stream status polling ────────────────────────────────
   // Poll getStreamStatus for the current voice channel every 30 s to keep
   // viewer count and active state fresh (supplements WS events).
@@ -912,7 +962,8 @@ export default function App() {
   };
   const loadMessages = async (ch: Channel | null) => {
     if (!ch) return;
-    try { const raw = await api.getMessages(ch.id, 50); if (!Array.isArray(raw)) { console.error('[msg] not array:', raw); return; } const decrypted = await Promise.all(raw.map(async (m: any) => ({ ...m, text: await dec(ch.id, m.content_ciphertext).catch(() => m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' }))); setMessages(decrypted.reverse()); } catch (e) { console.error('[msg] load error:', e); }
+    setLoadingMessages(true);
+    try { const raw = await api.getMessages(ch.id, 50); if (!Array.isArray(raw)) { console.error('[msg] not array:', raw); return; } const decrypted = await Promise.all(raw.map(async (m: any) => ({ ...m, text: await dec(ch.id, m.content_ciphertext).catch(() => m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' }))); setMessages(decrypted.reverse()); } catch (e) { console.error('[msg] load error:', e); } finally { setLoadingMessages(false); }
   };
   const loadDmMessages = async (dm: DM) => {
     try { const raw = await api.getDmMessages(dm.id, 50); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
@@ -926,7 +977,8 @@ export default function App() {
     if (curChannelRef.current) localStorage.setItem(`d_channel_last_read_${curChannelRef.current.id}`, now);
     if (curDmRef.current)      localStorage.setItem(`d_dm_last_read_${curDmRef.current.id}`, now);
     setCurServer(s); setCurChannel(null); setCurDm(null); setMessages([]); setView('server'); setMobileMenuOpen(false);
-    const [chs] = await Promise.all([loadChannels(s.id), loadCategories(s.id), loadMembers(s.id), loadRoles(s.id)]);
+    setMembersLoaded(null); setMembers([]);
+    const [chs] = await Promise.all([loadChannels(s.id), loadCategories(s.id), loadRoles(s.id)]);
     // Auto-join: localStorage default → 'welcome'/'general' → first text channel
     const textChs = chs.filter((c: Channel) => !c.channel_type || c.channel_type === 'text');
     const savedId = localStorage.getItem(`d_default_channel_${s.id}`);
@@ -945,6 +997,7 @@ export default function App() {
     localStorage.setItem(`d_channel_last_read_${ch.id}`, now);
     setCurChannel(ch); setOpenThread(null); setMobileMenuOpen(false); setTypingUsers({});
     setUnreadCounts(p => { const n = { ...p }; delete n[ch.id]; return n; });
+    setChannelFadeKey(k => k + 1); setMsgScrollTop(0);
     await loadMessages(ch); inputRef.current?.focus();
   };
   const selectDm = async (dm: DM) => {
@@ -1000,6 +1053,7 @@ export default function App() {
       return;
     }
     if (!checkRateLimit('d_msg_count', 'd_msg_window', 60_000, tierLimits.maxMessagesPerMinute)) {
+      if (me?.is_guest) { setUpgradeFeature('send messages'); return; }
       setToast(`Message limit reached — ${tierLimits.maxMessagesPerMinute}/min for your tier. Verify your email to unlock unlimited messaging.`);
       setTimeout(() => setToast(''), 4000);
       return;
@@ -1095,6 +1149,7 @@ export default function App() {
 
   const startDm = async (uid: string) => {
     if (!checkRateLimit('d_dm_count', 'd_dm_window', 24 * 60 * 60_000, tierLimits.maxDmsPerDay)) {
+      if (me?.is_guest) { setUpgradeFeature('send direct messages'); return; }
       setToast(`DM limit reached — ${tierLimits.maxDmsPerDay} new DMs per day for your tier. Verify your email to unlock unlimited DMs.`);
       setTimeout(() => setToast(''), 4000);
       return;
@@ -1161,6 +1216,7 @@ export default function App() {
     if (!createName.trim() || serverCreating) return;
     const ownedServers = servers.filter(s => s.owner_id === api.userId);
     if (ownedServers.length >= tierLimits.maxServers) {
+      if (me?.is_guest) { setUpgradeFeature('create servers'); return; }
       setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); return;
     }
     setServerCreating(true);
@@ -1213,9 +1269,9 @@ export default function App() {
     } finally { setServerCreating(false); }
   };
 
-  const showConfirm = (title: string, message: string, danger?: boolean): Promise<boolean> => {
+  const showConfirm = (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string): Promise<boolean> => {
     return new Promise(resolve => {
-      setConfirmDialog({ title, message, danger, resolve });
+      setConfirmDialog({ title, message, danger, confirmPhrase, confirmLabel, resolve });
     });
   };
 
@@ -1306,17 +1362,7 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
-  if (maintenanceMsg) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg, flexDirection: 'column', gap: 24, fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif' }}>
-      <div style={{ fontSize: 64 }}>🛡️</div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: T.tx, letterSpacing: -0.5 }}>Discreet</div>
-      <div style={{ fontSize: 16, color: T.mt, maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>{maintenanceMsg}</div>
-      <button onClick={() => { setMaintenanceMsg(null); window.location.reload(); }} style={{ ...btn, padding: '12px 32px', fontSize: 14, fontWeight: 600, background: T.ac, color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer', marginTop: 8 }}>
-        Retry
-      </button>
-      <div style={{ fontSize: 12, color: T.mt, marginTop: 8 }}>We'll be back shortly.</div>
-    </div>
-  );
+  if (maintenanceMsg) return <MaintenancePage message={maintenanceMsg} />;
 
   if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
   if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
@@ -1359,8 +1405,12 @@ export default function App() {
       return next;
     });
   };
-  const renderServerIcon = (s: Server, isFav: boolean) => (
+  const renderServerIcon = (s: Server, isFav: boolean) => {
+    const isActive = curServer?.id === s.id;
+    const hasUnread = Object.entries(unreadCounts).some(([k, v]) => v > 0 && channels.some(c => c.id === k && c.server_id === s.id));
+    return (
     <div key={s.id} onClick={() => selectServer(s)}
+      className={`srv-icon${isActive ? ' srv-icon--active' : hasUnread && !isActive ? ' srv-icon--unread' : ''}`}
       draggable onDragStart={() => setDragServer(s.id)} onDragOver={e => e.preventDefault()}
       onDrop={() => { if (dragServer && dragServer !== s.id) { /* basic reorder: swap */ setServers(prev => { const arr = [...prev]; const fi = arr.findIndex(x => x.id === dragServer); const ti = arr.findIndex(x => x.id === s.id); if (fi >= 0 && ti >= 0) { [arr[fi], arr[ti]] = [arr[ti], arr[fi]]; } return arr; }); setDragServer(null); } }}
       onContextMenu={(e) => {
@@ -1380,19 +1430,20 @@ export default function App() {
         }
         items.push({ label: '📁 New Folder…', fn: () => { const name = prompt('Folder name:'); if (name?.trim()) addToFolder(s.id, name.trim()); } });
         items.push({ label: 'Copy Server ID', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(s.id) });
-        if (s.owner_id === api.userId) items.push({ label: 'Delete Server', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Server', 'Permanently delete this server?', true)) { await api.deleteServer(s.id); await loadServers(); goHome(); } } });
-        else items.push({ label: 'Leave Server', icon: <I.Out />, danger: true, fn: async () => { if (await showConfirm('Leave', 'Leave this server?')) { await api.leaveServer(s.id); await loadServers(); goHome(); } } });
+        if (s.owner_id === api.userId) items.push({ label: 'Delete Server', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Server', `This will permanently delete "${s.name}" and ALL its channels, messages, roles, and members. This action cannot be undone.`, true, s.name, 'Delete Server')) { await api.deleteServer(s.id); await loadServers(); goHome(); } } });
+        else items.push({ label: 'Leave Server', icon: <I.Out />, danger: true, fn: async () => { if (await showConfirm('Leave Server', `You are about to leave "${s.name}". You will lose access to all channels and messages unless you rejoin with an invite.`, true, s.name, 'Leave Server')) { await api.leaveServer(s.id); await loadServers(); goHome(); } } });
         setCtxMenu({ x: e.clientX, y: e.clientY, items });
       }}
       title={s.name}
-      style={{ width: 48, height: 48, borderRadius: curServer?.id === s.id ? 16 : 24, background: s.icon_url ? 'transparent' : (curServer?.id === s.id ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2), display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', fontSize: 16, fontWeight: 700, color: curServer?.id === s.id ? '#000' : T.tx, overflow: 'hidden', position: 'relative' }}>
+      style={{ width: 48, height: 48, borderRadius: isActive ? 16 : 24, background: s.icon_url ? 'transparent' : (isActive ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2), display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', fontSize: 16, fontWeight: 700, color: isActive ? '#000' : T.tx, overflow: 'hidden', position: 'relative' }}>
       {s.icon_url ? <img src={s.icon_url} alt="" style={{ width: 48, height: 48, objectFit: 'cover' }} /> : s.name[0]?.toUpperCase()}
       {isFav && <div style={{ position: 'absolute', bottom: -1, right: -1, fontSize: 8, color: '#f0b232' }}>★</div>}
-      {Object.entries(unreadCounts).some(([k, v]) => v > 0 && channels.some(c => c.id === k && c.server_id === s.id)) && curServer?.id !== s.id && (
+      {hasUnread && !isActive && (
         <div style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, background: T.err, border: `2px solid ${T.bg}` }} />
       )}
     </div>
-  );
+    );
+  };
 
   // ══════════════════════════════════════════════════════════
   return (
@@ -1402,11 +1453,11 @@ export default function App() {
 
       {/* ═══ Server Rail ═══ */}
       <div className="server-rail" style={{ width: 68, minWidth: 68, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
-        <div onClick={goHome} title="Home" style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
+        <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
         {/* DM button */}
         <div title="Direct Messages" style={{ width: 48, height: 48, borderRadius: view === 'dm' ? 16 : 24, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
           <I.Msg />
-          {totalDmUnread > 0 && <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, background: '#ed4245', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${T.bg}`, padding: '0 3px' }}>{totalDmUnread}</div>}
+          {totalDmUnread > 0 && <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 12, background: '#ed4245', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${T.bg}`, padding: '0 3px' }}>{totalDmUnread}</div>}
         </div>
         <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, margin: '4px 0' }} />
         {/* Favorite servers */}
@@ -1440,7 +1491,7 @@ export default function App() {
               return servers.filter(s => !serverFavorites.includes(s.id) && !inFolder.has(s.id)).map(s => renderServerIcon(s, false));
             })()
         }
-        {!me?.is_guest && <div onClick={() => setModal('create-server')} title="Create Server" style={{ width: 48, height: 48, borderRadius: 24, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>}
+        <div onClick={() => me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server')} title="Create Server" style={{ width: 48, height: 48, borderRadius: 24, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>
       </div>
 
       {/* ═══ Sidebar ═══ */}
@@ -1455,7 +1506,7 @@ export default function App() {
             if (hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)) {
               items.push({ sep: true });
               items.push({ label: 'Server Settings', icon: <I.Settings />, fn: () => setModal('server-settings') });
-              items.push({ label: 'Leave Server', icon: <I.Out />, danger: true, fn: async () => { if (await showConfirm('Leave Server', 'Are you sure you want to leave this server?')) { await api.leaveServer(curServer.id); await loadServers(); goHome(); } } });
+              items.push({ label: 'Leave Server', icon: <I.Out />, danger: true, fn: async () => { if (await showConfirm('Leave Server', `You are about to leave "${curServer.name}". You will lose access to all channels and messages unless you rejoin with an invite.`, true, curServer.name, 'Leave Server')) { await api.leaveServer(curServer.id); await loadServers(); goHome(); } } });
             }
             setCtxMenu({ x: e.clientX, y: e.clientY, items });
           }
@@ -1590,7 +1641,7 @@ export default function App() {
                   items.push({ label: '⚙ Channel Settings', icon: <I.Settings />, fn: () => { setEditChannel(ch); setEditChannelName(ch.name); setEditChannelTopic((ch as any).topic || ''); setChSettingsTab('overview'); setChSlowmode((ch as any).slowmode_seconds || 0); setChNsfw((ch as any).is_nsfw || false); setChArchived((ch as any).is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${ch.id}`) || '{}')); setModal('edit-channel'); } });
                   items.push({ label: 'Clone Channel', icon: <I.Plus />, fn: async () => { if (curServer) { await api.createChannel(curServer.id, `${ch.name}-copy`, null, ch.channel_type); await loadChannels(curServer.id); setToast('Channel cloned'); setTimeout(() => setToast(''), 2000); } } });
                   items.push({ sep: true });
-                  items.push({ label: 'Delete Channel', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Channel', `Delete #${ch.name}? This cannot be undone.`, true)) { await api.deleteChannel(ch.id); if (curServer) await loadChannels(curServer.id); if (curChannel?.id === ch.id) setCurChannel(null); } } });
+                  items.push({ label: 'Delete Channel', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Channel', `This will permanently delete #${ch.name} and all its messages. This action cannot be undone.`, true, ch.name, 'Delete Channel')) { await api.deleteChannel(ch.id); if (curServer) await loadChannels(curServer.id); if (curChannel?.id === ch.id) setCurChannel(null); } } });
                 }
                 setCtxMenu({ x: e.clientX, y: e.clientY, items });
               }}
@@ -1782,11 +1833,12 @@ export default function App() {
             </div>
             {/* Quick Actions */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
-              {!me?.is_guest && <div onClick={() => setModal('create-server')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}><span style={{ color: T.ac }}>+</span> Create Server</div>}
+              <div onClick={() => me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}><span style={{ color: T.ac }}>+</span> Create Server</div>
               <div onClick={() => setModal('join-server')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}><I.Link /> Join Server</div>
               <div onClick={() => setHomeTab('friends')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}><I.Users /> Friends</div>
               <div onClick={() => setShowMeeting(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}>📹 Start Meeting</div>
               <div onClick={() => setShowCalendar(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}>📅 Calendar</div>
+              <div onClick={() => window.open('/app/tiers', '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}>⚡ View Plans</div>
             </div>
             {/* Servers Grid */}
             {servers.length > 0 && (<>
@@ -1807,7 +1859,7 @@ export default function App() {
               <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Recent Conversations</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {dms.slice(0, 5).map(dm => (
-                  <div key={dm.id} onClick={() => selectDm(dm)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.sf, borderRadius: 8, cursor: 'pointer', border: `1px solid ${T.bd}` }}>
+                  <div key={dm.id} onClick={() => selectDm(dm)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.sf, borderRadius: 12, cursor: 'pointer', border: `1px solid ${T.bd}` }}>
                     <Av name={dm.other_username} size={32} />
                     <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{dm.other_username}</div><div style={{ fontSize: 11, color: T.mt }}>Click to chat</div></div>
                   </div>
@@ -1896,7 +1948,7 @@ export default function App() {
                 <div key={bot.name} onClick={() => { setToast(`${bot.name} — activate from a server's Bot Marketplace`); setTimeout(() => setToast(''), 3000); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}` }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = bot.color}
                   onMouseLeave={e => e.currentTarget.style.borderColor = T.bd}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: `${bot.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{bot.icon}</div>
+                  <div style={{ width: 36, height: 36, borderRadius: 12, background: `${bot.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{bot.icon}</div>
                   <div><div style={{ fontSize: 12, fontWeight: 600 }}>{bot.name}</div><div style={{ fontSize: 10, color: T.mt }}>{bot.desc}</div></div>
                 </div>
               ))}
@@ -1952,7 +2004,7 @@ export default function App() {
           };
           const equals = () => { if (prev !== null && op) { operate('='); setOp(null); } };
           const clear = () => { setDisplay('0'); setPrev(null); setOp(null); setFresh(true); };
-          const btnS = (bg: string, c: string) => ({ padding: '16px 0', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 600 as const, background: bg, color: c, border: 'none', textAlign: 'center' as const });
+          const btnS = (bg: string, c: string) => ({ padding: '16px 0', borderRadius: 12, cursor: 'pointer', fontSize: 18, fontWeight: 600 as const, background: bg, color: c, border: 'none', textAlign: 'center' as const });
           // Unit converter state
           const [unitVal, setUnitVal] = useState('');
           const [unitType, setUnitType] = useState('temp');
@@ -2017,14 +2069,14 @@ export default function App() {
               {activeTool === 'unit' && (
                 <div style={{ width: 320, background: T.sf, borderRadius: 16, border: `1px solid ${T.bd}`, padding: 20 }}>
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>📐 Unit Converter</div>
-                  <select value={unitType} onChange={e => setUnitType(e.target.value)} style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, marginBottom: 10 }}>
+                  <select value={unitType} onChange={e => setUnitType(e.target.value)} style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 13, marginBottom: 10 }}>
                     <option value="temp">Temperature (°F → °C)</option>
                     <option value="weight">Weight (lbs → kg)</option>
                     <option value="length">Distance (mi → km)</option>
                     <option value="data">Data (GB → MB)</option>
                   </select>
                   <input value={unitVal} onChange={e => setUnitVal(e.target.value)} placeholder="Enter value" style={{ ...getInp(), marginBottom: 10 }} />
-                  <div style={{ padding: '12px 16px', background: T.bg, borderRadius: 8, fontSize: 16, fontWeight: 600, textAlign: 'center', fontFamily: "'JetBrains Mono',monospace" }}>{unitVal ? convertUnit() : 'Enter a value above'}</div>
+                  <div style={{ padding: '12px 16px', background: T.bg, borderRadius: 12, fontSize: 16, fontWeight: 600, textAlign: 'center', fontFamily: "'JetBrains Mono',monospace" }}>{unitVal ? convertUnit() : 'Enter a value above'}</div>
                 </div>
               )}
 
@@ -2044,7 +2096,7 @@ export default function App() {
                     <div style={{ fontSize: 48, fontWeight: 300, fontFamily: "'JetBrains Mono',monospace", marginBottom: 20 }}>{fmt(elapsed)}</div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                       <button onClick={() => setRunning(!running)} style={{ ...btn(true), padding: '8px 24px' }}>{running ? 'Stop' : 'Start'}</button>
-                      <button onClick={() => { setRunning(false); setElapsed(0); }} style={{ padding: '8px 24px', background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, borderRadius: 8, cursor: 'pointer' }}>Reset</button>
+                      <button onClick={() => { setRunning(false); setElapsed(0); }} style={{ padding: '8px 24px', background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, borderRadius: 12, cursor: 'pointer' }}>Reset</button>
                     </div>
                   </div>
                 );
@@ -2097,8 +2149,8 @@ export default function App() {
           </div>
           <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curGroupDm.name || 'group'}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 8, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curGroupDm.name || 'group'}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
         </>)}
@@ -2137,14 +2189,14 @@ export default function App() {
           </div>
           <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curDm.other_username}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 8, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curDm.other_username}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
         </>)}
 
         {/* ─── Server Channel View ─── */}
-        {view === 'server' && curChannel && (<>
+        {view === 'server' && curChannel && (<div key={channelFadeKey} style={{ display: 'contents', animation: 'fadeIn 0.2s ease' }}>
           {/* Video Grid (when in voice with video/screen active) */}
           {voiceChannel && (vc.videoEnabled || vc.screenSharing || vc.streams.size > 0) && (
             <VideoGrid
@@ -2157,22 +2209,38 @@ export default function App() {
               peers={Array.from(vc.streams.keys()).map(id => ({ id, name: getName(id), speaking: false }))}
             />
           )}
-          <div onScroll={async (e) => {
-            const el = e.currentTarget;
-            if (el.scrollTop < 50 && messages.length >= 50 && curChannel && !loadingMore) {
-              setLoadingMore(true);
-              try {
-                const older = await api.getMessagesBatch(curChannel.id, 50, messages[0]?.id);
-                if (Array.isArray(older) && older.length > 0) {
-                  const decOlder = await Promise.all(older.map(async (m: any) => ({ ...m, text: await dec(curChannel.id, m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' })));
-                  setMessages(prev => [...decOlder.reverse(), ...prev]);
-                }
-              } catch {} setLoadingMore(false);
-            }
-          }} style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {loadingMore && <div style={{ textAlign: 'center', padding: 8, fontSize: 11, color: T.mt }}>Loading older messages...</div>}
+          {(() => {
+            const MSG_H = 52;
+            const BUFFER = 20;
+            const containerH = msgScrollRef.current?.clientHeight || 600;
+            const startIdx = Math.max(0, Math.floor(msgScrollTop / MSG_H) - BUFFER);
+            const endIdx = Math.min(messages.length, Math.ceil((msgScrollTop + containerH) / MSG_H) + BUFFER);
+            const visibleMessages = messages.slice(startIdx, endIdx);
+            return (
+            <div ref={msgScrollRef} onScroll={async (e) => {
+              const el = e.currentTarget;
+              setMsgScrollTop(el.scrollTop);
+              if (el.scrollTop < 50 && messages.length >= 50 && curChannel && !loadingMore) {
+                setLoadingMore(true);
+                try {
+                  const older = await api.getMessagesBatch(curChannel.id, 50, messages[0]?.id);
+                  if (Array.isArray(older) && older.length > 0) {
+                    const prevH = el.scrollHeight;
+                    const decOlder = await Promise.all(older.map(async (m: any) => ({ ...m, text: await dec(curChannel.id, m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' })));
+                    setMessages(prev => [...decOlder.reverse(), ...prev]);
+                    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight - prevH; });
+                  }
+                } catch {} setLoadingMore(false);
+              }
+            }} style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+            {loadingMore && (
+              <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.bd}`, borderTop: `2px solid ${T.ac}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                <div style={{ fontSize: 11, color: T.mt, marginTop: 4 }}>Loading older messages...</div>
+              </div>
+            )}
             {curChannel && agentDisclosures[curChannel.id] && (
-              <div style={{ background: '#1a1a2e', borderLeft: '3px solid #f0b232', borderRadius: 8, padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ background: '#1a1a2e', borderLeft: '3px solid #f0b232', borderRadius: 12, padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <span style={{ fontSize: 14, flexShrink: 0 }}>🛡️</span>
                 <span style={{ flex: 1, fontSize: 13, color: '#e0e0e0', lineHeight: 1.5 }}>
                   {agentDisclosures[curChannel.id].disclosure_text}
@@ -2184,14 +2252,17 @@ export default function App() {
                 >✕</span>
               </div>
             )}
-            {messages.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 40, color: T.mt }}>
+            {loadingMessages && messages.length === 0 && <MessageSkeleton count={10} />}
+            {!loadingMessages && messages.length === 0 && (
+              <div key={channelFadeKey} style={{ textAlign: 'center', padding: 40, color: T.mt, animation: 'fadeIn 0.25s ease' }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>#</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Welcome to #{curChannel.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Welcome to #{curChannel?.name}</div>
                 <div style={{ fontSize: 13, marginTop: 4 }}>Messages are end-to-end encrypted.</div>
               </div>
             )}
-            {messages.map((m, idx) => {
+            {messages.length > 0 && <div style={{ height: startIdx * MSG_H }} />}
+            {visibleMessages.map((m, vi) => {
+              const idx = startIdx + vi;
               // Date separator
               const prevMsg = idx > 0 ? messages[idx - 1] : null;
               const curDate = new Date(m.created_at).toLocaleDateString();
@@ -2237,9 +2308,9 @@ export default function App() {
                     <div style={{ flex: 1, height: 1, background: T.bd }} />
                   </div>
                 )}
-                <div onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: 10, padding: '4px 16px', position: 'relative' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <div data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: 10, padding: '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : 'transparent', transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
+                  onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                  onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}>
                 <div onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer' }}>
                   <Av name={getName(m.author_id)} size={36} />
                 </div>
@@ -2347,8 +2418,11 @@ export default function App() {
               </React.Fragment>
               );
             })}
+            {messages.length > 0 && <div style={{ height: (messages.length - endIdx) * MSG_H }} />}
             <div ref={msgEndRef} />
           </div>
+            );
+          })()}
 
           {/* Typing indicator */}
           {Object.keys(typingUsers).length > 0 && (() => {
@@ -2394,7 +2468,7 @@ export default function App() {
               const matches = members.filter(m => (m.username?.toLowerCase().includes(query) || m.display_name?.toLowerCase().includes(query))).slice(0, 6);
               if (matches.length === 0) return null;
               return (
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 8, padding: 4, marginBottom: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.3)', maxHeight: 200, overflowY: 'auto', zIndex: 100 }}>
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, padding: 4, marginBottom: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.3)', maxHeight: 200, overflowY: 'auto', zIndex: 100 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, padding: '4px 8px', textTransform: 'uppercase' }}>Members</div>
                   {matches.map(m => (
                     <div key={m.user_id} onClick={() => setMsgInput(prev => prev.replace(/@\w*$/, `@${m.display_name || m.username} `))} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4, cursor: 'pointer' }}
@@ -2429,6 +2503,19 @@ export default function App() {
               </div>
             )}
 
+            {/* Archived banner */}
+            {curServer?.is_archived && (
+              <div style={{ padding: '10px 16px', background: 'rgba(255,165,0,0.08)', borderTop: '1px solid rgba(255,165,0,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13 }}>📦</span>
+                <span style={{ fontSize: 12, color: '#ffa500', fontWeight: 600 }}>This server is archived and read-only.</span>
+                {curServer.scheduled_deletion_at && (
+                  <span style={{ fontSize: 11, color: T.err, marginLeft: 4 }}>
+                    Scheduled for deletion on {new Date(curServer.scheduled_deletion_at).toLocaleDateString()}.
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Input */}
             <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2436,7 +2523,7 @@ export default function App() {
                 <I.Paperclip />
                 <input type="file" style={{ display: 'none' }} onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file || !curChannel) return;
-                  if (!tierLimits.canUpload) { setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); e.target.value = ''; return; }
+                  if (!tierLimits.canUpload) { if (me?.is_guest) { setUpgradeFeature('upload files'); } else { setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); } e.target.value = ''; return; }
                   if (!checkStorageLimit(me, file.size)) {
                     const usedMB = Math.round(parseInt(localStorage.getItem('d_storage_used_bytes') || '0', 10) / 1024 / 1024);
                     setToast(`Storage limit reached (${usedMB} MB / ${tierLimits.maxStorageMB} MB used). Upgrade to upload more files.`);
@@ -2450,15 +2537,15 @@ export default function App() {
                 onChange={e => { setMsgInput(e.target.value); if (Date.now() - typingRef.current > 5000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
                 onKeyDown={e => { if (e.key === 'Escape') { setSlashTool(null); } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
-                style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+                style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
               <div onClick={() => setShowEmojiPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
               <div onClick={() => { setPollQuestion(''); setPollOptions(['', '']); setModal('create-poll'); }} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
               <div onClick={() => setShowGifPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 8, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
           </div>{/* close positioned wrapper */}
-        </>)}
+        </div>)}
 
         {view === 'server' && !curChannel && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mt }}>
@@ -2585,11 +2672,11 @@ export default function App() {
               <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server Name</label>
               <input style={{ ...getInp(), marginBottom: 12 }} value={createName} onChange={e => setCreateName(e.target.value)} placeholder={serverPreset === 'gaming' ? 'Epic Gamers' : serverPreset === 'meeting' ? 'Team Standup' : serverPreset === 'study' ? 'Study Squad' : 'My Server'} autoFocus onKeyDown={e => { if (e.key === 'Enter') createServer(); }} />
               {serverPreset !== 'quick' && (
-                <div style={{ padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12, fontSize: 12, color: T.mt }}>
+                <div style={{ padding: '10px 12px', background: T.sf2, borderRadius: 12, border: `1px solid ${T.bd}`, marginBottom: 12, fontSize: 12, color: T.mt }}>
                   ✨ This template will auto-create channels and spawn an AI bot for your server.
                 </div>
               )}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12, cursor: 'pointer', fontSize: 13 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: T.sf2, borderRadius: 12, border: `1px solid ${T.bd}`, marginBottom: 12, cursor: 'pointer', fontSize: 13 }}>
                 <input type="checkbox" checked={enableAutomod} onChange={e => setEnableAutomod(e.target.checked)} style={{ accentColor: T.ac }} />
                 <div>
                   <div style={{ fontWeight: 600, color: T.tx }}>Enable AutoMod <span style={{ fontSize: 10, color: T.ac, fontWeight: 700 }}>RECOMMENDED</span></div>
@@ -2714,7 +2801,7 @@ export default function App() {
                   const checked = gdmSelected.includes(uid);
                   return (
                     <div key={uid} onClick={() => setGdmSelected(p => checked ? p.filter(id => id !== uid) : [...p, uid])}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${checked ? T.ac : T.bd}`, background: checked ? `${T.ac}12` : 'transparent', transition: 'border-color .1s' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, cursor: 'pointer', border: `1px solid ${checked ? T.ac : T.bd}`, background: checked ? `${T.ac}12` : 'transparent', transition: 'border-color .1s' }}>
                       <Av name={name} size={28} />
                       <span style={{ flex: 1, fontSize: 13, color: checked ? T.ac : T.tx, fontWeight: checked ? 600 : 400 }}>{name}</span>
                       <span style={{ fontSize: 16, color: checked ? T.ac : T.bd }}>{checked ? '✓' : '○'}</span>
@@ -2782,7 +2869,7 @@ export default function App() {
                 { id: 'forum',        icon: '💬', label: 'Forum'        },
                 { id: 'stage',        icon: '🎤', label: 'Stage'        },
               ] as { id: string; icon: string; label: string }[]).map(t => (
-                <div key={t.id} onClick={() => setCreateChannelType(t.id)} style={{ padding: '8px 6px', borderRadius: 8, cursor: 'pointer', border: `2px solid ${createChannelType === t.id ? T.ac : T.bd}`, textAlign: 'center', fontSize: 12, fontWeight: 600, color: createChannelType === t.id ? T.ac : T.mt, background: createChannelType === t.id ? `${T.ac}11` : 'transparent' }}>
+                <div key={t.id} onClick={() => setCreateChannelType(t.id)} style={{ padding: '8px 6px', borderRadius: 12, cursor: 'pointer', border: `2px solid ${createChannelType === t.id ? T.ac : T.bd}`, textAlign: 'center', fontSize: 12, fontWeight: 600, color: createChannelType === t.id ? T.ac : T.mt, background: createChannelType === t.id ? `${T.ac}11` : 'transparent' }}>
                   <div style={{ fontSize: 18, marginBottom: 2 }}>{t.icon}</div>
                   {t.label}
                 </div>
@@ -2823,7 +2910,7 @@ export default function App() {
               </div>
             </div>
             {/* Temporary membership toggle */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20, padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20, padding: '12px 14px', background: T.sf2, borderRadius: 12, border: `1px solid ${T.bd}` }}>
               <div onClick={() => { setInviteTemporary(p => !p); setInviteResult(''); }} style={{ flexShrink: 0, marginTop: 2, width: 36, height: 20, borderRadius: 10, background: inviteTemporary ? T.ac : T.bd, position: 'relative', cursor: 'pointer', transition: 'background .2s' }}>
                 <div style={{ position: 'absolute', top: 3, left: inviteTemporary ? 19 : 3, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .2s' }} />
               </div>
@@ -2891,7 +2978,7 @@ export default function App() {
               { key: 'dnd', label: '⛔ Do Not Disturb', color: '#ed4245', desc: 'Suppress notifications' },
               { key: 'invisible', label: '👻 Invisible', color: '#747f8d', desc: 'Appear offline' },
             ].map(s => (
-              <div key={s.key} onClick={() => changeStatus(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4, background: userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent', border: userStatus === s.key ? `1px solid ${T.ac}33` : '1px solid transparent' }}
+              <div key={s.key} onClick={() => changeStatus(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', marginBottom: 4, background: userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent', border: userStatus === s.key ? `1px solid ${T.ac}33` : '1px solid transparent' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                 onMouseLeave={e => e.currentTarget.style.background = userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent'}>
                 <div style={{ width: 12, height: 12, borderRadius: 6, background: s.color }} />
@@ -2926,11 +3013,11 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <div onClick={() => setChNsfw(!chNsfw)} style={{ width: 36, height: 20, borderRadius: 10, background: chNsfw ? T.ac : T.sf2, position: 'relative', cursor: 'pointer', transition: 'background .2s' }}><div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: chNsfw ? 18 : 2, transition: 'left .2s' }} /></div>
+                    <div onClick={() => setChNsfw(!chNsfw)} style={{ width: 36, height: 20, borderRadius: 10, background: chNsfw ? T.ac : T.sf2, position: 'relative', cursor: 'pointer', transition: 'background .2s' }}><div style={{ width: 16, height: 16, borderRadius: 12, background: '#fff', position: 'absolute', top: 2, left: chNsfw ? 18 : 2, transition: 'left .2s' }} /></div>
                     <span style={{ fontSize: 13 }}>NSFW Channel</span>
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <div onClick={() => setChArchived(!chArchived)} style={{ width: 36, height: 20, borderRadius: 10, background: chArchived ? T.ac : T.sf2, position: 'relative', cursor: 'pointer', transition: 'background .2s' }}><div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: chArchived ? 18 : 2, transition: 'left .2s' }} /></div>
+                    <div onClick={() => setChArchived(!chArchived)} style={{ width: 36, height: 20, borderRadius: 10, background: chArchived ? T.ac : T.sf2, position: 'relative', cursor: 'pointer', transition: 'background .2s' }}><div style={{ width: 16, height: 16, borderRadius: 12, background: '#fff', position: 'absolute', top: 2, left: chArchived ? 18 : 2, transition: 'left .2s' }} /></div>
                     <span style={{ fontSize: 13 }}>Archive Channel (read-only)</span>
                   </label>
                 </div>
@@ -3005,7 +3092,7 @@ export default function App() {
                               </div>
 
                               {/* Allow / Neutral / Deny toggle group */}
-                              <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.bd}`, flexShrink: 0 }}>
+                              <div style={{ display: 'flex', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.bd}`, flexShrink: 0 }}>
                                 {PERM_OPTS.map((opt, oi) => {
                                   const active = state === opt.val;
                                   return (
@@ -3047,7 +3134,7 @@ export default function App() {
                     <button onClick={saveChPerms} style={btn(true)}>Save Permissions</button>
                     <button
                       onClick={() => setChPermOverrides({})}
-                      style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${T.bd}`, borderRadius: 8, color: T.mt, cursor: 'pointer', fontSize: 13 }}
+                      style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${T.bd}`, borderRadius: 12, color: T.mt, cursor: 'pointer', fontSize: 13 }}
                     >Reset All Roles</button>
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: T.mt }}>
                       {Object.values(chPermOverrides).reduce((n, rp) => n + Object.values(rp).filter(v => v !== 'neutral').length, 0)} active override(s)
@@ -3065,13 +3152,13 @@ export default function App() {
                   <div style={{ fontSize: 13, fontWeight: 600, color: T.err, marginBottom: 8 }}>Delete Channel</div>
                   <div style={{ fontSize: 12, color: T.mt, marginBottom: 12 }}>Permanently delete #{editChannel.name}. This action cannot be undone. All messages will be lost.</div>
                   <button onClick={async () => {
-                    if (await showConfirm('Delete Channel', `Permanently delete #${editChannel.name}? All messages will be lost.`, true)) {
+                    if (await showConfirm('Delete Channel', `This will permanently delete #${editChannel.name} and all its messages. This action cannot be undone.`, true, editChannel.name, 'Delete Channel')) {
                       await api.deleteChannel(editChannel.id);
                       if (curServer) await loadChannels(curServer.id);
                       if (curChannel?.id === editChannel.id) setCurChannel(null);
                       setModal(null); setEditChannel(null);
                     }
-                  }} style={{ padding: '8px 16px', background: 'rgba(255,71,87,0.15)', border: '1px solid rgba(255,71,87,0.4)', borderRadius: 8, color: T.err, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Delete Channel</button>
+                  }} style={{ padding: '8px 16px', background: 'rgba(255,71,87,0.15)', border: '1px solid rgba(255,71,87,0.4)', borderRadius: 12, color: T.err, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Delete Channel</button>
                 </div>
               </>)}
             </div>
@@ -3251,9 +3338,21 @@ export default function App() {
             members={members}
             channels={channels}
             curServer={curServer}
+            curChannel={curChannel}
             view={view}
             getName={getName}
-            onNavigate={(target: any) => { if (target?.channel) selectChannel(target.channel); setPanel('members'); }}
+            onNavigate={(target: any) => {
+              if (target?.channel) selectChannel(target.channel);
+              if (target?.messageId) {
+                // Scroll to and highlight the matched message
+                setHighlightedMsg(target.messageId);
+                setTimeout(() => {
+                  const el = document.querySelector(`[data-msg-id="${target.messageId}"]`);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 150);
+                setTimeout(() => setHighlightedMsg(null), 3000);
+              }
+            }}
             onClose={() => setPanel('members')}
           />
       )}
@@ -3323,6 +3422,16 @@ export default function App() {
       {/* Confirm Dialog */}
       <ConfirmDialog dialog={confirmDialog} setDialog={setConfirmDialog} />
 
+      {/* Guest Upgrade Modal */}
+      {upgradeFeature && (
+        <UpgradeModal
+          feature={upgradeFeature}
+          onCreateAccount={() => { setUpgradeFeature(null); setAuthed(false); }}
+          onViewTiers={() => { setUpgradeFeature(null); window.open('/app/tiers', '_blank'); }}
+          onClose={() => setUpgradeFeature(null)}
+        />
+      )}
+
       {/* ── OBS Setup Modal ── */}
       {obsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15000 }} onClick={() => setObsModal(null)}>
@@ -3353,8 +3462,8 @@ export default function App() {
               <div style={{ fontSize: 11, color: T.mt, marginTop: 6 }}>Keep this secret — anyone with it can stream to your channel.</div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <div onClick={() => setObsModal(null)} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>Done</div>
-              <div onClick={stopGoLive} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'rgba(255,71,87,0.15)', color: T.err, border: '1px solid rgba(255,71,87,0.35)' }}>Stop Streaming</div>
+              <div onClick={() => setObsModal(null)} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>Done</div>
+              <div onClick={stopGoLive} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'rgba(255,71,87,0.15)', color: T.err, border: '1px solid rgba(255,71,87,0.35)' }}>Stop Streaming</div>
             </div>
           </div>
         </div>
@@ -3397,7 +3506,7 @@ export default function App() {
 
       {/* Toast */}
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.startsWith('Send failed') ? T.err : T.ac, color: toast.startsWith('Send failed') ? '#fff' : '#000', padding: '10px 24px', borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 20000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>{toast}</div>
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.startsWith('Send failed') ? T.err : T.ac, color: toast.startsWith('Send failed') ? '#fff' : '#000', padding: '10px 24px', borderRadius: 12, fontSize: 13, fontWeight: 600, zIndex: 20000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>{toast}</div>
       )}
 
       {/* CSS for hover actions */}

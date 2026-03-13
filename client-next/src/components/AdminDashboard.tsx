@@ -40,6 +40,8 @@ interface PlatformSettings {
   ai_global_model:       string;
   ai_rate_limit_per_minute: number;
   ai_emergency_stop:     boolean;
+  default_retention_days: number;
+  global_disappearing_default: string;
 }
 
 interface ServerInfo {
@@ -300,6 +302,143 @@ function EditPanel({ edit, onSave, onCancel }: {
         </div>
       </td>
     </tr>
+  );
+}
+
+// ─── InactiveServersPanel ─────────────────────────────────────────────────────
+
+interface InactiveServer {
+  id: string;
+  name: string;
+  owner_id: string;
+  owner_username: string;
+  member_count: number;
+  last_activity_at: string;
+  days_idle: number;
+  is_archived: boolean;
+  scheduled_deletion_at: string | null;
+}
+
+function InactiveServersPanel() {
+  const [servers, setServers] = useState<InactiveServer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [daysFilter, setDaysFilter] = useState(30);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const load = useCallback(async (days: number) => {
+    setLoading(true);
+    try {
+      const res = await api.fetch(`/admin/inactive-servers?days=${days}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setServers(data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(daysFilter); }, [daysFilter, load]);
+
+  const handleArchive = async (id: string, archive: boolean) => {
+    setActionLoading(id);
+    try {
+      await api.fetch(`/admin/servers/${id}/archive`, { method: 'POST', body: JSON.stringify({ archive }) });
+      await load(daysFilter);
+    } catch { /* ignore */ }
+    setActionLoading(null);
+  };
+
+  const handleScheduleDeletion = async (id: string, schedule: boolean) => {
+    setActionLoading(id);
+    try {
+      await api.fetch(`/admin/servers/${id}/schedule-deletion`, { method: 'POST', body: JSON.stringify({ schedule }) });
+      await load(daysFilter);
+    } catch { /* ignore */ }
+    setActionLoading(null);
+  };
+
+  return (
+    <div style={{ padding: 16, background: T.sf, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.tx }}>Inactive Servers</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: T.mt }}>Idle for</span>
+          {[30, 60, 90, 180].map(d => (
+            <button
+              key={d}
+              onClick={() => setDaysFilter(d)}
+              style={{
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                border: daysFilter === d ? `1px solid ${T.ac}` : `1px solid ${T.bd}`,
+                background: daysFilter === d ? `${T.ac}15` : T.sf2,
+                color: daysFilter === d ? T.ac : T.mt,
+              }}
+            >{d}d</button>
+          ))}
+          <button onClick={() => load(daysFilter)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13, padding: 4 }} title="Refresh">
+            {loading ? '...' : '↻'}
+          </button>
+        </div>
+      </div>
+
+      {servers.length === 0 && !loading && (
+        <div style={{ color: T.mt, fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
+          No servers idle for {daysFilter}+ days
+        </div>
+      )}
+
+      {servers.map(s => (
+        <div key={s.id} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+          background: s.scheduled_deletion_at ? 'rgba(255,71,87,0.06)' : s.is_archived ? 'rgba(255,165,0,0.06)' : T.sf2,
+          borderRadius: 8, marginBottom: 6,
+          border: `1px solid ${s.scheduled_deletion_at ? 'rgba(255,71,87,0.15)' : s.is_archived ? 'rgba(255,165,0,0.15)' : T.bd}`,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{s.name}</span>
+              {s.is_archived && <span style={{ fontSize: 9, fontWeight: 700, color: '#ffa500', background: 'rgba(255,165,0,0.12)', padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>Archived</span>}
+              {s.scheduled_deletion_at && <span style={{ fontSize: 9, fontWeight: 700, color: T.err, background: 'rgba(255,71,87,0.12)', padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>Deletion {new Date(s.scheduled_deletion_at).toLocaleDateString()}</span>}
+            </div>
+            <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>
+              Owner: {s.owner_username} · {s.member_count} members · {s.days_idle}d idle
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {!s.is_archived && (
+              <button
+                onClick={() => handleArchive(s.id, true)}
+                disabled={actionLoading === s.id}
+                style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'rgba(255,165,0,0.1)', color: '#ffa500', border: '1px solid rgba(255,165,0,0.3)' }}
+              >Archive</button>
+            )}
+            {s.is_archived && !s.scheduled_deletion_at && (
+              <>
+                <button
+                  onClick={() => handleArchive(s.id, false)}
+                  disabled={actionLoading === s.id}
+                  style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${T.ac}12`, color: T.ac, border: `1px solid ${T.ac}40` }}
+                >Unarchive</button>
+                <button
+                  onClick={() => handleScheduleDeletion(s.id, true)}
+                  disabled={actionLoading === s.id}
+                  style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.3)' }}
+                >Schedule Delete</button>
+              </>
+            )}
+            {s.scheduled_deletion_at && (
+              <button
+                onClick={() => handleScheduleDeletion(s.id, false)}
+                disabled={actionLoading === s.id}
+                style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${T.ac}12`, color: T.ac, border: `1px solid ${T.ac}40` }}
+              >Cancel Deletion</button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ fontSize: 10, color: T.mt, marginTop: 10, lineHeight: 1.6 }}>
+        <strong>Archive:</strong> read-only, zero compute, data preserved. <strong>Deletion:</strong> 30-day countdown, owner can cancel, messages/channels/roles removed, audit tombstone kept.
+      </div>
+    </div>
   );
 }
 
@@ -738,6 +877,67 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
               <SectionHeader label="Registrations — Last 30 Days" loading={regLoading} onRefresh={loadReg} />
               <RegGraph data={regData} loading={regLoading} />
             </div>
+
+            {/* ── Data Management ── */}
+            {settings && (
+              <div style={cardStyle}>
+                <SectionHeader label="Data Management" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* Global retention */}
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Default Message Retention</div>
+                        <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Global maximum. Server/channel can be more restrictive, never less.</div>
+                      </div>
+                      <select
+                        value={settings.default_retention_days}
+                        onChange={e => toggleSetting('default_retention_days', Number(e.target.value))}
+                        disabled={settingsSaving}
+                        style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 140, cursor: settingsSaving ? 'not-allowed' : 'pointer' }}
+                      >
+                        <option value={0}>Forever</option>
+                        <option value={365}>365 days</option>
+                        <option value={180}>180 days</option>
+                        <option value={90}>90 days</option>
+                        <option value={30}>30 days</option>
+                        <option value={7}>7 days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Global disappearing default */}
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Disappearing Messages Default</div>
+                        <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Per-message auto-expiry. Servers/channels can override with shorter durations.</div>
+                      </div>
+                      <select
+                        value={settings.global_disappearing_default}
+                        onChange={e => toggleSetting('global_disappearing_default', e.target.value)}
+                        disabled={settingsSaving}
+                        style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 140, cursor: settingsSaving ? 'not-allowed' : 'pointer' }}
+                      >
+                        <option value="off">Off</option>
+                        <option value="24h">24 hours</option>
+                        <option value="7d">7 days</option>
+                        <option value="30d">30 days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Info box */}
+                  <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${T.ac}08`, borderRadius: 6, border: `1px solid ${T.ac}20`, lineHeight: 1.6 }}>
+                    <strong style={{ color: T.ac }}>Protected data</strong> is never purged by retention policies: audit log entries, server settings changes, channel create/delete/rename, role changes, and member join/leave/kick/ban events. These live on the hash chain permanently.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Inactive Servers ── */}
+            <InactiveServersPanel />
           </div>
         )}
 
