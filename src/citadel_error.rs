@@ -60,6 +60,9 @@ pub enum AppError {
 
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 impl IntoResponse for AppError {
@@ -95,6 +98,7 @@ impl IntoResponse for AppError {
                 tracing::error!("Internal error: {msg}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal server error".into())
             }
+            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", msg.clone()),
         };
 
         (status, Json(json!({

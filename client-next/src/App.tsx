@@ -417,6 +417,7 @@ function ColorTool({ onInsert }: { onInsert: (v: string) => void }) {
 export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!api.userId); // true if we need to try cookie refresh
+  const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null);
   const [view, setView] = useState<'home' | 'server' | 'dm'>('home');
   const [homeTab, setHomeTab] = useState('home');
 
@@ -725,6 +726,10 @@ export default function App() {
         api.clearAuth();
         setAuthed(false);
         alert(evt.reason || 'Your account has been suspended.');
+        return;
+      }
+      if (evt.type === 'maintenance_mode') {
+        setMaintenanceMsg(evt.message || 'Discreet is undergoing scheduled maintenance.');
         return;
       }
       // Track all users joining/leaving voice channels (including bots via force_voice_join)
@@ -1301,6 +1306,18 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
+  if (maintenanceMsg) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg, flexDirection: 'column', gap: 24, fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif' }}>
+      <div style={{ fontSize: 64 }}>🛡️</div>
+      <div style={{ fontSize: 28, fontWeight: 800, color: T.tx, letterSpacing: -0.5 }}>Discreet</div>
+      <div style={{ fontSize: 16, color: T.mt, maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>{maintenanceMsg}</div>
+      <button onClick={() => { setMaintenanceMsg(null); window.location.reload(); }} style={{ ...btn, padding: '12px 32px', fontSize: 14, fontWeight: 600, background: T.ac, color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer', marginTop: 8 }}>
+        Retry
+      </button>
+      <div style={{ fontSize: 12, color: T.mt, marginTop: 8 }}>We'll be back shortly.</div>
+    </div>
+  );
+
   if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
   if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
 
@@ -1453,7 +1470,7 @@ export default function App() {
             <div onClick={() => { goHome(); setHomeTab('leaderboard'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'leaderboard' ? T.ac : T.mt, background: homeTab === 'leaderboard' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🏆 Leaderboard</div>
             <div onClick={() => { goHome(); setHomeTab('tools'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'tools' ? T.ac : T.mt, background: homeTab === 'tools' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🧰 Tools</div>
             <div onClick={() => { goHome(); setHomeTab('discover'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'discover' ? T.ac : T.mt, background: homeTab === 'discover' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🔭 Discover</div>
-            {isAnyOwner && <div onClick={() => { goHome(); setHomeTab('admin'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'admin' ? '#f0b232' : T.mt, background: homeTab === 'admin' ? 'rgba(240,178,50,0.08)' : 'transparent' }}>🛡️ Admin</div>}
+            {(isAnyOwner || isPlatformDevOrAdmin) && <div onClick={() => { goHome(); setHomeTab('admin'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'admin' ? '#f0b232' : T.mt, background: homeTab === 'admin' ? 'rgba(240,178,50,0.08)' : 'transparent' }}>🛡️ Admin</div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 10px 6px' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Direct Messages
@@ -2049,8 +2066,8 @@ export default function App() {
         )}
 
         {/* ─── Admin Dashboard ─── */}
-        {view === 'home' && homeTab === 'admin' && isAnyOwner && (
-          <AdminDashboard />
+        {view === 'home' && homeTab === 'admin' && (isAnyOwner || isPlatformDevOrAdmin) && (
+          <AdminDashboard platformUser={platformUser} />
         )}
 
         {/* ─── Group DM View ─── */}

@@ -67,6 +67,16 @@ export class CitadelAPI {
       if (csrf) headers['X-CSRF-Token'] = csrf;
     }
     const res = await fetch(`${API_BASE}${path}`, { ...opts, headers, credentials: 'same-origin' });
+    if (res.status === 503) {
+      try {
+        const clone = res.clone();
+        const body = await clone.json();
+        if (body.maintenance) {
+          this.wsListeners.forEach(fn => fn({ type: 'maintenance_mode', message: body.error || 'Discreet is undergoing scheduled maintenance.' }));
+        }
+      } catch { /* not maintenance JSON */ }
+      return res;
+    }
     if (res.status === 401 && this.userId) {
       const ok = await this.tryRefresh();
       if (ok) {

@@ -696,6 +696,39 @@ pub async fn prompt_bot(
     Path((server_id, bot_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<PromptBotRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // ── Kill switches: AI bots ─────────────────────────────────────────────
+    let platform = crate::citadel_platform_settings::get_platform_settings(&state).await?;
+    if !platform.ai_bots_enabled {
+        return Err(AppError::ServiceUnavailable("AI bots are currently disabled by the platform administrator.".into()));
+    }
+    if platform.ai_emergency_stop {
+        return Err(AppError::ServiceUnavailable("AI services have been temporarily halted by the platform administrator.".into()));
+    }
+
+    // ── Global AI rate limit ────────────────────────────────────────────────
+    if platform.ai_rate_limit_per_minute > 0 {
+        let rl_key = format!("ai_global_rl:{}", auth.user_id);
+        let mut redis_conn = state.redis.clone();
+        let count: i64 = redis::cmd("INCR")
+            .arg(&rl_key)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or(1);
+        if count == 1 {
+            let _: Result<(), _> = redis::cmd("EXPIRE")
+                .arg(&rl_key)
+                .arg(60u64)
+                .query_async(&mut redis_conn)
+                .await;
+        }
+        if count > platform.ai_rate_limit_per_minute as i64 {
+            return Err(AppError::RateLimited(format!(
+                "AI rate limit exceeded ({}/min). Please wait before sending another prompt.",
+                platform.ai_rate_limit_per_minute
+            )));
+        }
+    }
+
     // Verify the requester is a member of this server.
     let is_member = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2)",
@@ -809,8 +842,23 @@ pub async fn prompt_bot(
     let messages_for_memory = messages.clone();
 
     let response_text = if let Ok(ref cfg) = agent_config {
-        let provider = create_provider(&cfg.provider_type);
-        match provider.complete(&cfg.system_prompt, messages, &cfg.model_config).await {
+        // Apply global model override if set by platform admin.
+        let (effective_provider, effective_config) = if !platform.ai_global_model.is_empty() {
+            let (ptype, model_id) = match platform.ai_global_model.as_str() {
+                "claude-haiku" => (crate::citadel_agent_provider::ProviderType::Anthropic, "claude-haiku-4-5-20251001".to_string()),
+                "claude-sonnet" => (crate::citadel_agent_provider::ProviderType::Anthropic, "claude-sonnet-4-6".to_string()),
+                "ollama-local" => (crate::citadel_agent_provider::ProviderType::Ollama, "llama3".to_string()),
+                _ => (cfg.provider_type.clone(), cfg.model_config.model_id.clone()),
+            };
+            let mut mc = cfg.model_config.clone();
+            mc.model_id = model_id;
+            (ptype, mc)
+        } else {
+            (cfg.provider_type.clone(), cfg.model_config.clone())
+        };
+
+        let provider = create_provider(&effective_provider);
+        match provider.complete(&cfg.system_prompt, messages, &effective_config).await {
             Ok(completion) => completion.text,
             Err(e) => {
                 tracing::warn!(

@@ -216,6 +216,12 @@ pub async fn register(
     headers: axum::http::HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // ── Kill switch: registrations ────────────────────────────────────────
+    let platform = crate::citadel_platform_settings::get_platform_settings(&state).await?;
+    if !platform.registrations_enabled {
+        return Err(AppError::ServiceUnavailable("Registration is currently disabled. Please try again later.".into()));
+    }
+
     // ── IP-based registration rate limit (max 3 per IP per 24 h) ──────────
     let ip = headers
         .get("x-forwarded-for")
@@ -437,6 +443,12 @@ pub async fn register_guest(
     headers: axum::http::HeaderMap,
     body: Option<Json<GuestRegisterRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
+    // ── Kill switch: guest access ─────────────────────────────────────────
+    let platform = crate::citadel_platform_settings::get_platform_settings(&state).await?;
+    if !platform.guest_access_enabled {
+        return Err(AppError::ServiceUnavailable("Guest access is currently disabled. Please create an account to continue.".into()));
+    }
+
     let captcha_token = body.and_then(|Json(b)| b.captcha_token);
 
     // ── Cloudflare Turnstile CAPTCHA (optional) ───────────────────────────
@@ -618,6 +630,12 @@ pub async fn login(
     headers: axum::http::HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Response, AppError> {
+    // ── Kill switch: logins ───────────────────────────────────────────────
+    let platform = crate::citadel_platform_settings::get_platform_settings(&state).await?;
+    if !platform.logins_enabled {
+        return Err(AppError::ServiceUnavailable("Login is currently disabled. Please try again later.".into()));
+    }
+
     // Find user by username or email.
     let user = sqlx::query!(
         "SELECT id, username, display_name, email, password_hash, created_at, totp_enabled,
