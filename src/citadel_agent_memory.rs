@@ -28,6 +28,7 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::citadel_agent_episodic_memory::{build_memory_context, load_memory_store};
 use crate::citadel_agent_provider::{AgentError, AgentMessage};
 
 // ─── Constants ──────────────────────────────────────────────────────────
@@ -35,10 +36,6 @@ use crate::citadel_agent_provider::{AgentError, AgentMessage};
 /// Maximum messages to load in a single sliding window query.
 /// Safety valve to prevent loading entire channel history.
 const MAX_SLIDING_WINDOW: u32 = 100;
-
-/// Minimum messages before summary compression kicks in.
-/// Below this threshold, sliding window is always used.
-const SUMMARY_THRESHOLD: u32 = 50;
 
 /// Maximum token estimate per message before truncation.
 /// Rough heuristic: 1 token ≈ 4 chars in English.
@@ -52,6 +49,7 @@ const MAX_TOTAL_CONTEXT_CHARS: usize = 100_000;
 
 /// A message as stored in the database (encrypted or plaintext for bots).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct RawChannelMessage {
     id: Uuid,
     author_id: Uuid,
@@ -89,6 +87,7 @@ pub async fn build_context(
     bot_user_id: Uuid,
     context_count: u32,
     include_summary: bool,
+    master_secret: &[u8],
 ) -> Result<Vec<AgentMessage>, AgentError> {
     let count = context_count.min(MAX_SLIDING_WINDOW);
 
@@ -181,7 +180,30 @@ pub async fn build_context(
     // Ensure alternating user/assistant pattern for Anthropic API compatibility.
     // Anthropic requires messages to alternate between "user" and "assistant".
     // Merge consecutive same-role messages.
-    let context = merge_consecutive_roles(context);
+    let mut context = merge_consecutive_roles(context);
+
+    // Inject episodic memory (learned facts) as a system message at the front.
+    match load_memory_store(db, bot_user_id, channel_id, master_secret).await {
+        Ok(store) if !store.facts.is_empty() => {
+            let memory_ctx = build_memory_context(&store);
+            if !memory_ctx.is_empty() {
+                context.insert(0, AgentMessage {
+                    role: "system".into(),
+                    content: memory_ctx,
+                });
+                debug!(
+                    bot_user_id = %bot_user_id,
+                    channel_id = %channel_id,
+                    fact_count = store.facts.len(),
+                    "Episodic memory injected into context"
+                );
+            }
+        }
+        Err(e) => {
+            debug!(error = %e, "Episodic memory load failed — continuing without");
+        }
+        _ => {}
+    }
 
     debug!(
         channel_id = %channel_id,

@@ -291,6 +291,7 @@ pub async fn send_message(
                     bot_user_id,
                     cfg.context_message_count,
                     use_summary,
+                    state_task.config.agent_key_secret.as_bytes(),
                 ).await.unwrap_or_default();
 
                 messages.push(AgentMessage {

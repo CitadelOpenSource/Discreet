@@ -41,13 +41,11 @@ use aes_gcm::{
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
-use tracing::{debug, error, info, warn};
+use sqlx::{PgPool, Row};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::citadel_agent_provider::{
-    AgentError, AgentMessage, AgentModelConfig, CompletionResult, LlmProvider,
-};
+use crate::citadel_agent_provider::{AgentError, AgentMessage, AgentModelConfig, LlmProvider};
 
 // ─── Constants ──────────────────────────────────────────────────────────
 
@@ -220,15 +218,13 @@ pub async fn load_memory_store(
     channel_id: Uuid,
     master_secret: &[u8],
 ) -> Result<AgentMemoryStore, AgentError> {
-    let row = sqlx::query!(
-        r#"
-        SELECT facts_encrypted, facts_nonce, fact_count
-        FROM agent_episodic_facts
-        WHERE agent_id = $1 AND channel_id = $2
-        "#,
-        agent_id,
-        channel_id,
+    let row = sqlx::query(
+        "SELECT facts_encrypted, facts_nonce, fact_count \
+         FROM agent_episodic_facts \
+         WHERE agent_id = $1 AND channel_id = $2",
     )
+    .bind(agent_id)
+    .bind(channel_id)
     .fetch_optional(db)
     .await
     .map_err(|e| {
@@ -238,9 +234,11 @@ pub async fn load_memory_store(
 
     match row {
         Ok(Some(r)) => {
+            let facts_encrypted: Vec<u8> = r.get("facts_encrypted");
+            let facts_nonce: Vec<u8> = r.get("facts_nonce");
             decrypt_memory_store(
-                &r.facts_encrypted,
-                &r.facts_nonce,
+                &facts_encrypted,
+                &facts_nonce,
                 master_secret,
                 &agent_id,
                 &channel_id,
@@ -268,23 +266,21 @@ pub async fn save_memory_store(
     let (ciphertext, nonce) = encrypt_memory_store(store, master_secret, &agent_id, &channel_id)?;
     let fact_count = store.facts.len() as i32;
 
-    sqlx::query!(
-        r#"
-        INSERT INTO agent_episodic_facts (agent_id, channel_id, facts_encrypted, facts_nonce, fact_count)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (agent_id, channel_id)
-        DO UPDATE SET
-            facts_encrypted = EXCLUDED.facts_encrypted,
-            facts_nonce = EXCLUDED.facts_nonce,
-            fact_count = EXCLUDED.fact_count,
-            updated_at = NOW()
-        "#,
-        agent_id,
-        channel_id,
-        &ciphertext,
-        &nonce,
-        fact_count,
+    sqlx::query(
+        "INSERT INTO agent_episodic_facts (agent_id, channel_id, facts_encrypted, facts_nonce, fact_count) \
+         VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (agent_id, channel_id) \
+         DO UPDATE SET \
+             facts_encrypted = EXCLUDED.facts_encrypted, \
+             facts_nonce = EXCLUDED.facts_nonce, \
+             fact_count = EXCLUDED.fact_count, \
+             updated_at = NOW()",
     )
+    .bind(agent_id)
+    .bind(channel_id)
+    .bind(&ciphertext)
+    .bind(&nonce)
+    .bind(fact_count)
     .execute(db)
     .await
     .map_err(|e| AgentError::Internal(format!("Memory save failed: {e}")))?;
