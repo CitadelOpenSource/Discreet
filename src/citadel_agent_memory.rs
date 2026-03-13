@@ -495,23 +495,34 @@ pub fn should_agent_respond(
     false
 }
 
-/// Delete all context summaries for a bot, effectively resetting its long-term memory.
+/// Delete all context summaries and episodic facts for a bot, resetting its memory.
 /// Sliding-window memory (raw message history) is unaffected — it reads live DB rows.
 pub async fn clear_agent_memory(
     db: &PgPool,
     bot_user_id: Uuid,
 ) -> Result<u64, AgentError> {
-    let result = sqlx::query!(
+    let summaries = sqlx::query!(
         "DELETE FROM agent_context_summaries WHERE bot_user_id = $1",
         bot_user_id,
     )
     .execute(db)
     .await
-    .map_err(|e| AgentError::Internal(format!("Failed to clear agent memory: {e}")))?;
+    .map_err(|e| AgentError::Internal(format!("Failed to clear agent memory: {e}")))?
+    .rows_affected();
 
-    let rows = result.rows_affected();
-    info!(bot_user_id = %bot_user_id, rows_deleted = rows, "Agent memory cleared");
-    Ok(rows)
+    // Also clear episodic facts (agent_id = bot_user_id)
+    let episodic = sqlx::query(
+        "DELETE FROM agent_episodic_facts WHERE agent_id = $1",
+    )
+    .bind(bot_user_id)
+    .execute(db)
+    .await
+    .unwrap_or_default()
+    .rows_affected();
+
+    let total = summaries + episodic;
+    info!(bot_user_id = %bot_user_id, summaries, episodic, "Agent memory cleared");
+    Ok(total)
 }
 
 /// Count total messages tracked in context summaries for a bot (across all channels).

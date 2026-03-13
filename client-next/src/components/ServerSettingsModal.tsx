@@ -18,6 +18,7 @@ export interface Server {
   name: string;
   description?: string;
   member_tab_label?: string;
+  slash_commands_enabled?: boolean;
   icon_url?: string;
   is_public?: boolean;
 }
@@ -1180,6 +1181,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
   const [tab, setTab] = useState('overview');
   const [name, setName] = useState(server?.name || '');
   const [memberTabLabel, setMemberTabLabel] = useState(server?.member_tab_label || 'Users');
+  const [slashCmdsEnabled, setSlashCmdsEnabled] = useState(server?.slash_commands_enabled !== false);
   const [inviteCode, setInviteCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [profanityLevel, setProfanityLevelState] = useState<FilterLevel>(() => getProfanityLevel(server.id));
@@ -1446,6 +1448,26 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           </div>
           <div style={{ fontSize: 11, color: T.mt, marginTop: 4 }}>Customize what the member panel is called (e.g. "Users", "Members", "Crew", "Team")</div>
         </div>
+        {/* Features */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 10, textTransform: 'uppercase' }}>Features</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Slash Commands</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Allow members to use /calc, /convert, /color in channels</div>
+            </div>
+            <div onClick={async () => {
+              const next = !slashCmdsEnabled;
+              setSlashCmdsEnabled(next);
+              await api.updateServer(server.id, { slash_commands_enabled: next } as any);
+              setSaved('Saved!'); setTimeout(() => setSaved(''), 1500);
+              if (onUpdate) onUpdate();
+            }} style={{ width: 40, height: 22, borderRadius: 11, background: slashCmdsEnabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+              <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: slashCmdsEnabled ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+            </div>
+          </div>
+        </div>
+
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server ID</label>
           <div style={{ padding: '10px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: T.tx, wordBreak: 'break-all', cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(server.id)}>

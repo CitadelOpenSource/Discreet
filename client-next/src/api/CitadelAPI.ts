@@ -368,7 +368,13 @@ export class CitadelAPI {
     this.ws.onopen = () => { console.log('[ws] connected to', sid); };
     this.ws.onmessage = (e) => { try { this.wsListeners.forEach(fn => fn(JSON.parse(e.data))); } catch (err) { console.error('[ws] parse error:', err); } };
     this.ws.onerror = (e) => { console.error('[ws] error:', e); };
-    this.ws.onclose = (e) => { console.log('[ws] closed:', e.code, e.reason); this.ws = null; };
+    this.ws.onclose = (e) => {
+      console.log('[ws] closed:', e.code, e.reason);
+      if (e.code === 4001) {
+        this.wsListeners.forEach(fn => fn({ type: 'account_suspended', reason: e.reason || 'Account suspended' }));
+      }
+      this.ws = null;
+    };
   }
 
   disconnectWs() {

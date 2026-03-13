@@ -56,8 +56,11 @@ pub async fn send_verification(
         return Err(AppError::BadRequest("Invalid email address".into()));
     }
 
-    // Generate verification token
-    let token = Uuid::new_v4().to_string();
+    // Generate verification token and link
+    let token = crate::citadel_auth_handlers::generate_hex_token();
+    let base_url = std::env::var("BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let verify_link = format!("{}/verify?token={}", base_url, token);
 
     // Store token with 24h expiry
     sqlx::query!(
@@ -69,16 +72,7 @@ pub async fn send_verification(
     .execute(&state.db)
     .await?;
 
-    // Send email via SMTP
-    let sent = send_email(
-        &state,
-        &email,
-        "Verify your Citadel email",
-        &format!(
-            "Your verification code: {}\n\nThis code expires in 24 hours.\n\nIf you didn't request this, ignore this email.",
-            &token
-        ),
-    ).await;
+    let sent = send_verification_link_email(&state, &email, &verify_link).await;
 
     if sent {
         Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
@@ -86,9 +80,9 @@ pub async fn send_verification(
         // Provider configured but send failed — do NOT leak the token.
         Ok(Json(serde_json::json!({ "message": "Verification email sent" })))
     } else {
-        // No email provider — return token directly so dev/test flows can proceed.
+        // No email provider — return token/link so dev/test flows can proceed.
         tracing::warn!("Email provider not configured — returning token in response (dev mode only)");
-        Ok(Json(serde_json::json!({ "message": "Verification email sent", "dev_token": &token })))
+        Ok(Json(serde_json::json!({ "message": "Verification email sent", "dev_token": &token, "dev_link": &verify_link })))
     }
 }
 

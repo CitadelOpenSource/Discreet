@@ -408,16 +408,16 @@ async fn set_spawn_status(state: &AppState, id: Uuid, status: &str) -> Result<()
 
 fn make_agent_name(spec: &AgentSpecialization, topic: &str) -> String {
     let prefix = match spec {
-        AgentSpecialization::Legal { .. }        => "Citadel Legal",
-        AgentSpecialization::Medical { .. }      => "Citadel Health",
-        AgentSpecialization::Security { .. }     => "Citadel Security",
-        AgentSpecialization::Engineering { .. }  => "Citadel Dev",
-        AgentSpecialization::Financial { .. }    => "Citadel Finance",
-        AgentSpecialization::Research { .. }     => "Citadel Research",
-        AgentSpecialization::Creative { .. }     => "Citadel Creative",
-        AgentSpecialization::Translation { .. }  => "Citadel Translator",
-        AgentSpecialization::General             => "Citadel Assistant",
-        AgentSpecialization::Custom { name, .. } => return format!("Citadel {name} — {topic}"),
+        AgentSpecialization::Legal { .. }        => "Discreet Legal",
+        AgentSpecialization::Medical { .. }      => "Discreet Health",
+        AgentSpecialization::Security { .. }     => "Discreet Security",
+        AgentSpecialization::Engineering { .. }  => "Discreet Dev",
+        AgentSpecialization::Financial { .. }    => "Discreet Finance",
+        AgentSpecialization::Research { .. }     => "Discreet Research",
+        AgentSpecialization::Creative { .. }     => "Discreet Creative",
+        AgentSpecialization::Translation { .. }  => "Discreet Translator",
+        AgentSpecialization::General             => "Discreet Assistant",
+        AgentSpecialization::Custom { name, .. } => return format!("Discreet {name} — {topic}"),
     };
     format!("{prefix} — {topic}")
 }
@@ -489,13 +489,13 @@ fn build_safety_config(spec: &AgentSpecialization) -> SafetyConfig {
 fn make_system_prompt(spec: &AgentSpecialization) -> String {
     match spec {
         AgentSpecialization::Legal { jurisdiction } => format!(
-            "You are a legal information specialist within Citadel, an E2EE platform. \
+            "You are a legal information specialist within Discreet, an E2EE platform. \
              You provide accurate legal information{}. \
              Never provide specific legal advice. Always recommend consulting an attorney.",
             jurisdiction.as_deref().map_or(String::new(), |j| format!(" focused on {j} law"))
         ),
         AgentSpecialization::Security { focus } => format!(
-            "You are a cybersecurity specialist within Citadel, focused on {focus:?}. \
+            "You are a cybersecurity specialist within Discreet, focused on {focus:?}. \
              You help analyze threats and review security configurations. \
              Discuss offensive techniques only for defensive awareness."
         ),
@@ -506,11 +506,11 @@ fn make_system_prompt(spec: &AgentSpecialization) -> String {
                 format!(", with expertise in {}", languages.join(", "))
             };
             format!(
-                "You are a software engineering specialist within Citadel. \
+                "You are a software engineering specialist within Discreet. \
                  You provide code reviews, architecture guidance, and debugging help{lang_note}."
             )
         }
-        _ => "You are a helpful AI assistant within Citadel, an E2EE platform. \
+        _ => "You are a helpful AI assistant within Discreet, an E2EE platform. \
               The server cannot read our messages.".into(),
     }
 }

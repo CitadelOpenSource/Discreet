@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,\n                s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,\n                s.member_tab_label, s.owner_id, s.created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         INNER JOIN server_members m ON m.server_id = s.id\n         WHERE m.user_id = $1\n         ORDER BY s.name",
+  "query": "SELECT id, name, description, icon_url, banner_url, default_notification_level,\n                verification_level, explicit_content_filter, system_channel_id, vanity_code,\n                member_tab_label, slash_commands_enabled, owner_id, created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = servers.id) AS member_count\n         FROM servers WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -60,16 +60,21 @@
       },
       {
         "ordinal": 11,
+        "name": "slash_commands_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
         "name": "owner_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "member_count",
         "type_info": "Int8"
       }
@@ -93,8 +98,9 @@
       false,
       false,
       false,
+      false,
       null
     ]
   },
-  "hash": "b15b1b9ff9e5d4958d6d0d9a3e3ef1da9c72700f70b6779e892071caa6e38058"
+  "hash": "5e27bc83d827df65f1f3fdbcb11777401c073d351cfc9b59c47c05ed113d4cbe"
 }

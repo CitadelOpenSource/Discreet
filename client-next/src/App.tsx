@@ -49,7 +49,7 @@ import type { Tier } from './utils/tiers';
 import type { CtxMenuItem } from './components/CtxMenu';
 
 // ── Types ─────────────────────────────────────────────────
-interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; }
+interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; }
 interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; }
 interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; text?: string; authorName?: string; }
 interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; }
@@ -261,6 +261,158 @@ const playSound = (type: 'send' | 'receive' | 'join' | 'leave') => {
   } catch {}
 };
 
+// ── Slash Tool Components ─────────────────────────────────
+
+function CalcTool({ onInsert }: { onInsert: (v: string) => void }) {
+  const [expr, setExpr] = React.useState('');
+  const [result, setResult] = React.useState('');
+  const evaluate = (e: string) => {
+    setExpr(e);
+    if (!e.trim()) { setResult(''); return; }
+    try {
+      // Only allow numbers, operators, parens, dots
+      if (!/^[\d+\-*/().%\s]+$/.test(e)) { setResult('Invalid'); return; }
+      // eslint-disable-next-line no-eval
+      const r = Function('"use strict"; return (' + e + ')')();
+      setResult(typeof r === 'number' && isFinite(r) ? String(Math.round(r * 1e10) / 1e10) : 'Error');
+    } catch { setResult('Error'); }
+  };
+  return (
+    <div>
+      <input value={expr} onChange={e => evaluate(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && result && result !== 'Error' && result !== 'Invalid') { e.preventDefault(); onInsert(result); } }}
+        placeholder="e.g. 24 * 365"
+        autoFocus
+        style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 14, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+      {result && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 20, fontWeight: 700, color: result === 'Error' || result === 'Invalid' ? '#ff4757' : T.ac, fontFamily: 'monospace' }}>{result}</span>
+          {result !== 'Error' && result !== 'Invalid' && (
+            <span onClick={() => onInsert(result)} style={{ fontSize: 11, color: T.ac, cursor: 'pointer', fontWeight: 600 }}>Insert ↵</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const CONVERT_UNITS: Record<string, { units: string[]; convert: (v: number, from: string, to: string) => number }> = {
+  Length: {
+    units: ['m', 'km', 'cm', 'mm', 'in', 'ft', 'yd', 'mi'],
+    convert: (v, from, to) => {
+      const toM: Record<string, number> = { m: 1, km: 1000, cm: 0.01, mm: 0.001, in: 0.0254, ft: 0.3048, yd: 0.9144, mi: 1609.344 };
+      return v * (toM[from] || 1) / (toM[to] || 1);
+    },
+  },
+  Weight: {
+    units: ['kg', 'g', 'mg', 'lb', 'oz', 'ton'],
+    convert: (v, from, to) => {
+      const toKg: Record<string, number> = { kg: 1, g: 0.001, mg: 0.000001, lb: 0.453592, oz: 0.0283495, ton: 907.185 };
+      return v * (toKg[from] || 1) / (toKg[to] || 1);
+    },
+  },
+  Temperature: {
+    units: ['°C', '°F', 'K'],
+    convert: (v, from, to) => {
+      let c = from === '°C' ? v : from === '°F' ? (v - 32) * 5 / 9 : v - 273.15;
+      return to === '°C' ? c : to === '°F' ? c * 9 / 5 + 32 : c + 273.15;
+    },
+  },
+};
+
+function ConvertTool({ onInsert }: { onInsert: (v: string) => void }) {
+  const [cat, setCat] = React.useState('Length');
+  const [val, setVal] = React.useState('');
+  const [from, setFrom] = React.useState(CONVERT_UNITS.Length.units[0]);
+  const [to, setTo] = React.useState(CONVERT_UNITS.Length.units[1]);
+  const info = CONVERT_UNITS[cat];
+  const num = parseFloat(val);
+  const result = !isNaN(num) && info ? Math.round(info.convert(num, from, to) * 1e8) / 1e8 : null;
+  const selStyle: React.CSSProperties = { padding: '4px 6px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 12, outline: 'none' };
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {Object.keys(CONVERT_UNITS).map(c => (
+          <span key={c} onClick={() => { setCat(c); setFrom(CONVERT_UNITS[c].units[0]); setTo(CONVERT_UNITS[c].units[1]); }}
+            style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              background: cat === c ? T.ac : T.bg, color: cat === c ? '#000' : T.mt }}>{c}</span>
+        ))}
+      </div>
+      <input value={val} onChange={e => setVal(e.target.value)} placeholder="Value" autoFocus
+        style={{ width: '100%', padding: '6px 8px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 13, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 6 }} />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+        <select value={from} onChange={e => setFrom(e.target.value)} style={selStyle}>
+          {info.units.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <span style={{ color: T.mt, fontSize: 12 }}>→</span>
+        <select value={to} onChange={e => setTo(e.target.value)} style={selStyle}>
+          {info.units.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+      {result !== null && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: T.ac, fontFamily: 'monospace' }}>{result} {to}</span>
+          <span onClick={() => onInsert(`${val} ${from} = ${result} ${to}`)} style={{ fontSize: 11, color: T.ac, cursor: 'pointer', fontWeight: 600 }}>Insert ↵</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColorTool({ onInsert }: { onInsert: (v: string) => void }) {
+  const [hex, setHex] = React.useState('#00D4AA');
+  const hexToRgb = (h: string) => {
+    const m = h.replace('#', '').match(/.{2}/g);
+    if (!m || m.length < 3) return null;
+    return { r: parseInt(m[0], 16), g: parseInt(m[1], 16), b: parseInt(m[2], 16) };
+  };
+  const rgbToHex = (r: number, g: number, b: number) =>
+    '#' + [r, g, b].map(c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  const rgb = hexToRgb(hex);
+  const [rVal, setR] = React.useState(rgb?.r ?? 0);
+  const [gVal, setG] = React.useState(rgb?.g ?? 212);
+  const [bVal, setB] = React.useState(rgb?.b ?? 170);
+  const updateFromHex = (h: string) => {
+    setHex(h);
+    const c = hexToRgb(h);
+    if (c) { setR(c.r); setG(c.g); setB(c.b); }
+  };
+  const updateFromRgb = (r: number, g: number, b: number) => {
+    setR(r); setG(g); setB(b);
+    setHex(rgbToHex(r, g, b));
+  };
+  const display = hex.toUpperCase();
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+        <input type="color" value={hex} onChange={e => updateFromHex(e.target.value)}
+          style={{ width: 48, height: 48, border: 'none', borderRadius: 6, cursor: 'pointer', padding: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: T.mt, marginBottom: 4 }}>HEX</div>
+          <input value={display} onChange={e => { const v = e.target.value; if (/^#?[0-9A-Fa-f]{0,6}$/.test(v.replace('#', ''))) updateFromHex(v.startsWith('#') ? v : '#' + v); }}
+            style={{ width: '100%', padding: '4px 6px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 13, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {[{ label: 'R', val: rVal, set: (v: number) => updateFromRgb(v, gVal, bVal), col: '#ff4757' },
+          { label: 'G', val: gVal, set: (v: number) => updateFromRgb(rVal, v, bVal), col: '#2ecc71' },
+          { label: 'B', val: bVal, set: (v: number) => updateFromRgb(rVal, gVal, v), col: '#3498db' }].map(c => (
+          <div key={c.label} style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: c.col, fontWeight: 700, marginBottom: 2 }}>{c.label}</div>
+            <input type="number" min={0} max={255} value={c.val}
+              onChange={e => c.set(Math.max(0, Math.min(255, parseInt(e.target.value) || 0)))}
+              style={{ width: '100%', padding: '3px 4px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, fontSize: 12, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <span onClick={() => onInsert(display)} style={{ flex: 1, textAlign: 'center', padding: '5px 0', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, fontSize: 11, color: T.ac, cursor: 'pointer', fontWeight: 600 }}>Insert HEX</span>
+        <span onClick={() => onInsert(`rgb(${rVal}, ${gVal}, ${bVal})`)} style={{ flex: 1, textAlign: 'center', padding: '5px 0', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, fontSize: 11, color: T.ac, cursor: 'pointer', fontWeight: 600 }}>Insert RGB</span>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════
 export default function App() {
   const [authed, setAuthed] = useState(false);
@@ -295,7 +447,6 @@ export default function App() {
   const [serverOrder, setServerOrder] = useState<string[]>(() => JSON.parse(localStorage.getItem('d_srv_order') || '[]'));
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [dragServer, setDragServer] = useState<string | null>(null);
-  const [showRailDms, setShowRailDms] = useState(() => localStorage.getItem('d_rail_dms') !== 'false');
   const [voiceChannel,   setVoiceChannel]   = useState<Channel | null>(null);
   const [voicePresence,  setVoicePresence]  = useState<Record<string, string[]>>({});
   const [streamStatus,    setStreamStatus]    = useState<Record<string, { active: boolean; viewerCount: number; viewerUrl?: string }>>({});
@@ -355,6 +506,7 @@ export default function App() {
 
   // ── UI State ────────────────────────────────────────────
   const [msgInput, setMsgInput] = useState('');
+  const [slashTool, setSlashTool] = useState<'calc' | 'convert' | 'color' | null>(null);
   const [modal, setModal] = useState<string | null>(null);
   const [selectedBot, setSelectedBot] = useState<any>(null);
   const [createName, setCreateName] = useState('');
@@ -565,6 +717,15 @@ export default function App() {
       }
       if (evt.type === 'user_update' && evt.user_id && evt.custom_status !== undefined) {
         setCustomStatuses(p => ({ ...p, [evt.user_id]: evt.custom_status }));
+      }
+      if (evt.type === 'user_profile_update' && evt.user_id && evt.avatar_url) {
+        setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, avatar_url: evt.avatar_url } : m));
+      }
+      if (evt.type === 'account_suspended') {
+        api.clearAuth();
+        setAuthed(false);
+        alert(evt.reason || 'Your account has been suspended.');
+        return;
       }
       // Track all users joining/leaving voice channels (including bots via force_voice_join)
       if ((evt.type === 'voice_join') && evt.channel_id && evt.user_id && evt.user_id !== api.userId) {
@@ -844,6 +1005,14 @@ export default function App() {
       return;
     }
     try {
+      // Slash tool overlays (always allowed in DMs; server-gated in channels)
+      const toolCmd = msgInput.trim().toLowerCase();
+      const slashToolsAllowed = view !== 'server' || curServer?.slash_commands_enabled !== false;
+      if (slashToolsAllowed) {
+        if (toolCmd === '/calc' || toolCmd === '/calculator') { setSlashTool('calc'); setMsgInput(''); return; }
+        if (toolCmd === '/convert' || toolCmd === '/converter') { setSlashTool('convert'); setMsgInput(''); return; }
+        if (toolCmd === '/color' || toolCmd === '/colour' || toolCmd === '/colorpicker') { setSlashTool('color'); setMsgInput(''); return; }
+      }
       // Slash commands
       if (msgInput.startsWith('/') && curChannel) {
         const handled = await processSlashCommand(msgInput, {
@@ -1199,8 +1368,8 @@ export default function App() {
         setCtxMenu({ x: e.clientX, y: e.clientY, items });
       }}
       title={s.name}
-      style={{ width: 42, height: 42, borderRadius: curServer?.id === s.id ? 14 : 21, background: s.icon_url ? 'transparent' : (curServer?.id === s.id ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2), display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', fontSize: 16, fontWeight: 700, color: curServer?.id === s.id ? '#000' : T.tx, overflow: 'hidden', position: 'relative' }}>
-      {s.icon_url ? <img src={s.icon_url} alt="" style={{ width: 42, height: 42, objectFit: 'cover' }} /> : s.name[0]?.toUpperCase()}
+      style={{ width: 48, height: 48, borderRadius: curServer?.id === s.id ? 16 : 24, background: s.icon_url ? 'transparent' : (curServer?.id === s.id ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2), display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', fontSize: 16, fontWeight: 700, color: curServer?.id === s.id ? '#000' : T.tx, overflow: 'hidden', position: 'relative' }}>
+      {s.icon_url ? <img src={s.icon_url} alt="" style={{ width: 48, height: 48, objectFit: 'cover' }} /> : s.name[0]?.toUpperCase()}
       {isFav && <div style={{ position: 'absolute', bottom: -1, right: -1, fontSize: 8, color: '#f0b232' }}>★</div>}
       {Object.entries(unreadCounts).some(([k, v]) => v > 0 && channels.some(c => c.id === k && c.server_id === s.id)) && curServer?.id !== s.id && (
         <div style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, background: T.err, border: `2px solid ${T.bg}` }} />
@@ -1215,17 +1384,14 @@ export default function App() {
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
       {/* ═══ Server Rail ═══ */}
-      <div className="server-rail" style={{ width: 62, minWidth: 62, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
-        <div onClick={goHome} title="Home" style={{ width: 42, height: 42, borderRadius: view === 'home' ? 14 : 21, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
-        <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, marginBottom: 4 }} />
-        {/* DM toggle */}
-        {showRailDms && dms.length > 0 && (<>
-          <div title="Direct Messages" style={{ width: 42, height: 42, borderRadius: view === 'dm' ? 14 : 21, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
-            <I.Msg />
-            {totalDmUnread > 0 && <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, background: '#ed4245', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${T.bg}`, padding: '0 3px' }}>{totalDmUnread}</div>}
-          </div>
-          <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, marginBottom: 2 }} />
-        </>)}
+      <div className="server-rail" style={{ width: 68, minWidth: 68, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
+        <div onClick={goHome} title="Home" style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
+        {/* DM button */}
+        <div title="Direct Messages" style={{ width: 48, height: 48, borderRadius: view === 'dm' ? 16 : 24, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
+          <I.Msg />
+          {totalDmUnread > 0 && <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, background: '#ed4245', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${T.bg}`, padding: '0 3px' }}>{totalDmUnread}</div>}
+        </div>
+        <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, margin: '4px 0' }} />
         {/* Favorite servers */}
         {(() => {
           const favServers = servers.filter(s => serverFavorites.includes(s.id));
@@ -1250,14 +1416,14 @@ export default function App() {
         {/* Regular servers (not in favorites or folders) */}
         {loadingServers && servers.length === 0
           ? Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} style={{ width: 42, height: 42, borderRadius: 21, ...shimBase }} />
+              <div key={i} style={{ width: 48, height: 48, borderRadius: 24, ...shimBase }} />
             ))
           : (() => {
               const inFolder = new Set(Object.values(serverFolders).flat());
               return servers.filter(s => !serverFavorites.includes(s.id) && !inFolder.has(s.id)).map(s => renderServerIcon(s, false));
             })()
         }
-        {!me?.is_guest && <div onClick={() => setModal('create-server')} title="Create Server" style={{ width: 42, height: 42, borderRadius: 21, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>}
+        {!me?.is_guest && <div onClick={() => setModal('create-server')} title="Create Server" style={{ width: 48, height: 48, borderRadius: 24, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>}
       </div>
 
       {/* ═══ Sidebar ═══ */}
@@ -2226,6 +2392,26 @@ export default function App() {
               );
             })()}
 
+            {/* Slash tool overlays */}
+            {slashTool && (
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', bottom: 0, left: 16, right: 16, zIndex: 50 }}>
+                  <div style={{ width: 280, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>
+                        {slashTool === 'calc' ? 'Calculator' : slashTool === 'convert' ? 'Unit Converter' : 'Color Picker'}
+                      </span>
+                      <span onClick={() => setSlashTool(null)} style={{ cursor: 'pointer', color: T.mt, fontSize: 16, lineHeight: 1 }} title="Close (Esc)">✕</span>
+                    </div>
+
+                    {slashTool === 'calc' && <CalcTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+                    {slashTool === 'convert' && <ConvertTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+                    {slashTool === 'color' && <ColorTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Input */}
             <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2245,7 +2431,7 @@ export default function App() {
               </label>
               <input ref={inputRef} value={msgInput}
                 onChange={e => { setMsgInput(e.target.value); if (Date.now() - typingRef.current > 5000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                onKeyDown={e => { if (e.key === 'Escape') { setSlashTool(null); } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
                 style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
               <div onClick={() => setShowEmojiPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
@@ -2956,7 +3142,12 @@ export default function App() {
       {modal === 'avatar-creator' && (
         <Suspense fallback={<ModalLoadingFallback />}>
           <AvatarCreator
-            onSave={async (dataUrl: string) => { await api.updateProfile({ avatar: dataUrl }); setModal(null); }}
+            onSave={async (dataUrl: string) => {
+              const res = await api.updateProfile({ avatar: dataUrl });
+              const json = await res?.json().catch(() => null);
+              api.ws?.send(JSON.stringify({ type: 'user_profile_update', avatar_url: json?.avatar_url ?? dataUrl }));
+              setModal(null);
+            }}
             onClose={() => setModal(null)}
           />
         </Suspense>

@@ -1081,7 +1081,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             );
           })}
           <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 6, fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 8 }}>
-            <I.Shield /> Citadel respects your privacy. Shared server info is never publicly exposed.
+            <I.Shield /> Discreet respects your privacy. Shared server info is never publicly exposed.
           </div>
         </>)}
 
