@@ -45,7 +45,7 @@ redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
 # ── Auth ──────────────────────────────────────────────────
 argon2 = "0.5"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 # ── Crypto (currently used) ───────────────────────────────
 sha2 = "0.10"
