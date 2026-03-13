@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE key_packages SET claimed = TRUE, claimed_by = $1, claimed_at = NOW()\n         WHERE id = (\n             SELECT id FROM key_packages\n             WHERE user_id = $2 AND claimed = FALSE\n             ORDER BY created_at ASC\n             LIMIT 1\n             FOR UPDATE SKIP LOCKED\n         )\n         RETURNING id, key_package",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_package",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "69436c87cf9f40abdf397f107437e2a81c164d812e156df81d5299c18663aeb8"
+}

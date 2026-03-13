@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_context_summaries (bot_user_id, channel_id, summary_text, message_count, updated_at)\n        VALUES ($1, $2, $3, $4, NOW())\n        ON CONFLICT (bot_user_id, channel_id)\n        DO UPDATE SET\n            summary_text = EXCLUDED.summary_text,\n            message_count = EXCLUDED.message_count,\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "69860fa5c6b2524e21d09fd425827a1103a943c74dbc0868ae94514ad130596c"
+}

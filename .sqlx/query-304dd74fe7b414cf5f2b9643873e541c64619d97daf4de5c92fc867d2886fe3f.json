@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                SELECT 1 FROM sessions\n                WHERE id = $1 AND user_id = $2\n                  AND revoked_at IS NULL\n                  AND expires_at > NOW()\n            )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "304dd74fe7b414cf5f2b9643873e541c64619d97daf4de5c92fc867d2886fe3f"
+}

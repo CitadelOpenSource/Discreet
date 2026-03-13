@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM dm_channels WHERE user_a = $1 OR user_b = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b5ff1287e545d7b4ab73f0003768aabf0c0136047f3ed9071c31d6198b80d09"
+}

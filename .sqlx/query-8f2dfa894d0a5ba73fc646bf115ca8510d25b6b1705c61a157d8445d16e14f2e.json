@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE soundboard_clips SET play_count = play_count + 1 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f2dfa894d0a5ba73fc646bf115ca8510d25b6b1705c61a157d8445d16e14f2e"
+}

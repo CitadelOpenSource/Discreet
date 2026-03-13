@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n               bc.bot_user_id,\n               bc.display_name,\n               bc.trigger_keywords\n           FROM bot_configs bc\n           JOIN server_members sm\n             ON  sm.user_id   = bc.bot_user_id\n             AND sm.server_id = bc.server_id\n           WHERE bc.server_id = $1\n             AND bc.enabled   = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "trigger_keywords",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "647a6ea20dd2d30bf71da5c95d1a848fb365a9f2c0f81319b019bc3ad60a8770"
+}

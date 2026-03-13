@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(BIT_OR(r.permissions), 0)\n         FROM member_roles mr\n         INNER JOIN roles r ON r.id = mr.role_id\n         WHERE mr.server_id = $1 AND mr.user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b023e4aef47f20755d3de2d235008a755a9731886b6eb9c66bc26a8d81bf4ca0"
+}

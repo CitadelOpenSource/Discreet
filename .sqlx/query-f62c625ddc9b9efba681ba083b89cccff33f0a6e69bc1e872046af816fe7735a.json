@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM agent_spawn_log\n         WHERE requesting_user_id = $1 AND created_at > NOW() - INTERVAL '30 seconds'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f62c625ddc9b9efba681ba083b89cccff33f0a6e69bc1e872046af816fe7735a"
+}

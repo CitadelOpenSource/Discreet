@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(MAX(position), -1)\n             FROM channels\n             WHERE server_id = $1\n               AND ((category_id IS NULL AND $2::uuid IS NULL) OR category_id = $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "79c5b35cc1792c3e5d37a779224cabfe3dc91f7f30fd96b6cf04351f62160fbb"
+}

@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT theme, font_size, compact_mode, show_embeds, dm_privacy,\n                friend_request_privacy, notification_level, show_shared_servers,\n                updated_at\n         FROM user_settings WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "theme",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "font_size",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "compact_mode",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "show_embeds",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "dm_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "friend_request_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "show_shared_servers",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2382ed6400e802b11b96a916e8e0e39dd19946fa50ced7d06f95f45f6834ab46"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO guest_rate_limits (ip_address) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d595e905748747a3307dfd96315b2a0443a6d60da8bf70d0eeb9012f9e7771b7"
+}

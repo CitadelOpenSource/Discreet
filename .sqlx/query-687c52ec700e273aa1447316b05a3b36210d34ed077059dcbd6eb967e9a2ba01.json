@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.id, g.name, g.owner_id, g.icon_url, g.created_at,\n           (SELECT MAX(m.created_at) FROM group_dm_messages m WHERE m.group_dm_id = g.id) as last_message_at\n           FROM group_dm_channels g\n           JOIN group_dm_members gm ON gm.group_dm_id = g.id\n           WHERE gm.user_id = $1\n           ORDER BY COALESCE((SELECT MAX(m.created_at) FROM group_dm_messages m WHERE m.group_dm_id = g.id), g.created_at) DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "icon_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_message_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "687c52ec700e273aa1447316b05a3b36210d34ed077059dcbd6eb967e9a2ba01"
+}

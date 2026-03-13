@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(MAX(r.position), 0) FROM member_roles mr\n             JOIN roles r ON r.id = mr.role_id\n             WHERE mr.server_id = $1 AND mr.user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3669aa609e0a6f6c2f939ede3537a535691b4f814be15a0726256143061b576a"
+}

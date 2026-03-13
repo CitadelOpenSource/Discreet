@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM email_tokens WHERE user_id = $1 AND token_type = 'verify'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "996308cb560ab06561d3d4b047039935fc16731e69b0ea5e6d20e2afa7808cf2"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_a, user_b FROM dm_channels WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_a",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_b",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8763296bf4aace5bc67fb704f0e7954a427fe5cf692fb5b9fcb3efcc6bc3a101"
+}

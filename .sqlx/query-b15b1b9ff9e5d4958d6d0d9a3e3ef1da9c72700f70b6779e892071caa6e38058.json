@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,\n                s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,\n                s.member_tab_label, s.owner_id, s.created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         INNER JOIN server_members m ON m.server_id = s.id\n         WHERE m.user_id = $1\n         ORDER BY s.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "icon_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "banner_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "default_notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "verification_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "explicit_content_filter",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "system_channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "vanity_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "member_tab_label",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b15b1b9ff9e5d4958d6d0d9a3e3ef1da9c72700f70b6779e892071caa6e38058"
+}

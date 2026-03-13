@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users\n                 SET email_verified = TRUE,\n                     account_tier = CASE\n                         WHEN account_tier IN ('guest', 'unverified') THEN 'verified'\n                         ELSE account_tier\n                     END,\n                     badge_type = CASE\n                         WHEN account_tier IN ('guest', 'unverified') THEN 'shield'\n                         ELSE badge_type\n                     END\n                 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5474018ebe38b8d4980bf33422a2949fa4b756c2cad95b1dba7d9126c01375d"
+}

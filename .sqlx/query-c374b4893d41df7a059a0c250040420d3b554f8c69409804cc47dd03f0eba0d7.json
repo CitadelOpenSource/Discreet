@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_spawn_log\n         SET status = 'ready', agent_id = $1, channel_id = $2, completed_at = NOW()\n         WHERE id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c374b4893d41df7a059a0c250040420d3b554f8c69409804cc47dd03f0eba0d7"
+}

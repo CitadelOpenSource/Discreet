@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO thread_messages (thread_id, author_id, content_ciphertext) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fcf98ad5b3a955574c9922ae4f06b43a7352c01a937a622a5c7e58720bb065c5"
+}

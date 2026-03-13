@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT summary_text, message_count, updated_at\n        FROM agent_context_summaries\n        WHERE bot_user_id = $1 AND channel_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "summary_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "message_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c9da7266552daf9b2c91ae22fd9cdebb8529a9d9087883cd29a3608bfbdc2c14"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mls_version, mls_epoch FROM channels WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mls_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "mls_epoch",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "452cf8201cd531759351023fabbaab661fef2359b51bb8de8379c466ee74bb66"
+}

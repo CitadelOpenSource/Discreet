@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 as alive",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "alive",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9eec4a6472b22aa450cf6700567d9244e903ae6bf2325ef27dc8f73dc5270315"
+}

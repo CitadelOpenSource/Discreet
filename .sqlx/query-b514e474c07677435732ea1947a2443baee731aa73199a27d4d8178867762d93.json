@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO friendships (id, user_id, friend_id, status)\n         VALUES ($1, $2, $3, 'pending')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b514e474c07677435732ea1947a2443baee731aa73199a27d4d8178867762d93"
+}

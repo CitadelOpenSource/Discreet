@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM soundboard_clips WHERE id = $1 AND server_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f6e1ee4f7e98f5f7e50e2dbe8c692d5a29f35b2fe3464726b77d6e1231970bf"
+}

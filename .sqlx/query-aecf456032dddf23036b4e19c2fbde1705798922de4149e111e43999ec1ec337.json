@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            dc.id,\n            dc.user_a,\n            dc.user_b,\n            dc.created_at,\n            (SELECT MAX(dm.created_at) FROM dm_messages dm WHERE dm.dm_channel_id = dc.id)\n                AS last_message_at\n         FROM dm_channels dc\n         WHERE dc.user_a = $1 OR dc.user_b = $1\n         ORDER BY COALESCE(\n            (SELECT MAX(dm.created_at) FROM dm_messages dm WHERE dm.dm_channel_id = dc.id),\n            dc.created_at\n         ) DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_a",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_b",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_message_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "aecf456032dddf23036b4e19c2fbde1705798922de4149e111e43999ec1ec337"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_settings (user_id, locale, theme, notifications_enabled)\n           VALUES ($1,\n               COALESCE($2, 'en'),\n               COALESCE($3, 'dark'),\n               COALESCE($4, TRUE))\n           ON CONFLICT (user_id) DO UPDATE SET\n               locale                = COALESCE($2, user_settings.locale),\n               theme                 = COALESCE($3, user_settings.theme),\n               notifications_enabled = COALESCE($4, user_settings.notifications_enabled),\n               updated_at            = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "abace842e51f9a28a342693c43496e76ad2584b95ecdeb670472bd04ed12fc00"
+}
