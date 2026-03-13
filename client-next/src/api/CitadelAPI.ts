@@ -8,6 +8,38 @@
 const API_BASE = window.location.origin + '/api/v1';
 const WS_BASE = window.location.origin.replace(/^http/, 'ws');
 
+// ── Storage abstraction ──────────────────────────────────────────────────────
+// Falls back localStorage → sessionStorage → in-memory if storage is blocked.
+
+function _detectStorage(): Storage | null {
+  const key = '__d_storage_test__';
+  try { localStorage.setItem(key, '1'); localStorage.removeItem(key); return localStorage; } catch {}
+  try { sessionStorage.setItem(key, '1'); sessionStorage.removeItem(key); return sessionStorage; } catch {}
+  return null;
+}
+
+const _backingStorage = _detectStorage();
+
+/** True when neither localStorage nor sessionStorage is available. */
+export const storageBlocked = _backingStorage === null;
+
+// Thin wrapper so the rest of the code never touches localStorage directly.
+const _memFallback: Record<string, string> = {};
+export const _storage = {
+  getItem(k: string): string | null {
+    if (_backingStorage) return _backingStorage.getItem(k);
+    return _memFallback[k] ?? null;
+  },
+  setItem(k: string, v: string): void {
+    if (_backingStorage) _backingStorage.setItem(k, v);
+    else _memFallback[k] = v;
+  },
+  removeItem(k: string): void {
+    if (_backingStorage) _backingStorage.removeItem(k);
+    else delete _memFallback[k];
+  },
+};
+
 type WsListener = (data: any) => void;
 
 export class CitadelAPI {
@@ -24,11 +56,21 @@ export class CitadelAPI {
     // Refresh token lives in an HttpOnly cookie set by the server.
     this.token = null;
     this.refreshToken = null;
-    this.userId = localStorage.getItem('d_uid') || null;
-    this.username = localStorage.getItem('d_uname') || null;
+    this.userId = _storage.getItem('d_uid');
+    this.username = _storage.getItem('d_uname');
     this.ws = null;
     this.wsListeners = new Set();
     this._userCache = {};
+
+    // Warn if cookies are not writable (privacy browsers, iframe sandboxing)
+    try {
+      document.cookie = '_d_test=1; SameSite=Strict; Path=/; Max-Age=0';
+      if (!document.cookie.includes('_d_test')) {
+        console.warn('[CitadelAPI] Cookies are not writable — CSRF will rely on Bearer-only auth');
+      }
+    } catch {
+      console.warn('[CitadelAPI] document.cookie is inaccessible — CSRF will rely on Bearer-only auth');
+    }
   }
 
   setAuth(access: string, refresh: string, userId: string, username?: string) {
@@ -37,11 +79,11 @@ export class CitadelAPI {
     this.userId = userId;
     this.username = username || userId;
     // Only persist non-secret identifiers.
-    localStorage.setItem('d_uid', userId);
-    if (username) localStorage.setItem('d_uname', username);
+    _storage.setItem('d_uid', userId);
+    if (username) _storage.setItem('d_uname', username);
     // Clean up legacy localStorage tokens from older versions.
-    localStorage.removeItem('d_tok');
-    localStorage.removeItem('d_ref');
+    _storage.removeItem('d_tok');
+    _storage.removeItem('d_ref');
   }
 
   clearAuth() {
@@ -49,7 +91,7 @@ export class CitadelAPI {
     this.refreshToken = null;
     this.userId = null;
     this.username = null;
-    ['d_tok', 'd_ref', 'd_uid', 'd_uname'].forEach(k => localStorage.removeItem(k));
+    ['d_tok', 'd_ref', 'd_uid', 'd_uname'].forEach(k => _storage.removeItem(k));
     this.disconnectWs();
   }
 
@@ -186,6 +228,7 @@ export class CitadelAPI {
   async deleteMessage(mid: string) { return this.fetch(`/messages/${mid}`, { method: 'DELETE' }); }
   async bulkDeleteMessages(cid: string, ids: string[], reason?: string) { return (await this.fetch(`/channels/${cid}/messages/bulk-delete`, { method: 'POST', body: JSON.stringify({ message_ids: ids, reason }) })).json(); }
   async getMessagesBatch(cid: string, limit = 200, before?: string) { const params = [`limit=${limit}`]; if (before) params.push(`before=${before}`); try { const r = await this.fetch(`/channels/${cid}/messages?${params.join('&')}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async searchMessages(cid: string, q: string, limit = 50) { return (await this.fetch(`/channels/${cid}/messages/search?q=${encodeURIComponent(q)}&limit=${limit}`)).json(); }
 
   // ── Roles ──
   async listRoles(sid: string) { try { const r = await this.fetch(`/servers/${sid}/roles`); return r.ok ? r.json() : []; } catch { return []; } }

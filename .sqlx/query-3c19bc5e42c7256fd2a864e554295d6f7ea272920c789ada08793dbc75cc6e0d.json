@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name, s.owner_id, u.username AS owner_username,\n                s.last_activity_at, s.is_archived, s.scheduled_deletion_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         JOIN users u ON u.id = s.owner_id\n         WHERE s.last_activity_at < NOW() - make_interval(days => $1)\n         ORDER BY s.last_activity_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_archived",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "scheduled_deletion_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "3c19bc5e42c7256fd2a864e554295d6f7ea272920c789ada08793dbc75cc6e0d"
+}

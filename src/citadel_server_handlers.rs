@@ -60,6 +60,8 @@ pub struct UpdateServerRequest {
     pub system_channel_id: Option<Uuid>,
     pub member_tab_label: Option<String>,
     pub slash_commands_enabled: Option<bool>,
+    pub message_retention_days: Option<Option<i32>>,
+    pub disappearing_messages_default: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +115,12 @@ pub struct ServerInfo {
     pub vanity_code: Option<String>,
     pub member_tab_label: String,
     pub slash_commands_enabled: bool,
+    pub message_retention_days: Option<i32>,
+    pub disappearing_messages_default: Option<String>,
+    pub last_activity_at: Option<String>,
+    pub is_archived: bool,
+    pub archived_at: Option<String>,
+    pub scheduled_deletion_at: Option<String>,
     pub owner_id: Uuid,
     pub member_count: i64,
     pub created_at: String,
@@ -342,6 +350,12 @@ pub async fn create_server(
             vanity_code: None,
             member_tab_label: "Users".into(),
             slash_commands_enabled: true,
+            message_retention_days: None,
+            disappearing_messages_default: None,
+            last_activity_at: Some(chrono::Utc::now().to_rfc3339()),
+            is_archived: false,
+            archived_at: None,
+            scheduled_deletion_at: None,
             owner_id: auth.user_id,
             member_count: 1,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -358,7 +372,9 @@ pub async fn list_servers(
     let rows = sqlx::query!(
         "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,
                 s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,
-                s.member_tab_label, s.slash_commands_enabled, s.owner_id, s.created_at,
+                s.member_tab_label, s.slash_commands_enabled, s.message_retention_days,
+                s.disappearing_messages_default, s.last_activity_at, s.is_archived,
+                s.archived_at, s.scheduled_deletion_at, s.owner_id, s.created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM servers s
          INNER JOIN server_members m ON m.server_id = s.id
@@ -384,6 +400,12 @@ pub async fn list_servers(
             vanity_code: r.vanity_code,
             member_tab_label: r.member_tab_label,
             slash_commands_enabled: r.slash_commands_enabled,
+            message_retention_days: r.message_retention_days,
+            disappearing_messages_default: r.disappearing_messages_default.clone(),
+            last_activity_at: r.last_activity_at.map(|t| t.to_rfc3339()),
+            is_archived: r.is_archived,
+            archived_at: r.archived_at.map(|t| t.to_rfc3339()),
+            scheduled_deletion_at: r.scheduled_deletion_at.map(|t| t.to_rfc3339()),
             owner_id: r.owner_id,
             member_count: r.member_count.unwrap_or(0),
             created_at: r.created_at.to_rfc3339(),
@@ -406,7 +428,9 @@ pub async fn get_server(
     let server = sqlx::query!(
         "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,
                 s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,
-                s.member_tab_label, s.slash_commands_enabled, s.owner_id, s.created_at,
+                s.member_tab_label, s.slash_commands_enabled, s.message_retention_days,
+                s.disappearing_messages_default, s.last_activity_at, s.is_archived,
+                s.archived_at, s.scheduled_deletion_at, s.owner_id, s.created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM servers s
          WHERE s.id = $1",
@@ -429,6 +453,12 @@ pub async fn get_server(
         vanity_code: server.vanity_code,
         member_tab_label: server.member_tab_label,
         slash_commands_enabled: server.slash_commands_enabled,
+        message_retention_days: server.message_retention_days,
+        disappearing_messages_default: server.disappearing_messages_default,
+        last_activity_at: server.last_activity_at.map(|t| t.to_rfc3339()),
+        is_archived: server.is_archived,
+        archived_at: server.archived_at.map(|t| t.to_rfc3339()),
+        scheduled_deletion_at: server.scheduled_deletion_at.map(|t| t.to_rfc3339()),
         owner_id: server.owner_id,
         member_count: server.member_count.unwrap_or(0),
         created_at: server.created_at.to_rfc3339(),
@@ -585,6 +615,26 @@ pub async fn update_server(
         .await?;
     }
 
+    if let Some(ref retention) = req.message_retention_days {
+        sqlx::query!(
+            "UPDATE servers SET message_retention_days = $1, updated_at = NOW() WHERE id = $2",
+            *retention,
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    if let Some(ref disappearing) = req.disappearing_messages_default {
+        sqlx::query!(
+            "UPDATE servers SET disappearing_messages_default = $1, updated_at = NOW() WHERE id = $2",
+            disappearing.as_deref() as Option<&str>,
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
     // Audit log
     let changes = serde_json::json!({
         "name": req.name, "description": req.description.is_some(),
@@ -593,6 +643,8 @@ pub async fn update_server(
         "verification_level": req.verification_level,
         "member_tab_label": req.member_tab_label,
         "slash_commands_enabled": req.slash_commands_enabled,
+        "message_retention_days": req.message_retention_days,
+        "disappearing_messages_default": req.disappearing_messages_default,
     });
     let _ = citadel_audit::log_action(
         &state.db, server_id, auth.user_id, "UPDATE_SERVER",
@@ -603,7 +655,9 @@ pub async fn update_server(
     let server = sqlx::query!(
         "SELECT id, name, description, icon_url, banner_url, default_notification_level,
                 verification_level, explicit_content_filter, system_channel_id, vanity_code,
-                member_tab_label, slash_commands_enabled, owner_id, created_at,
+                member_tab_label, slash_commands_enabled, message_retention_days,
+                disappearing_messages_default, last_activity_at, is_archived,
+                archived_at, scheduled_deletion_at, owner_id, created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = servers.id) AS member_count
          FROM servers WHERE id = $1",
         server_id,
@@ -624,6 +678,12 @@ pub async fn update_server(
         vanity_code: server.vanity_code,
         member_tab_label: server.member_tab_label,
         slash_commands_enabled: server.slash_commands_enabled,
+        message_retention_days: server.message_retention_days,
+        disappearing_messages_default: server.disappearing_messages_default,
+        last_activity_at: server.last_activity_at.map(|t| t.to_rfc3339()),
+        is_archived: server.is_archived,
+        archived_at: server.archived_at.map(|t| t.to_rfc3339()),
+        scheduled_deletion_at: server.scheduled_deletion_at.map(|t| t.to_rfc3339()),
         owner_id: server.owner_id,
         member_count: server.member_count.unwrap_or(0),
         created_at: server.created_at.to_rfc3339(),
@@ -728,13 +788,20 @@ pub async fn join_server(
     .execute(&state.db)
     .await?;
 
-    // Increment invite use count.
+    // Increment invite use count and update last_activity_at.
     sqlx::query!(
         "UPDATE server_invites SET use_count = use_count + 1 WHERE id = $1",
         invite.id,
     )
     .execute(&state.db)
     .await?;
+
+    let _ = sqlx::query!(
+        "UPDATE servers SET last_activity_at = NOW() WHERE id = $1",
+        server_id,
+    )
+    .execute(&state.db)
+    .await;
 
     tracing::info!(server_id = %server_id, user_id = %auth.user_id, "User joined server");
 
@@ -1244,6 +1311,259 @@ pub async fn list_bots(
     Ok(Json(bots))
 }
 
+// ─── POST /servers/:id/archive ──────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ArchiveRequest {
+    /// true = archive, false = unarchive.
+    pub archive: bool,
+}
+
+pub async fn archive_server(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<ArchiveRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_owner(&state, server_id, auth.user_id).await?;
+
+    if req.archive {
+        sqlx::query!(
+            "UPDATE servers SET is_archived = TRUE, archived_at = NOW(), updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, auth.user_id, "SERVER_ARCHIVED",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+
+        tracing::info!(server_id = %server_id, "Server archived by owner");
+    } else {
+        // Unarchive also cancels any scheduled deletion.
+        sqlx::query!(
+            "UPDATE servers SET is_archived = FALSE, archived_at = NULL, scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, auth.user_id, "SERVER_UNARCHIVED",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+
+        tracing::info!(server_id = %server_id, "Server unarchived by owner");
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── POST /servers/:id/schedule-deletion ────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ScheduleDeletionRequest {
+    /// true = schedule 30-day deletion, false = cancel.
+    pub schedule: bool,
+}
+
+pub async fn schedule_server_deletion(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<ScheduleDeletionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_owner(&state, server_id, auth.user_id).await?;
+
+    if req.schedule {
+        let deletion_at = chrono::Utc::now() + chrono::Duration::days(30);
+        sqlx::query!(
+            "UPDATE servers SET scheduled_deletion_at = $1, is_archived = TRUE, archived_at = COALESCE(archived_at, NOW()), updated_at = NOW() WHERE id = $2",
+            deletion_at,
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, auth.user_id, "SERVER_DELETION_SCHEDULED",
+            Some("server"), Some(server_id),
+            Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
+            None,
+        ).await;
+
+        tracing::info!(server_id = %server_id, deletion_at = %deletion_at, "Server deletion scheduled");
+    } else {
+        sqlx::query!(
+            "UPDATE servers SET scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, auth.user_id, "SERVER_DELETION_CANCELLED",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+
+        tracing::info!(server_id = %server_id, "Server deletion cancelled");
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── GET /admin/inactive-servers ────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct InactiveServersQuery {
+    /// Minimum days idle to include (default 30).
+    #[serde(default = "default_inactive_days")]
+    pub days: i64,
+}
+
+fn default_inactive_days() -> i64 { 30 }
+
+#[derive(Debug, Serialize)]
+pub struct InactiveServerInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub owner_id: Uuid,
+    pub owner_username: String,
+    pub member_count: i64,
+    pub last_activity_at: String,
+    pub days_idle: i64,
+    pub is_archived: bool,
+    pub scheduled_deletion_at: Option<String>,
+}
+
+pub async fn list_inactive_servers(
+    caller: crate::citadel_platform_permissions::PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<InactiveServersQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    crate::citadel_platform_admin_handlers::require_staff_role(&caller)?;
+
+    let days = params.days.clamp(1, 365) as i32;
+
+    let rows = sqlx::query!(
+        "SELECT s.id, s.name, s.owner_id, u.username AS owner_username,
+                s.last_activity_at, s.is_archived, s.scheduled_deletion_at,
+                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
+         FROM servers s
+         JOIN users u ON u.id = s.owner_id
+         WHERE s.last_activity_at < NOW() - make_interval(days => $1)
+         ORDER BY s.last_activity_at ASC",
+        days,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let servers: Vec<InactiveServerInfo> = rows
+        .into_iter()
+        .map(|r| {
+            let last_at = r.last_activity_at.unwrap_or_else(|| chrono::Utc::now().naive_utc().and_utc());
+            let idle = (chrono::Utc::now() - last_at).num_days();
+            InactiveServerInfo {
+                id: r.id,
+                name: r.name,
+                owner_id: r.owner_id,
+                owner_username: r.owner_username,
+                member_count: r.member_count.unwrap_or(0),
+                last_activity_at: last_at.to_rfc3339(),
+                days_idle: idle,
+                is_archived: r.is_archived,
+                scheduled_deletion_at: r.scheduled_deletion_at.map(|t| t.to_rfc3339()),
+            }
+        })
+        .collect();
+
+    Ok(Json(servers))
+}
+
+// ─── POST /admin/servers/:id/archive (admin override) ───────────────────
+
+pub async fn admin_archive_server(
+    caller: crate::citadel_platform_permissions::PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<ArchiveRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    crate::citadel_platform_admin_handlers::require_staff_role(&caller)?;
+
+    if req.archive {
+        sqlx::query!(
+            "UPDATE servers SET is_archived = TRUE, archived_at = NOW(), updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, caller.user_id, "SERVER_ARCHIVED_BY_ADMIN",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+    } else {
+        sqlx::query!(
+            "UPDATE servers SET is_archived = FALSE, archived_at = NULL, scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, caller.user_id, "SERVER_UNARCHIVED_BY_ADMIN",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── POST /admin/servers/:id/schedule-deletion (admin override) ─────────
+
+pub async fn admin_schedule_deletion(
+    caller: crate::citadel_platform_permissions::PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<ScheduleDeletionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    crate::citadel_platform_admin_handlers::require_staff_role(&caller)?;
+
+    if req.schedule {
+        let deletion_at = chrono::Utc::now() + chrono::Duration::days(30);
+        sqlx::query!(
+            "UPDATE servers SET scheduled_deletion_at = $1, is_archived = TRUE, archived_at = COALESCE(archived_at, NOW()), updated_at = NOW() WHERE id = $2",
+            deletion_at,
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, caller.user_id, "SERVER_DELETION_SCHEDULED_BY_ADMIN",
+            Some("server"), Some(server_id),
+            Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
+            None,
+        ).await;
+    } else {
+        sqlx::query!(
+            "UPDATE servers SET scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        let _ = citadel_audit::log_action(
+            &state.db, server_id, caller.user_id, "SERVER_DELETION_CANCELLED_BY_ADMIN",
+            Some("server"), Some(server_id), None, None,
+        ).await;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ─── Route Registration ─────────────────────────────────────────────────
 
 pub fn server_routes() -> axum::Router<Arc<AppState>> {
@@ -1263,5 +1583,15 @@ pub fn server_routes() -> axum::Router<Arc<AppState>> {
         .route("/servers/:id/vanity", post(set_server_vanity))
         .route("/servers/:id/bots", post(create_bot))
         .route("/servers/:id/bots", get(list_bots))
+        .route("/servers/:id/archive", post(archive_server))
+        .route("/servers/:id/schedule-deletion", post(schedule_server_deletion))
         .route("/invites/:code", get(resolve_invite_code))
+}
+
+pub fn server_admin_routes() -> axum::Router<Arc<AppState>> {
+    use axum::routing::{get, post};
+    axum::Router::new()
+        .route("/admin/inactive-servers", get(list_inactive_servers))
+        .route("/admin/servers/:id/archive", post(admin_archive_server))
+        .route("/admin/servers/:id/schedule-deletion", post(admin_schedule_deletion))
 }

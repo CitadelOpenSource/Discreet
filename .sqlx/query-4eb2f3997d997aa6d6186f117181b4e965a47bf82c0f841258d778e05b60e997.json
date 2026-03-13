@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,\n                s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,\n                s.member_tab_label, s.slash_commands_enabled, s.owner_id, s.created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         WHERE s.id = $1",
+  "query": "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,\n                s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,\n                s.member_tab_label, s.slash_commands_enabled, s.message_retention_days,\n                s.disappearing_messages_default, s.last_activity_at, s.is_archived,\n                s.archived_at, s.scheduled_deletion_at, s.owner_id, s.created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         INNER JOIN server_members m ON m.server_id = s.id\n         WHERE m.user_id = $1\n         ORDER BY s.name",
   "describe": {
     "columns": [
       {
@@ -65,16 +65,46 @@
       },
       {
         "ordinal": 12,
+        "name": "message_retention_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "disappearing_messages_default",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_archived",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "archived_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "scheduled_deletion_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
         "name": "owner_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 13,
+        "ordinal": 19,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 20,
         "name": "member_count",
         "type_info": "Int8"
       }
@@ -97,10 +127,16 @@
       true,
       false,
       false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
       false,
       false,
       null
     ]
   },
-  "hash": "73bb9544fa24a1932345e3993b6d048109c7b43ba2069fc73fbda53989cb31cb"
+  "hash": "4eb2f3997d997aa6d6186f117181b4e965a47bf82c0f841258d778e05b60e997"
 }

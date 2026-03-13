@@ -4,7 +4,7 @@
  */
 import React, { useState, useMemo } from 'react';
 import { T, getInp, btn } from '../theme';
-import { api } from '../api/CitadelAPI';
+import { api, storageBlocked, _storage } from '../api/CitadelAPI';
 
 interface AuthScreenProps {
   onAuth: () => void;
@@ -133,8 +133,8 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
         : await api.register(username, password, email || undefined);
       if (res.ok) {
         const u = username.trim().toLowerCase();
-        if (u === 'admin' || u === 'dev') localStorage.setItem('d_dev_local', 'true');
-        if (rememberMe) localStorage.setItem('d_remember_me', '1');
+        if (u === 'admin' || u === 'dev') _storage.setItem('d_dev_local', 'true');
+        if (rememberMe) _storage.setItem('d_remember_me', '1');
         if (mode === 'register' && res.data?.recovery_key) {
           setRecoveryKey(res.data.recovery_key);
           setLoading(false);
@@ -160,6 +160,17 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           <h1 style={{ margin: 0, color: T.tx, fontSize: 26, fontWeight: 700 }}>Discreet</h1>
           <p style={{ margin: '6px 0 0', color: T.mt, fontSize: 13 }}>Zero-knowledge encrypted messaging</p>
         </div>
+
+        {/* Storage blocked warning */}
+        {storageBlocked && (
+          <div style={{
+            padding: '10px 14px', marginBottom: 16, borderRadius: 8,
+            background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.25)',
+            fontSize: 12, color: '#ffa502', lineHeight: 1.5,
+          }}>
+            Your browser is blocking storage. You may need to re-login after closing this tab.
+          </div>
+        )}
 
         {/* Tab switcher */}
         <div style={{ display: 'flex', background: T.bg, borderRadius: 10, padding: 4, marginBottom: 24, gap: 4 }}>

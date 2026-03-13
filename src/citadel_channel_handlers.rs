@@ -59,6 +59,8 @@ pub struct UpdateChannelRequest {
     pub slowmode_seconds: Option<i32>,
     pub nsfw: Option<bool>,
     pub message_ttl_seconds: Option<i64>,
+    pub message_retention_days: Option<Option<i32>>,
+    pub disappearing_messages: Option<Option<String>>,
 }
 
 // ─── Response Types ─────────────────────────────────────────────────────
@@ -76,6 +78,8 @@ pub struct ChannelInfo {
     pub slowmode_seconds: i32,
     pub nsfw: bool,
     pub message_ttl_seconds: i64,
+    pub message_retention_days: Option<i32>,
+    pub disappearing_messages: Option<String>,
     pub created_at: String,
 }
 
@@ -129,6 +133,14 @@ pub async fn create_channel(
     .execute(&state.db)
     .await?;
 
+    // Update server last_activity_at.
+    let _ = sqlx::query!(
+        "UPDATE servers SET last_activity_at = NOW() WHERE id = $1",
+        server_id,
+    )
+    .execute(&state.db)
+    .await;
+
     tracing::info!(
         channel_id = %channel_id,
         server_id = %server_id,
@@ -161,6 +173,8 @@ pub async fn create_channel(
         slowmode_seconds: 0,
         nsfw: req.nsfw,
         message_ttl_seconds: 0,
+        message_retention_days: None,
+        disappearing_messages: None,
         created_at: chrono::Utc::now().to_rfc3339(),
     })))
 }
@@ -177,7 +191,7 @@ pub async fn list_channels(
     let rows = sqlx::query!(
         "SELECT id, server_id, name, topic, channel_type, position,
                 locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,
-                created_at
+                message_retention_days, disappearing_messages, created_at
          FROM channels
          WHERE server_id = $1
          ORDER BY position, created_at",
@@ -200,6 +214,8 @@ pub async fn list_channels(
             slowmode_seconds: r.slowmode_seconds,
             nsfw: r.nsfw,
             message_ttl_seconds: r.message_ttl_seconds,
+            message_retention_days: r.message_retention_days,
+            disappearing_messages: r.disappearing_messages.clone(),
             created_at: r.created_at.to_rfc3339(),
         })
         .collect();
@@ -217,7 +233,7 @@ pub async fn get_channel(
     let channel = sqlx::query!(
         "SELECT id, server_id, name, topic, channel_type, position,
                 locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,
-                created_at
+                message_retention_days, disappearing_messages, created_at
          FROM channels WHERE id = $1",
         channel_id,
     )
@@ -240,6 +256,8 @@ pub async fn get_channel(
         slowmode_seconds: channel.slowmode_seconds,
         nsfw: channel.nsfw,
         message_ttl_seconds: channel.message_ttl_seconds,
+        message_retention_days: channel.message_retention_days,
+        disappearing_messages: channel.disappearing_messages,
         created_at: channel.created_at.to_rfc3339(),
     }))
 }
@@ -339,12 +357,32 @@ pub async fn update_channel(
         .await?;
     }
 
+    if let Some(ref retention) = req.message_retention_days {
+        sqlx::query!(
+            "UPDATE channels SET message_retention_days = $1, updated_at = NOW() WHERE id = $2",
+            *retention, channel_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    if let Some(ref disappearing) = req.disappearing_messages {
+        sqlx::query!(
+            "UPDATE channels SET disappearing_messages = $1, updated_at = NOW() WHERE id = $2",
+            disappearing.as_deref() as Option<&str>, channel_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
     // Audit log
     let changes = serde_json::json!({
         "name": req.name, "topic": req.topic.is_some(),
         "locked": req.locked, "min_role_position": req.min_role_position,
         "slowmode_seconds": req.slowmode_seconds, "nsfw": req.nsfw,
         "message_ttl_seconds": req.message_ttl_seconds, "position": req.position,
+        "message_retention_days": req.message_retention_days,
+        "disappearing_messages": req.disappearing_messages,
     });
     let _ = log_action(
         &state.db, channel.server_id, auth.user_id, "UPDATE_CHANNEL",
@@ -355,7 +393,7 @@ pub async fn update_channel(
     let updated = sqlx::query!(
         "SELECT id, server_id, name, topic, channel_type, position,
                 locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,
-                created_at
+                message_retention_days, disappearing_messages, created_at
          FROM channels WHERE id = $1",
         channel_id,
     )
@@ -374,6 +412,8 @@ pub async fn update_channel(
         slowmode_seconds: updated.slowmode_seconds,
         nsfw: updated.nsfw,
         message_ttl_seconds: updated.message_ttl_seconds,
+        message_retention_days: updated.message_retention_days,
+        disappearing_messages: updated.disappearing_messages,
         created_at: updated.created_at.to_rfc3339(),
     }))
 }

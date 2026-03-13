@@ -45,12 +45,13 @@ export const getInp = () => ({
   padding: '10px 12px',
   background: T.bg,
   border: `1px solid ${T.bd}`,
-  borderRadius: 8,
+  borderRadius: 12,
   color: T.tx,
   fontSize: 13,
   outline: 'none',
   boxSizing: 'border-box' as const,
   fontFamily: "'DM Sans',sans-serif",
+  transition: 'border-color .15s ease, box-shadow .15s ease',
 });
 
 export const btn = (on: boolean) => ({
@@ -58,10 +59,11 @@ export const btn = (on: boolean) => ({
   padding: '11px',
   background: on ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2,
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 12,
   color: on ? '#000' : T.mt,
   fontSize: 14,
   fontWeight: 700,
   cursor: 'pointer',
   fontFamily: "'DM Sans',sans-serif",
+  transition: 'background .15s ease, box-shadow .15s ease',
 });

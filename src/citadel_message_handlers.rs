@@ -124,12 +124,23 @@ pub async fn send_message(
 
     // Look up channel to get server_id and nsfw flag, then verify membership.
     let channel = sqlx::query!(
-        "SELECT server_id, nsfw FROM channels WHERE id = $1",
+        "SELECT c.server_id, c.nsfw, c.disappearing_messages,
+                s.disappearing_messages_default, s.is_archived
+         FROM channels c
+         JOIN servers s ON s.id = c.server_id
+         WHERE c.id = $1",
         channel_id,
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    // Archived servers are read-only.
+    if channel.is_archived {
+        return Err(AppError::Forbidden(
+            "This server is archived and read-only. No new messages can be sent.".into(),
+        ));
+    }
 
     require_permission(&state, channel.server_id, auth.user_id, PERM_SEND_MESSAGES).await?;
 
@@ -192,9 +203,45 @@ pub async fn send_message(
 
     // Store the message. The server never sees plaintext.
     let message_id = Uuid::new_v4();
+
+    // Compute expires_at from effective disappearing messages setting.
+    // Priority: channel override > server default > global default. Most restrictive wins.
+    let expires_at: Option<chrono::DateTime<chrono::Utc>> = {
+        let global_dis = crate::citadel_platform_settings::get_platform_settings(&state)
+            .await
+            .map(|s| s.global_disappearing_default)
+            .unwrap_or_else(|_| "off".into());
+
+        // Collect all non-"off" settings, pick the shortest duration (most restrictive).
+        let candidates: Vec<&str> = [
+            channel.disappearing_messages.as_deref(),
+            channel.disappearing_messages_default.as_deref(),
+            Some(global_dis.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|s| *s != "off" && !s.is_empty())
+        .collect();
+
+        fn to_seconds(s: &str) -> Option<i64> {
+            match s {
+                "24h" => Some(86_400),
+                "7d"  => Some(604_800),
+                "30d" => Some(2_592_000),
+                _     => None,
+            }
+        }
+
+        candidates
+            .iter()
+            .filter_map(|s| to_seconds(s))
+            .min()
+            .map(|secs| chrono::Utc::now() + chrono::Duration::seconds(secs))
+    };
+
     sqlx::query!(
-        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         message_id,
         channel_id,
         auth.user_id,
@@ -202,9 +249,18 @@ pub async fn send_message(
         req.mls_epoch,
         req.attachment_blob_id,
         req.reply_to_id,
+        expires_at,
     )
     .execute(&state.db)
     .await?;
+
+    // Update server last_activity_at.
+    let _ = sqlx::query!(
+        "UPDATE servers SET last_activity_at = NOW() WHERE id = $1",
+        channel.server_id,
+    )
+    .execute(&state.db)
+    .await;
 
     // Fire WebSocket notification so connected clients render the message.
     state
@@ -664,6 +720,49 @@ pub async fn bulk_delete_messages(
     Ok(Json(serde_json::json!({ "deleted": count })))
 }
 
+// ─── GET /channels/:channel_id/messages/search ──────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SearchParams {
+    pub q: Option<String>,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+/// Search messages in a channel. Since all content is E2EE ciphertext, the
+/// server cannot perform plaintext search. Returns a message explaining that
+/// search must happen client-side on decrypted content.
+pub async fn search_messages(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(channel_id): Path<Uuid>,
+    Query(params): Query<SearchParams>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify channel exists and user has view permission.
+    let channel = sqlx::query!(
+        "SELECT server_id FROM channels WHERE id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    require_permission(&state, channel.server_id, auth.user_id, PERM_VIEW_CHANNEL).await?;
+
+    let query = params.q.unwrap_or_default().trim().to_string();
+    if query.is_empty() {
+        return Err(AppError::BadRequest("Search query 'q' is required".into()));
+    }
+
+    // All channels use E2EE — server stores only ciphertext and cannot search it.
+    Ok(Json(serde_json::json!({
+        "encrypted": true,
+        "results": [],
+        "message": "This channel is end-to-end encrypted. The server cannot search message content. Search is performed client-side on your decrypted messages.",
+        "total": 0
+    })))
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 /// Decode base64 (URL-safe, no padding) to bytes.
@@ -692,6 +791,7 @@ pub fn message_routes() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
         .route("/channels/:channel_id/messages", post(send_message))
         .route("/channels/:channel_id/messages", get(get_messages))
+        .route("/channels/:channel_id/messages/search", get(search_messages))
         .route("/channels/:channel_id/messages/bulk-delete", post(bulk_delete_messages))
         .route("/messages/:id", patch(edit_message))
         .route("/messages/:id", delete(delete_message))

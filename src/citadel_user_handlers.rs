@@ -36,6 +36,9 @@ pub struct UserProfile {
     pub created_at: String,
     pub account_tier: String,
     pub is_guest: bool,
+    pub email_verified: bool,
+    pub totp_enabled: bool,
+    pub has_recovery_key: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,7 +91,8 @@ pub async fn get_me(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = sqlx::query!(
-        "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest
+        "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest,
+                email_verified, totp_enabled, recovery_key_hash
          FROM users WHERE id = $1",
         auth.user_id,
     )
@@ -105,6 +109,9 @@ pub async fn get_me(
         created_at: user.created_at.to_rfc3339(),
         account_tier: user.account_tier.clone(),
         is_guest: user.is_guest,
+        email_verified: user.email_verified,
+        totp_enabled: user.totp_enabled,
+        has_recovery_key: user.recovery_key_hash.is_some(),
     }))
 }
 
@@ -156,7 +163,8 @@ pub async fn update_me(
 
     // Return updated profile.
     let user = sqlx::query!(
-        "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest
+        "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest,
+                email_verified, totp_enabled, recovery_key_hash
          FROM users WHERE id = $1",
         auth.user_id,
     )
@@ -172,6 +180,9 @@ pub async fn update_me(
         created_at: user.created_at.to_rfc3339(),
         account_tier: user.account_tier.clone(),
         is_guest: user.is_guest,
+        email_verified: user.email_verified,
+        totp_enabled: user.totp_enabled,
+        has_recovery_key: user.recovery_key_hash.is_some(),
     }))
 }
 

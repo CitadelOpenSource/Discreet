@@ -10,6 +10,7 @@ import { Modal } from './Modal';
 import { Av } from './Av';
 import { type FilterLevel, getProfanityLevel, setProfanityLevel } from '../utils/profanityFilter';
 import { BotConfigModal, PRESETS } from './BotConfigModal';
+import { DangerConfirmModal } from './DangerConfirmModal';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -19,6 +20,13 @@ export interface Server {
   description?: string;
   member_tab_label?: string;
   slash_commands_enabled?: boolean;
+  message_retention_days?: number | null;
+  disappearing_messages_default?: string | null;
+  last_activity_at?: string | null;
+  is_archived?: boolean;
+  archived_at?: string | null;
+  scheduled_deletion_at?: string | null;
+  owner_id?: string;
   icon_url?: string;
   is_public?: boolean;
 }
@@ -176,7 +184,7 @@ interface ChannelManagerRowProps {
   serverId: string;
   onRefresh: () => void;
   onMove: (id: string, dir: -1 | 1) => void;
-  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  showConfirm: (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string) => Promise<boolean>;
 }
 
 function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, showConfirm }: ChannelManagerRowProps) {
@@ -286,7 +294,7 @@ function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, sh
         >📦</button>
         <button
           onClick={async () => {
-            if (await showConfirm('Delete Channel', `Delete #${ch.name}? All messages will be lost. This cannot be undone.`, true)) {
+            if (await showConfirm('Delete Channel', `This will permanently delete #${ch.name} and all its messages. This action cannot be undone.`, true, ch.name, 'Delete Channel')) {
               await api.deleteChannel(ch.id);
               onRefresh();
             }
@@ -747,7 +755,7 @@ function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMo
 
 interface EmojiManagerProps {
   serverId: string;
-  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  showConfirm: (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string) => Promise<boolean>;
 }
 
 function EmojiManager({ serverId, showConfirm }: EmojiManagerProps) {
@@ -811,7 +819,7 @@ function EmojiManager({ serverId, showConfirm }: EmojiManagerProps) {
 
 interface EventsManagerProps {
   serverId: string;
-  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  showConfirm: (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string) => Promise<boolean>;
 }
 
 function EventsManager({ serverId, showConfirm }: EventsManagerProps) {
@@ -1157,13 +1165,114 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
   </>);
 }
 
+// ─── ServerDangerZone ─────────────────────────────────────
+
+function ServerDangerZone({ server, onUpdate }: { server: Server; onUpdate?: () => void }) {
+  const [archiveModal, setArchiveModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+
+  return (
+    <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 14 }}>Danger Zone</div>
+
+      {/* Archive / Unarchive */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: T.mt, marginBottom: 8, lineHeight: 1.6 }}>
+          {server.is_archived
+            ? <>This server is <strong style={{ color: T.err }}>archived</strong> and read-only. Members can view history but cannot send messages or create channels. Unarchiving restores full functionality.</>
+            : <>Archive this server to make it <strong style={{ color: T.err }}>read-only</strong>. Members can still view message history. No messages or data are deleted. Zero compute cost while archived.</>
+          }
+        </div>
+        <button
+          onClick={() => setArchiveModal(true)}
+          className="pill-btn"
+          style={{ background: server.is_archived ? 'rgba(0,212,170,0.12)' : 'rgba(255,71,87,0.12)', color: server.is_archived ? T.ac : T.err, border: `1px solid ${server.is_archived ? 'rgba(0,212,170,0.3)' : 'rgba(255,71,87,0.3)'}`, padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          {server.is_archived ? 'Unarchive Server' : 'Archive Server'}
+        </button>
+      </div>
+
+      {server.is_archived && (
+        <>
+          <div style={{ height: 1, background: 'rgba(255,71,87,0.1)', margin: '12px 0' }} />
+
+          {/* Schedule / Cancel Deletion */}
+          <div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 8, lineHeight: 1.6 }}>
+              {server.scheduled_deletion_at
+                ? <>Server is scheduled for <strong style={{ color: T.err }}>permanent deletion</strong> on {new Date(server.scheduled_deletion_at).toLocaleDateString()}. All messages, channels, roles, and members will be removed. Only the audit tombstone is kept.</>
+                : <>Schedule this server for permanent deletion with a <strong style={{ color: T.err }}>30-day countdown</strong>. You can cancel anytime before the deadline.</>
+              }
+            </div>
+            {server.scheduled_deletion_at ? (
+              <button
+                onClick={async () => {
+                  await api.fetch(`/servers/${server.id}/schedule-deletion`, { method: 'POST', body: JSON.stringify({ schedule: false }) });
+                  onUpdate?.();
+                }}
+                className="pill-btn"
+                style={{ background: 'rgba(0,212,170,0.12)', color: T.ac, border: '1px solid rgba(0,212,170,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancel Scheduled Deletion
+              </button>
+            ) : (
+              <button
+                onClick={() => setDeleteModal(true)}
+                className="pill-btn"
+                style={{ background: 'rgba(255,71,87,0.2)', color: T.err, border: '1px solid rgba(255,71,87,0.4)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Schedule Deletion (30 days)
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Archive confirm modal */}
+      {archiveModal && (
+        <DangerConfirmModal
+          title={server.is_archived ? 'Unarchive Server' : 'Archive Server'}
+          warningText={server.is_archived
+            ? `Unarchiving "${server.name}" will restore full functionality. Members will be able to send messages and create channels again.`
+            : `Archiving "${server.name}" will make it read-only. Members can view history but cannot send messages or create channels. No data is deleted.`
+          }
+          confirmPhrase={server.name}
+          confirmLabel={server.is_archived ? 'Unarchive Server' : 'Archive Server'}
+          onConfirm={async () => {
+            await api.fetch(`/servers/${server.id}/archive`, { method: 'POST', body: JSON.stringify({ archive: !server.is_archived }) });
+            setArchiveModal(false);
+            onUpdate?.();
+          }}
+          onCancel={() => setArchiveModal(false)}
+        />
+      )}
+
+      {/* Schedule deletion confirm modal */}
+      {deleteModal && (
+        <DangerConfirmModal
+          title="Schedule Server Deletion"
+          warningText={`This will schedule "${server.name}" for permanent deletion in 30 days. All messages, channels, roles, and members will be removed. Only the audit tombstone is kept. You can cancel anytime before the deadline.`}
+          confirmPhrase={server.name}
+          confirmLabel="Schedule Deletion"
+          onConfirm={async () => {
+            await api.fetch(`/servers/${server.id}/schedule-deletion`, { method: 'POST', body: JSON.stringify({ schedule: true }) });
+            setDeleteModal(false);
+            onUpdate?.();
+          }}
+          onCancel={() => setDeleteModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── ServerSettingsModal ──────────────────────────────────
 
 export interface ServerSettingsModalProps {
   server: Server;
   onClose: () => void;
   onUpdate?: () => void;
-  showConfirm: (title: string, message: string, danger?: boolean) => Promise<boolean>;
+  showConfirm: (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string) => Promise<boolean>;
   getName: (userId: string) => string;
   decrypt: (ciphertext: string, channelId: string, epoch: number) => Promise<string>;
   onCreateInvite?: () => void;
@@ -1182,6 +1291,8 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
   const [name, setName] = useState(server?.name || '');
   const [memberTabLabel, setMemberTabLabel] = useState(server?.member_tab_label || 'Users');
   const [slashCmdsEnabled, setSlashCmdsEnabled] = useState(server?.slash_commands_enabled !== false);
+  const [retentionDays, setRetentionDays] = useState<number | null>(server?.message_retention_days ?? null);
+  const [disappearingDefault, setDisappearingDefault] = useState<string | null>(server?.disappearing_messages_default ?? null);
   const [inviteCode, setInviteCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [profanityLevel, setProfanityLevelState] = useState<FilterLevel>(() => getProfanityLevel(server.id));
@@ -1269,7 +1380,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
   const handleDeleteRole = async (rid: string) => {
     const role = roles.find(r => r.id === rid);
     const roleName = role?.name || 'this role';
-    if (await showConfirm('Delete Role', `Are you sure you want to delete "${roleName}"? Members with this role will lose its permissions.`, true)) {
+    if (await showConfirm('Delete Role', `Deleting "${roleName}" will remove it from all members who have it. They will lose any permissions granted by this role. This cannot be undone.`, true, roleName, 'Delete Role')) {
       await api.deleteRole(server.id, rid);
       setRoles(p => p.filter(r => r.id !== rid));
     }
@@ -1382,6 +1493,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     { id: 'events',      label: 'Events' },
     { id: 'invites',     label: 'Invites' },
     { id: 'moderation',  label: 'Moderation' },
+    { id: 'data',        label: 'Data Management' },
     { id: 'bans',        label: 'Bans' },
     { id: 'audit',       label: 'Audit Log' },
   ];
@@ -2074,6 +2186,63 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
 
       {tab === 'moderation' && <ModerationPanel serverId={server.id} getName={getName} decrypt={decrypt} />}
 
+      {tab === 'data' && (<>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx, marginBottom: 12 }}>Message Retention</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Server Retention</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Maximum message age. Cannot exceed global admin setting.</div>
+            </div>
+            <select
+              value={retentionDays ?? ''}
+              onChange={async e => {
+                const v = e.target.value === '' ? null : Number(e.target.value);
+                setRetentionDays(v);
+                await api.fetch(`/servers/${server.id}`, { method: 'PATCH', body: JSON.stringify({ message_retention_days: v }) });
+                onUpdate?.();
+              }}
+              style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 150, cursor: 'pointer' }}
+            >
+              <option value="">Inherit global</option>
+              <option value={365}>365 days</option>
+              <option value={180}>180 days</option>
+              <option value={90}>90 days</option>
+              <option value={30}>30 days</option>
+              <option value={7}>7 days</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Disappearing Messages</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Default for all channels. Channels can override with shorter durations.</div>
+            </div>
+            <select
+              value={disappearingDefault ?? ''}
+              onChange={async e => {
+                const v = e.target.value === '' ? null : e.target.value;
+                setDisappearingDefault(v);
+                await api.fetch(`/servers/${server.id}`, { method: 'PATCH', body: JSON.stringify({ disappearing_messages_default: v }) });
+                onUpdate?.();
+              }}
+              style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 150, cursor: 'pointer' }}
+            >
+              <option value="">Inherit global</option>
+              <option value="off">Off</option>
+              <option value="24h">24 hours</option>
+              <option value="7d">7 days</option>
+              <option value="30d">30 days</option>
+            </select>
+          </div>
+
+          <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${T.ac}08`, borderRadius: 6, border: `1px solid ${T.ac}20`, lineHeight: 1.6 }}>
+            <strong style={{ color: T.ac }}>Protected data</strong> is never purged: audit log, settings changes, channel operations, role changes, and membership events live on the hash chain permanently.
+          </div>
+        </div>
+      </>)}
+
       {tab === 'bans' && (<>
         {bans.length === 0 && <div style={{ color: T.mt, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No banned users</div>}
         {bans.map(b => (
@@ -2087,6 +2256,9 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           </div>
         ))}
       </>)}
+
+      {/* ── Danger Zone (data tab footer) ── */}
+      {tab === 'data' && <ServerDangerZone server={server} onUpdate={onUpdate} />}
 
       {tab === 'audit' && (<>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>

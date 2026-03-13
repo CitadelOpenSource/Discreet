@@ -286,7 +286,7 @@ function ChannelRow({
           borderRadius: 6,
           cursor: isOwner ? 'grab' : 'pointer',
           background: isActive
-            ? 'rgba(0,212,170,0.08)'
+            ? 'rgba(0,212,170,0.14)'
             : isDragOver
               ? 'rgba(0,212,170,0.12)'
               : isInVoice
@@ -297,9 +297,9 @@ function ChannelRow({
           fontWeight: isActive ? 600 : (unread > 0 ? 700 : 500),
           opacity: isMuted ? 0.5 : 1,
           borderTop: isDragOver ? `2px solid ${T.ac}` : '2px solid transparent',
-          transition: 'border-top .1s',
         }}
       >
+        {unread > 0 && !isActive && <span style={{ width: 6, height: 6, borderRadius: 3, background: T.ac, flexShrink: 0 }} />}
         {chIcon(ch)}
         {ch.name}
         {ch.nsfw && (

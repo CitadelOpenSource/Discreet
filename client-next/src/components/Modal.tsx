@@ -20,14 +20,17 @@ export function Modal({ title, onClose, children, wide, extraWide }: ModalProps)
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000,
+        animation: 'fadeIn 0.15s ease',
       }}
       onClick={onClose}
     >
       <div
         style={{
           width: extraWide ? 700 : wide ? 560 : 420, maxWidth: '95vw', padding: 28,
-          background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`,
+          background: T.sf, borderRadius: 16, border: `1px solid ${T.bd}`,
           maxHeight: extraWide ? '92vh' : '85vh', overflowY: 'auto',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)',
+          animation: 'fadeIn 0.15s ease',
         }}
         onClick={e => e.stopPropagation()}
       >

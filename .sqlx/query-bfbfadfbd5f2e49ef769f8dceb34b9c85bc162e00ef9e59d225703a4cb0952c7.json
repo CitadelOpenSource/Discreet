@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest\n         FROM users WHERE id = $1",
+  "query": "SELECT id, username, display_name, email, avatar_url, created_at, account_tier, is_guest,\n                email_verified, totp_enabled, recovery_key_hash\n         FROM users WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,21 @@
         "ordinal": 7,
         "name": "is_guest",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "email_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "totp_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "recovery_key_hash",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -57,8 +72,11 @@
       true,
       false,
       false,
-      false
+      false,
+      false,
+      false,
+      true
     ]
   },
-  "hash": "3d1788e27d30a27c4463399ceb9ad9ad17970c4b82434fd4d45e65909d7ac820"
+  "hash": "bfbfadfbd5f2e49ef769f8dceb34b9c85bc162e00ef9e59d225703a4cb0952c7"
 }

@@ -85,37 +85,52 @@ pub async fn csrf_middleware(request: Request, next: Next) -> Response {
     );
 
     if is_mutating && !is_exempt(&path) {
-        // Read the X-CSRF-Token header the client should have sent.
-        let header_token = request
+        // If the browser has no CSRF cookie but the request carries a valid
+        // JWT Authorization header, skip CSRF validation.  Cookie-less clients
+        // (privacy browsers, Tauri, React Native) cannot be CSRF-attacked
+        // because the attacker site cannot supply the Bearer token.
+        let has_bearer = request
             .headers()
-            .get(CSRF_HEADER_NAME)
+            .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_owned());
+            .map(|s| s.starts_with("Bearer "))
+            .unwrap_or(false);
 
-        // Both values must be present and identical.
-        let valid = match (&cookie_token, &header_token) {
-            (Some(cookie), Some(hdr)) => cookie == hdr,
-            _ => false,
-        };
+        let skip_csrf = cookie_token.is_none() && has_bearer;
 
-        if !valid {
-            tracing::warn!(
-                method = %method,
-                path   = %path,
-                cookie_present = cookie_token.is_some(),
-                header_present = header_token.is_some(),
-                "CSRF token mismatch — request rejected",
-            );
-            return (
-                StatusCode::FORBIDDEN,
-                axum::Json(serde_json::json!({
-                    "error": {
-                        "code":    "CSRF_TOKEN_MISMATCH",
-                        "message": "CSRF token mismatch",
-                    }
-                })),
-            )
-            .into_response();
+        if !skip_csrf {
+            // Read the X-CSRF-Token header the client should have sent.
+            let header_token = request
+                .headers()
+                .get(CSRF_HEADER_NAME)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_owned());
+
+            // Both values must be present and identical.
+            let valid = match (&cookie_token, &header_token) {
+                (Some(cookie), Some(hdr)) => cookie == hdr,
+                _ => false,
+            };
+
+            if !valid {
+                tracing::warn!(
+                    method = %method,
+                    path   = %path,
+                    cookie_present = cookie_token.is_some(),
+                    header_present = header_token.is_some(),
+                    "CSRF token mismatch — request rejected",
+                );
+                return (
+                    StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "error": {
+                            "code":    "CSRF_TOKEN_MISMATCH",
+                            "message": "CSRF token mismatch",
+                        }
+                    })),
+                )
+                .into_response();
+            }
         }
     }
 
