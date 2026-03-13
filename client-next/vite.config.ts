@@ -27,6 +27,7 @@ export default defineConfig({
     target: 'esnext',
     chunkSizeWarningLimit: 750,
     rollupOptions: {
+      external: ['discreet-crypto'],
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],

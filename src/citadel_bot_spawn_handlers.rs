@@ -25,6 +25,7 @@ use uuid::Uuid;
 use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
 use crate::citadel_agent_config::{load_server_agent_config, store_encrypted_api_key};
 use crate::citadel_agent_memory::{agent_memory_fact_count, build_context, clear_agent_memory};
+use crate::citadel_agent_episodic_memory::run_episodic_pipeline;
 use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata, sanitize_agent_input, cap_response, check_agent_rate_limit};
 
 // ─── Personas ──────────────────────────────────────────────────────────
@@ -770,6 +771,7 @@ pub async fn prompt_bot(
             bot_id,
             cfg.context_message_count,
             cfg.memory_mode == crate::citadel_agent_config::MemoryMode::Summary,
+            state.config.agent_key_secret.as_bytes(),
         ).await.unwrap_or_default();
         msgs.push(AgentMessage {
             role: "user".into(),
@@ -803,6 +805,8 @@ pub async fn prompt_bot(
          [AI responses will be connected soon — this bot is configured as a \
          {persona} with temperature {temperature:.1}]"
     );
+
+    let messages_for_memory = messages.clone();
 
     let response_text = if let Ok(ref cfg) = agent_config {
         let provider = create_provider(&cfg.provider_type);
@@ -854,8 +858,38 @@ pub async fn prompt_bot(
         bot_id = %bot_id,
         server_id = %server_id,
         channel_id = %channel_id,
-        "Bot prompt handled (placeholder response)"
+        "Bot prompt handled"
     );
+
+    // Fire-and-forget: run episodic memory extraction in the background.
+    if let Ok(cfg) = agent_config {
+        let db = state.db.clone();
+        let provider = create_provider(&cfg.provider_type);
+        let model_config = cfg.model_config.clone();
+        let master_secret = state.config.agent_key_secret.clone();
+        tokio::spawn(async move {
+            let msg_count = messages_for_memory.len() as u64;
+            if let Err(e) = run_episodic_pipeline(
+                &db,
+                provider.as_ref(),
+                bot_id,
+                channel_id,
+                &messages_for_memory,
+                &model_config,
+                master_secret.as_bytes(),
+                msg_count,
+            )
+            .await
+            {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    channel_id = %channel_id,
+                    error = %e,
+                    "Episodic memory pipeline failed"
+                );
+            }
+        });
+    }
 
     Ok(Json(serde_json::json!({
         "message_id": message_id,
