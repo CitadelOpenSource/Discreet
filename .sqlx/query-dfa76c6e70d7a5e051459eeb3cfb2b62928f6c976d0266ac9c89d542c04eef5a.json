@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            bc.bot_user_id AS agent_id,\n            bc.server_id,\n            bc.display_name,\n            COALESCE(bc.provider_type, 'anthropic') AS \"provider_type!\",\n            bc.api_key_encrypted,\n            bc.api_key_nonce,\n            COALESCE(bc.model_id, 'claude-haiku-4-5-20251001') AS \"model_id!\",\n            bc.endpoint_url,\n            bc.mcp_tool_urls,\n            COALESCE(bc.temperature, 0.7::REAL) AS \"temperature!\",\n            COALESCE(bc.context_message_count, 20) AS \"context_message_count!\",\n            bc.trigger_keywords,\n            COALESCE(bc.memory_mode, 'sliding_window') AS \"memory_mode!\",\n            bc.system_prompt,\n            bc.disclosure_text,\n            COALESCE(bc.nsfw_allowed, FALSE) AS \"nsfw_allowed!\",\n            bc.x25519_private_key,\n            bc.x25519_public_key,\n            bc.mls_leaf_secret,\n            bc.bot_user_id\n        FROM bot_configs bc\n        WHERE bc.bot_user_id = $1\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_type!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "api_key_encrypted",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "api_key_nonce",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "model_id!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "endpoint_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "mcp_tool_urls",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "temperature!",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 10,
+        "name": "context_message_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "trigger_keywords",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "memory_mode!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "system_prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "disclosure_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "nsfw_allowed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "x25519_private_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 17,
+        "name": "x25519_public_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 18,
+        "name": "mls_leaf_secret",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 19,
+        "name": "bot_user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      null,
+      true,
+      true,
+      null,
+      true,
+      true,
+      null,
+      null,
+      true,
+      null,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "dfa76c6e70d7a5e051459eeb3cfb2b62928f6c976d0266ac9c89d542c04eef5a"
+}

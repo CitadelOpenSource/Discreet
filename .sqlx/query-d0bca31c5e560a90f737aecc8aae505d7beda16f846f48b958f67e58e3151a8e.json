@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_configs SET greeting_message = $1 WHERE bot_user_id = $2 AND server_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0bca31c5e560a90f737aecc8aae505d7beda16f846f48b958f67e58e3151a8e"
+}

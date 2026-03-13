@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_blobs SET deleted = TRUE, encrypted_blob = '\\x00' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dd68abd9c8ceb4305088bb7bcfaa7b479a0a4c70944b34773d28facebad40dd1"
+}

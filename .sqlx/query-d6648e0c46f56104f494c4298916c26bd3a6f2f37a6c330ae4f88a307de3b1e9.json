@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.server_id, u.username\n         FROM channels c\n         JOIN server_members sm ON sm.server_id = c.server_id AND sm.user_id = $2\n         JOIN users u ON u.id = $2\n         WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d6648e0c46f56104f494c4298916c26bd3a6f2f37a6c330ae4f88a307de3b1e9"
+}

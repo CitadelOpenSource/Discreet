@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_configs SET dm_auto_respond = $1 WHERE bot_user_id = $2 AND server_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bba4ecaccd95add80eb26edf4012c62ff4aa49bd6b19db50f0967b330944c6cd"
+}

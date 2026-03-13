@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_configs SET memory_mode = $1 WHERE bot_user_id = $2 AND server_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00e5b7c9fb817e1f9d8f29c779c47f89b79e365b3a0255e890a23b662854cb42"
+}

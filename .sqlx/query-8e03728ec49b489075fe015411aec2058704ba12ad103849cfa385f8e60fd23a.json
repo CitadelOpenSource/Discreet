@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.server_id\n         FROM channels c\n         JOIN server_members sm ON sm.server_id = c.server_id AND sm.user_id = $2\n         WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e03728ec49b489075fe015411aec2058704ba12ad103849cfa385f8e60fd23a"
+}

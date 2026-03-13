@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO email_tokens (user_id, email, token, token_type, expires_at)\n             VALUES ($1, $2, $3, 'reset', NOW() + INTERVAL '1 hour')\n             ON CONFLICT (user_id, token_type) DO UPDATE SET token = $3, expires_at = NOW() + INTERVAL '1 hour'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8dfe0157011bdaf18464292837ff8e9bc816911e8610459bc312524c23706dc7"
+}

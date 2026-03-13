@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username, f.created_at as friend_since\n           FROM friendships f\n           JOIN users u ON u.id = CASE\n               WHEN f.user_id = $1 THEN f.friend_id\n               ELSE f.user_id\n           END\n           WHERE f.status = 'accepted'\n             AND (f.user_id = $1 OR f.friend_id = $1)\n           ORDER BY u.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "friend_since",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "431c5c8fa44224eb17b826d553df5846a8e72d998b30b16f14a2c90808c86663"
+}

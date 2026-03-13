@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT locale, theme, notifications_enabled\n         FROM user_settings WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "theme",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "notifications_enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "342d3c6291cc8257b62c2fe38384bac2ebe142c633411f6a5a43716df23e4933"
+}

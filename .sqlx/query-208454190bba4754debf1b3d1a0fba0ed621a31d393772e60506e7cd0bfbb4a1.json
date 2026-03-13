@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_configs SET language = $1 WHERE bot_user_id = $2 AND server_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "208454190bba4754debf1b3d1a0fba0ed621a31d393772e60506e7cd0bfbb4a1"
+}

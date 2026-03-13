@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_configs (bot_user_id, server_id, persona, display_name, description, system_prompt)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         ON CONFLICT (bot_user_id, server_id) DO UPDATE SET persona = $3, display_name = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d396fca0724eb10bb91b6dc9bddabe78ce8c5ba05a80969c977089fa9cfd98d3"
+}

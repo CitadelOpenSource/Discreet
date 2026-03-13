@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n               bc.bot_user_id,\n               bc.persona,\n               bc.display_name,\n               bc.description,\n               bc.system_prompt,\n               bc.voice_style,\n               bc.temperature,\n               bc.max_tokens,\n               bc.enabled,\n               bc.greeting_message,\n               bc.response_prefix,\n               bc.rate_limit_per_min,\n               bc.typing_delay,\n               bc.context_memory,\n               bc.context_window,\n               bc.dm_auto_respond,\n               bc.emoji_reactions,\n               bc.language,\n               bc.knowledge_base,\n               bc.response_mode,\n               bc.auto_thread,\n               bc.created_at,\n               u.username  AS bot_username,\n               u.is_bot\n           FROM bot_configs bc\n           JOIN users u ON u.id = bc.bot_user_id\n           WHERE bc.server_id = $1\n           ORDER BY bc.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "persona",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "system_prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "voice_style",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "temperature",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_tokens",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "greeting_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "response_prefix",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "rate_limit_per_min",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "typing_delay",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "context_memory",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "context_window",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "dm_auto_respond",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "emoji_reactions",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 17,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "knowledge_base",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "response_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 20,
+        "name": "auto_thread",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 21,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 22,
+        "name": "bot_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "is_bot",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1ec0e673b1a7099252d4212a51f92184bacec524b3b8cfd01c336f19ecf4604e"
+}

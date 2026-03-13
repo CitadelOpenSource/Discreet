@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,\n                s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,\n                s.member_tab_label, s.owner_id, s.created_at,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM servers s\n         WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "icon_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "banner_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "default_notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "verification_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "explicit_content_filter",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "system_channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "vanity_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "member_tab_label",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "ad4ada005896776461cef84afcba24d5d010c0b20952734bb9fe7a3f3bc18a46"
+}

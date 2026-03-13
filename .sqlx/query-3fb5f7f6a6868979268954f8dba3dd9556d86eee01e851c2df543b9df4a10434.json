@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM friendships\n         WHERE id = $1 AND status = 'accepted'\n           AND (user_id = $2 OR friend_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3fb5f7f6a6868979268954f8dba3dd9556d86eee01e851c2df543b9df4a10434"
+}

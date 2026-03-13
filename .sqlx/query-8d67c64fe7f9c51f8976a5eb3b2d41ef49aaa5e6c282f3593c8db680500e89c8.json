@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO automod_configs (server_id, config, updated_at) VALUES ($1, $2, NOW())\n         ON CONFLICT (server_id) DO UPDATE SET config = $2, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d67c64fe7f9c51f8976a5eb3b2d41ef49aaa5e6c282f3593c8db680500e89c8"
+}

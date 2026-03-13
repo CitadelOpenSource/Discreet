@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, server_id, name, audio_data, emoji, uploaded_by, play_count FROM soundboard_clips WHERE server_id = $1 ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "audio_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "uploaded_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "play_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c9139b994230fa2bd6b2de53f8512e9befd7ba17441e28be804b4ede855856e5"
+}

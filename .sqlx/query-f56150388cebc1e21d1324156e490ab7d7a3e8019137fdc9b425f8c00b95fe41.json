@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE server_notification_settings\n         SET muted = COALESCE($1, muted),\n             mute_until = COALESCE($2, mute_until),\n             level = COALESCE($3, level),\n             suppress_everyone = COALESCE($4, suppress_everyone)\n         WHERE user_id = $5 AND server_id = $6\n         RETURNING user_id, server_id, muted, mute_until, level, suppress_everyone",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "muted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "mute_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "suppress_everyone",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f56150388cebc1e21d1324156e490ab7d7a3e8019137fdc9b425f8c00b95fe41"
+}

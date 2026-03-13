@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id,\n                  username,\n                  display_name,\n                  account_tier,\n                  platform_role,\n                  badge_type,\n                  email_verified,\n                  is_bot,\n                  created_at\n           FROM users\n           ORDER BY created_at DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_tier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "platform_role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "badge_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "email_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_bot",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "673e961cb9a7004db8e31d6f1457823fc1450c9c364b685f70d7fca677800890"
+}

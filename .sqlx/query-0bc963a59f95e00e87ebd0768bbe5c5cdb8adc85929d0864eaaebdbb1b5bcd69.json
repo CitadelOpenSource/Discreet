@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ac.channel_id, ac.topic, ac.member_count,\n               a.id as agent_id, a.display_name, a.specialization,\n               a.status, a.fingerprint, ac.created_at\n        FROM agent_channels ac\n        JOIN agents a ON ac.agent_id = a.id\n        WHERE ac.server_id = $1\n          AND ac.archived = false\n          AND (\n            ac.topic ILIKE '%' || $2 || '%'\n            OR a.display_name ILIKE '%' || $2 || '%'\n          )\n        ORDER BY ac.created_at DESC\n        LIMIT 10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "topic",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "member_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "specialization",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "fingerprint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0bc963a59f95e00e87ebd0768bbe5c5cdb8adc85929d0864eaaebdbb1b5bcd69"
+}

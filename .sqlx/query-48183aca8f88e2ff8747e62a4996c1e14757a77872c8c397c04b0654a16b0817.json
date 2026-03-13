@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET mls_epoch = $1, mls_version = 1, updated_at = NOW()\n         WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "48183aca8f88e2ff8747e62a4996c1e14757a77872c8c397c04b0654a16b0817"
+}

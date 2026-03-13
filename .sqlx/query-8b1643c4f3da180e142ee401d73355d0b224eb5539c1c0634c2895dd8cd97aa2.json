@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n               provider_type,\n               model_id,\n               endpoint_url,\n               temperature,\n               context_message_count,\n               trigger_keywords,\n               memory_mode,\n               disclosure_text,\n               nsfw_allowed,\n               mcp_tool_urls,\n               api_key_encrypted\n           FROM bot_configs\n           WHERE bot_user_id = $1 AND server_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "model_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "endpoint_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "temperature",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 4,
+        "name": "context_message_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "trigger_keywords",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "memory_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "disclosure_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "nsfw_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "mcp_tool_urls",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "api_key_encrypted",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8b1643c4f3da180e142ee401d73355d0b224eb5539c1c0634c2895dd8cd97aa2"
+}

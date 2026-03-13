@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.name AS server_name, s.icon_url,\n                (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count\n         FROM server_invites i\n         INNER JOIN servers s ON s.id = i.server_id\n         WHERE i.code = $1\n           AND (i.expires_at IS NULL OR i.expires_at > NOW())\n           AND (i.max_uses IS NULL OR i.use_count < i.max_uses)\n         ORDER BY i.created_at DESC\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "icon_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "fd6dec3ab3cfabd9b7fe85e6b42d4add67b0cb18f76c586f1a1723f65f166c75"
+}

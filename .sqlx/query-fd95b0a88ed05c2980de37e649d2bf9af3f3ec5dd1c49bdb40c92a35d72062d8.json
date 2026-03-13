@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            m.id,\n            m.author_id,\n            u.display_name AS author_display_name,\n            COALESCE(u.is_bot, FALSE) AS \"author_is_bot!\",\n            m.content_ciphertext,\n            COALESCE(m.mls_epoch, 0) AS \"mls_epoch!\",\n            m.created_at AS \"created_at!: DateTime<Utc>\",\n            COALESCE(m.deleted, FALSE) AS \"deleted!\"\n        FROM messages m\n        LEFT JOIN users u ON u.id = m.author_id\n        WHERE m.channel_id = $1\n        ORDER BY m.created_at DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_is_bot!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "mls_epoch!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "deleted!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      false,
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "fd95b0a88ed05c2980de37e649d2bf9af3f3ec5dd1c49bdb40c92a35d72062d8"
+}

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.group_dm_id, m.sender_id, u.username as sender_username,\n               encode(m.content_ciphertext, 'base64') as \"content_ciphertext!\",\n               m.reply_to_id, m.created_at\n               FROM group_dm_messages m\n               JOIN users u ON u.id = m.sender_id\n               WHERE m.group_dm_id = $1 AND m.created_at < $2\n               ORDER BY m.created_at DESC\n               LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "group_dm_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_ciphertext!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reply_to_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      false
+    ]
+  },
+  "hash": "ff986dbbd481118fe04d4b4c3c63fedb57b30dd79770e8f13db3de0c34d6919f"
+}

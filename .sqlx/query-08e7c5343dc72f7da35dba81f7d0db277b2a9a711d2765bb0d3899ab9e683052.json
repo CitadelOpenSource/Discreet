@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM platform_ip_bans WHERE ip_address = $1 AND (expires_at IS NULL OR expires_at > NOW()))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "08e7c5343dc72f7da35dba81f7d0db277b2a9a711d2765bb0d3899ab9e683052"
+}

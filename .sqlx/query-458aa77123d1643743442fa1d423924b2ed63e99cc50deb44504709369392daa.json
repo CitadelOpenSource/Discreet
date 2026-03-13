@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users\n                   (id, username, display_name, password_hash, account_tier, platform_role, badge_type)\n               VALUES ($1, $2, $3, $4, 'unverified', 'dev', 'wrench')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "458aa77123d1643743442fa1d423924b2ed63e99cc50deb44504709369392daa"
+}
