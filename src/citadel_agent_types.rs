@@ -22,7 +22,7 @@ pub struct AgentIdentity {
     pub identity_public_key: Vec<u8>,
     /// X25519 key agreement key (public half, consumed by MLS KeyPackages).
     pub key_agreement_public_key: Vec<u8>,
-    /// Human-readable display name (e.g., "Citadel Legal — immigration").
+    /// Human-readable display name (e.g., "Discreet Legal — immigration").
     pub display_name: String,
     pub specialization: AgentSpecialization,
     pub created_at: DateTime<Utc>,

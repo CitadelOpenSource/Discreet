@@ -58,6 +58,8 @@ struct IncomingMessage {
     peer_id: Option<Uuid>,
     // Presence fields
     status: Option<String>,
+    // Profile update fields
+    avatar_url: Option<String>,
 }
 
 // --- GET /ws?server_id=<uuid> ---
@@ -206,8 +208,32 @@ async fn handle_ws(
     let mut ws_msg_count: u64 = 0;
     let mut ws_byte_count: u64 = 0;
 
+    // Periodic ban check — every 30 seconds, check Redis for banned:{user_id}.
+    let mut ban_check = tokio::time::interval(Duration::from_secs(30));
+    ban_check.tick().await; // consume the immediate first tick
+
     loop {
         tokio::select! {
+            // ── Ban check ─────────────────────────────────────────────
+            _ = ban_check.tick() => {
+                let ban_key = format!("banned:{}", user_id);
+                let mut redis_conn = state.redis.clone();
+                let is_banned: bool = redis::cmd("EXISTS")
+                    .arg(&ban_key)
+                    .query_async(&mut redis_conn)
+                    .await
+                    .unwrap_or(false);
+                if is_banned {
+                    tracing::warn!(user_id = %user_id, "Banned user detected — closing WebSocket");
+                    let _ = socket.send(Message::Close(Some(
+                        axum::extract::ws::CloseFrame {
+                            code: 4001,
+                            reason: "Account suspended".into(),
+                        },
+                    ))).await;
+                    break;
+                }
+            }
             // Event from broadcast bus -> forward to client.
             result = rx.recv() => {
                 match result {
@@ -546,6 +572,35 @@ async fn handle_client_message(
                 _ => PresenceStatus::Online,
             };
             state.set_presence(user_id, status, server_id).await;
+        }
+
+        // User profile update (avatar change) — broadcast to every server
+        // the user is a member of so all shared-server clients update.
+        "user_profile_update" => {
+            if let Some(ref avatar) = msg.avatar_url {
+                let rows = sqlx::query(
+                    "SELECT server_id FROM server_members WHERE user_id = $1",
+                )
+                .bind(user_id)
+                .fetch_all(&state.db)
+                .await
+                .unwrap_or_default();
+
+                let server_ids: Vec<Uuid> = rows
+                    .iter()
+                    .map(|r| sqlx::Row::get(r, "server_id"))
+                    .collect();
+
+                let payload = serde_json::json!({
+                    "type": "user_profile_update",
+                    "user_id": user_id,
+                    "avatar_url": avatar,
+                });
+
+                for sid in server_ids {
+                    state.ws_broadcast(sid, payload.clone()).await;
+                }
+            }
         }
 
         _ => {

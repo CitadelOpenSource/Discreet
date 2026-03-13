@@ -204,6 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/guest", axum::routing::post(citadel_auth_handlers::register_guest))
         .route("/auth/login", axum::routing::post(citadel_auth_handlers::login))
         .route("/auth/upgrade", axum::routing::post(citadel_auth_handlers::upgrade_account))
+        .route("/auth/recover-account", axum::routing::post(citadel_auth_handlers::recover_account))
         // Email verification & password reset
         .route("/auth/verify-email/send", axum::routing::post(citadel_email_handlers::send_verification))
         .route("/auth/verify-email/confirm", axum::routing::post(citadel_email_handlers::confirm_email))
@@ -426,13 +427,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // Versioned API.
         .nest("/api/v1", api_v1)
-        // Vite client — serves client-next/dist/ at / and returns index.html
-        // for any path that doesn't match an API route or static asset, enabling
+        // Vite client — serves client-next/dist/ at /app and returns index.html
+        // for any path that doesn't match a static asset, enabling
         // React Router client-side navigation.
         .nest_service(
-            "/",
+            "/app",
             tower_http::services::ServeDir::new("client-next/dist")
                 .fallback(tower_http::services::ServeFile::new("client-next/dist/index.html")),
+        )
+        // Landing page — static HTML at root.
+        .nest_service(
+            "/",
+            tower_http::services::ServeDir::new("static")
+                .fallback(tower_http::services::ServeFile::new("static/index.html")),
         )
         // Shared state.
         .with_state(state.clone())

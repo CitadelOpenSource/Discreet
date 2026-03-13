@@ -43,9 +43,9 @@ pub struct BotPersona {
 
 fn built_in_personas() -> Vec<BotPersona> {
     vec![
-        BotPersona { id: "general".into(), name: "Citadel AI".into(), emoji: "🤖".into(),
+        BotPersona { id: "general".into(), name: "Discreet AI".into(), emoji: "🤖".into(),
             description: "General-purpose assistant. Ask anything.".into(),
-            system_prompt: "You are Citadel AI, a helpful assistant in an encrypted chat. Be concise, friendly, and accurate.".into(),
+            system_prompt: "You are Discreet AI, a helpful assistant in an encrypted chat. Be concise, friendly, and accurate.".into(),
             voice_style: "default".into(), nsfw: false },
         BotPersona { id: "legal".into(), name: "Legal Advisor".into(), emoji: "⚖️".into(),
             description: "General legal information and guidance. Not a lawyer.".into(),

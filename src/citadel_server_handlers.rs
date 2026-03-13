@@ -59,6 +59,7 @@ pub struct UpdateServerRequest {
     pub explicit_content_filter: Option<i32>,
     pub system_channel_id: Option<Uuid>,
     pub member_tab_label: Option<String>,
+    pub slash_commands_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +112,7 @@ pub struct ServerInfo {
     pub system_channel_id: Option<Uuid>,
     pub vanity_code: Option<String>,
     pub member_tab_label: String,
+    pub slash_commands_enabled: bool,
     pub owner_id: Uuid,
     pub member_count: i64,
     pub created_at: String,
@@ -339,6 +341,7 @@ pub async fn create_server(
             system_channel_id: Some(channel_id),
             vanity_code: None,
             member_tab_label: "Users".into(),
+            slash_commands_enabled: true,
             owner_id: auth.user_id,
             member_count: 1,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -355,7 +358,7 @@ pub async fn list_servers(
     let rows = sqlx::query!(
         "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,
                 s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,
-                s.member_tab_label, s.owner_id, s.created_at,
+                s.member_tab_label, s.slash_commands_enabled, s.owner_id, s.created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM servers s
          INNER JOIN server_members m ON m.server_id = s.id
@@ -380,6 +383,7 @@ pub async fn list_servers(
             system_channel_id: r.system_channel_id,
             vanity_code: r.vanity_code,
             member_tab_label: r.member_tab_label,
+            slash_commands_enabled: r.slash_commands_enabled,
             owner_id: r.owner_id,
             member_count: r.member_count.unwrap_or(0),
             created_at: r.created_at.to_rfc3339(),
@@ -402,7 +406,7 @@ pub async fn get_server(
     let server = sqlx::query!(
         "SELECT s.id, s.name, s.description, s.icon_url, s.banner_url, s.default_notification_level,
                 s.verification_level, s.explicit_content_filter, s.system_channel_id, s.vanity_code,
-                s.member_tab_label, s.owner_id, s.created_at,
+                s.member_tab_label, s.slash_commands_enabled, s.owner_id, s.created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM servers s
          WHERE s.id = $1",
@@ -424,6 +428,7 @@ pub async fn get_server(
         system_channel_id: server.system_channel_id,
         vanity_code: server.vanity_code,
         member_tab_label: server.member_tab_label,
+        slash_commands_enabled: server.slash_commands_enabled,
         owner_id: server.owner_id,
         member_count: server.member_count.unwrap_or(0),
         created_at: server.created_at.to_rfc3339(),
@@ -570,6 +575,16 @@ pub async fn update_server(
         .await?;
     }
 
+    if let Some(enabled) = req.slash_commands_enabled {
+        sqlx::query!(
+            "UPDATE servers SET slash_commands_enabled = $1, updated_at = NOW() WHERE id = $2",
+            enabled,
+            server_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
     // Audit log
     let changes = serde_json::json!({
         "name": req.name, "description": req.description.is_some(),
@@ -577,6 +592,7 @@ pub async fn update_server(
         "notification_level": req.default_notification_level,
         "verification_level": req.verification_level,
         "member_tab_label": req.member_tab_label,
+        "slash_commands_enabled": req.slash_commands_enabled,
     });
     let _ = citadel_audit::log_action(
         &state.db, server_id, auth.user_id, "UPDATE_SERVER",
@@ -587,7 +603,7 @@ pub async fn update_server(
     let server = sqlx::query!(
         "SELECT id, name, description, icon_url, banner_url, default_notification_level,
                 verification_level, explicit_content_filter, system_channel_id, vanity_code,
-                member_tab_label, owner_id, created_at,
+                member_tab_label, slash_commands_enabled, owner_id, created_at,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = servers.id) AS member_count
          FROM servers WHERE id = $1",
         server_id,
@@ -607,6 +623,7 @@ pub async fn update_server(
         system_channel_id: server.system_channel_id,
         vanity_code: server.vanity_code,
         member_tab_label: server.member_tab_label,
+        slash_commands_enabled: server.slash_commands_enabled,
         owner_id: server.owner_id,
         member_count: server.member_count.unwrap_or(0),
         created_at: server.created_at.to_rfc3339(),

@@ -1,7 +1,7 @@
-# 🍓 DEPLOY ON RASPBERRY PI
+# DEPLOY ON RASPBERRY PI
 ## Self-Hosted E2EE Communication Server — $50 Hardware, $5/Year Electricity
 
-Citadel runs on a Raspberry Pi 4 (4GB+) with an external SSD. Rust compiles natively to ARM64. The server draws ~5W idle, ~8W active — perfect for always-on encrypted communication that costs less than a cup of coffee per year to run.
+Discreet runs on a Raspberry Pi 4 (4GB+) with an external SSD. Rust compiles natively to ARM64. The server draws ~5W idle, ~8W active — perfect for always-on encrypted communication that costs less than a cup of coffee per year to run.
 
 ---
 
@@ -48,7 +48,7 @@ sudo usermod -aG docker $USER
 # Log out and back in
 ```
 
-### 4. Clone Citadel
+### 4. Clone Discreet
 ```bash
 cd /mnt/ssd
 git clone https://github.com/CitadelOpenSource/Discreet.git
@@ -143,7 +143,7 @@ cargo build --release
 ```bash
 # Firewall — only expose port 3000
 sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 3000/tcp  # Citadel
+sudo ufw allow 3000/tcp  # Discreet
 sudo ufw enable
 
 # SSH key-only auth (disable password)

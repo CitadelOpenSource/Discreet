@@ -258,7 +258,7 @@ fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, AgentError> {
         // Do not follow redirects for API calls — a redirect is suspicious
         .redirect(reqwest::redirect::Policy::none())
         // Enforce HTTPS for cloud providers (Ollama may be localhost HTTP)
-        .user_agent("CitadelAgent/0.4.0")
+        .user_agent("DiscreetAgent/0.4.0")
         .build()
         .map_err(|e| AgentError::Internal(format!("Failed to build HTTP client: {e}")))
 }
@@ -705,7 +705,7 @@ impl LlmProvider for OllamaProvider {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .connect_timeout(Duration::from_secs(10))
-            .user_agent("CitadelAgent/0.4.0")
+            .user_agent("DiscreetAgent/0.4.0")
             .build()
             .map_err(|e| AgentError::Internal(format!("HTTP client error: {e}")))?;
 

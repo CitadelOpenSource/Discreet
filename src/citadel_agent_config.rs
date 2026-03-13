@@ -486,7 +486,7 @@ fn build_system_prompt(
     nsfw_allowed: bool,
 ) -> String {
     let safety_preamble = format!(
-        "You are \"{display_name}\", an AI assistant in the Citadel encrypted messenger. \
+        "You are \"{display_name}\", an AI assistant in the Discreet encrypted messenger. \
          Important rules you must always follow:\n\
          - You are an AI. Always acknowledge this if asked.\n\
          - Never pretend to be a human, a specific real person, or claim to have experiences you don't have.\n\

@@ -116,6 +116,8 @@ pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_in: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -323,6 +325,18 @@ pub async fn register(
     .await
     .ok();
 
+    // ── Recovery key ──────────────────────────────────────────────────────
+    let recovery_key = generate_recovery_key();
+    let recovery_hash = hash_recovery_key(&recovery_key);
+    sqlx::query(
+        "UPDATE users SET recovery_key_hash = $1 WHERE id = $2",
+    )
+    .bind(&recovery_hash)
+    .bind(user_id)
+    .execute(&state.db)
+    .await
+    .ok(); // best-effort — don't fail registration
+
     // ── Email verification ────────────────────────────────────────────────
     // Only triggered when the user supplied an email address.
     if let Some(ref email) = req.email {
@@ -398,6 +412,7 @@ pub async fn register(
             access_token,
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
+            recovery_key: Some(recovery_key),
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -539,6 +554,7 @@ pub async fn register_guest(
             access_token,
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
+            recovery_key: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -757,6 +773,7 @@ pub async fn login(
             access_token,
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
+            recovery_key: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -835,6 +852,7 @@ pub async fn complete_2fa_login(
             access_token,
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
+            recovery_key: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -920,6 +938,68 @@ pub async fn logout(
         clear_refresh_cookie().parse().expect("valid cookie"),
     );
     Ok(resp)
+}
+
+// ─── POST /auth/recover-account ─────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct RecoverAccountRequest {
+    pub username: String,
+    pub recovery_key: String,
+    pub new_password: String,
+}
+
+pub async fn recover_account(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<RecoverAccountRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_password(&req.new_password)?;
+
+    // Look up user by username
+    let user = sqlx::query(
+        "SELECT id, recovery_key_hash FROM users WHERE username = $1",
+    )
+    .bind(&req.username)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(format!("DB error: {e}")))?
+    .ok_or_else(|| AppError::Unauthorized("Invalid username or recovery key".into()))?;
+
+    let user_id: Uuid = sqlx::Row::get(&user, "id");
+    let stored_hash: Option<String> = sqlx::Row::get(&user, "recovery_key_hash");
+
+    let stored_hash = stored_hash
+        .ok_or_else(|| AppError::Unauthorized("Invalid username or recovery key".into()))?;
+
+    // Verify recovery key
+    let provided_hash = hash_recovery_key(&req.recovery_key);
+    if provided_hash != stored_hash {
+        return Err(AppError::Unauthorized("Invalid username or recovery key".into()));
+    }
+
+    // Reset password and invalidate recovery key (one-time use)
+    let new_hash = hash_password(&req.new_password)?;
+    sqlx::query(
+        "UPDATE users SET password_hash = $1, recovery_key_hash = NULL WHERE id = $2",
+    )
+    .bind(&new_hash)
+    .bind(user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(format!("DB error: {e}")))?;
+
+    // Revoke all existing sessions
+    sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL")
+        .bind(user_id)
+        .execute(&state.db)
+        .await
+        .ok();
+
+    tracing::info!(user_id = %user_id, "Account recovered via recovery key");
+
+    Ok((StatusCode::OK, Json(serde_json::json!({
+        "message": "Password reset successful. Please log in with your new password."
+    }))))
 }
 
 // ─── GET /auth/sessions ─────────────────────────────────────────────────
@@ -1195,6 +1275,31 @@ pub fn generate_hex_token() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
+}
+
+/// Generate a 24-char recovery key as 4 groups of 6 alphanumeric chars
+/// separated by dashes (e.g., "A1B2C3-D4E5F6-G7H8J9-K1L2M3").
+/// Excludes ambiguous characters (0/O, 1/I/l) for readability.
+fn generate_recovery_key() -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::thread_rng();
+    let mut groups = Vec::with_capacity(4);
+    for _ in 0..4 {
+        let group: String = (0..6)
+            .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+            .collect();
+        groups.push(group);
+    }
+    groups.join("-")
+}
+
+/// SHA-256 hash a recovery key for storage.
+fn hash_recovery_key(key: &str) -> String {
+    use sha2::{Sha256, Digest};
+    // Hash the key without dashes for consistency
+    let normalized: String = key.chars().filter(|c| *c != '-').collect();
+    let hash = Sha256::digest(normalized.as_bytes());
+    hex::encode(hash)
 }
 
 /// Hash a refresh token with SHA-256 before storing in DB.

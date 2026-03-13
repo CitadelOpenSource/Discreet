@@ -261,7 +261,7 @@ There's no way to recover old messages. If the ghost messages bother you:
 # Nuclear option — wipes ALL data:
 docker compose down -v
 docker compose up -d
-# Re-apply all migrations (see SETUP.md Step 3)
+# Wait 5 seconds, then apply all migrations (see SETUP.md Step 3)
 ```
 
 ---
@@ -441,7 +441,7 @@ cargo run
 ## Still stuck?
 
 1. Check `docker compose logs postgres` for database errors
-2. Check `docker compose logs redis` for cache errors  
+2. Check `docker compose logs redis` for cache errors
 3. Try the nuclear option: `docker compose down -v && docker compose up -d` + re-apply all migrations
 4. Open an issue at https://github.com/CitadelOpenSource/Discreet/issues
 

@@ -69,7 +69,10 @@ const fieldErr = (msg: string) => msg ? (
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AuthScreen({ onAuth }: AuthScreenProps) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('register') === 'true' ? 'register' : 'login';
+  });
 
   // Shared
   const [username, setUsername] = useState('');
@@ -84,6 +87,10 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   // Login-only
   const [rememberMe, setRememberMe]   = useState(false);
   const [forgotShown, setForgotShown] = useState(false);
+
+  // Recovery key modal (shown after registration)
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [keyCopied, setKeyCopied] = useState(false);
 
   // Forgot password flow
   const [fpStep, setFpStep] = useState<'email' | 'token' | 'done'>('email');
@@ -128,6 +135,11 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
         const u = username.trim().toLowerCase();
         if (u === 'admin' || u === 'dev') localStorage.setItem('d_dev_local', 'true');
         if (rememberMe) localStorage.setItem('d_remember_me', '1');
+        if (mode === 'register' && res.data?.recovery_key) {
+          setRecoveryKey(res.data.recovery_key);
+          setLoading(false);
+          return;
+        }
         onAuth();
       } else {
         setError(res.data?.error?.message || 'Authentication failed');
@@ -362,6 +374,41 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           </div>
         </div>
       </div>
+
+      {/* Recovery key modal */}
+      {recoveryKey && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 440, background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 'clamp(24px, 5vw, 36px)', boxShadow: '0 12px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🔑</div>
+              <h2 style={{ margin: 0, color: T.tx, fontSize: 20, fontWeight: 700 }}>Your Recovery Key</h2>
+            </div>
+
+            <div style={{ padding: '14px 16px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: 8, color: '#ff4757', fontSize: 12, lineHeight: 1.6, marginBottom: 16 }}>
+              Save this key somewhere safe. It is the <strong>only way</strong> to recover your account if you lose your password. This key will <strong>never be shown again</strong>.
+            </div>
+
+            <div style={{ padding: '16px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, textAlign: 'center', marginBottom: 16, cursor: 'pointer', userSelect: 'all' }}
+              onClick={() => { navigator.clipboard.writeText(recoveryKey); setKeyCopied(true); }}>
+              <div style={{ fontFamily: 'monospace', fontSize: 20, fontWeight: 700, color: T.ac, letterSpacing: '2px' }}>
+                {recoveryKey}
+              </div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 8 }}>Click to copy</div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => { navigator.clipboard.writeText(recoveryKey); setKeyCopied(true); }}
+                style={{ ...btn(true), flex: 1, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>
+                {keyCopied ? 'Copied!' : 'Copy Key'}
+              </button>
+              <button type="button" onClick={() => { setRecoveryKey(''); onAuth(); }}
+                style={{ ...btn(true), flex: 1 }}>
+                I've Saved It — Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,10 +14,17 @@ initCrypto().then(() => {
 const _meetMatch = window.location.pathname.match(/\/meet\/([A-Za-z0-9]{4,})/);
 const _meetCode  = _meetMatch?.[1] ?? null;
 
+// Detect /app/privacy and /app/terms routes
+const _path = window.location.pathname.replace(/\/+$/, '');
+const _isPrivacy = _path === '/app/privacy';
+const _isTerms   = _path === '/app/terms';
+
 const App = React.lazy(() => import('./App'));
 const GuestMeetingJoin = React.lazy(() =>
   import('./components/GuestMeetingJoin').then(m => ({ default: m.GuestMeetingJoin }))
 );
+const PrivacyPolicy = React.lazy(() => import('./components/PrivacyPolicy'));
+const TermsOfService = React.lazy(() => import('./components/TermsOfService'));
 
 const Spinner = (
   <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, background:'#07090f', color:'#e0e4ea' }}>
@@ -29,7 +36,11 @@ const Spinner = (
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <React.Suspense fallback={Spinner}>
-      {_meetCode
+      {_isPrivacy
+        ? <PrivacyPolicy />
+        : _isTerms
+        ? <TermsOfService />
+        : _meetCode
         ? <GuestMeetingJoin code={_meetCode} />
         : <App />
       }

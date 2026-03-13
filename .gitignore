@@ -53,5 +53,19 @@ INTERNAL_ONLY.md
 
 # Misc sensitive / internal files
 *.rtf
+*.docx
 Big-Conversation-Catchup*.txt
+*Catchup*.txt
+Recovery.txt
 ORACLE_SETUP_JOHN.md
+INTERNAL_IDEAS_AND_STRATEGY.md
+*PROMPTS*.md
+*session*.md
+*session*.txt
+DISCREET_MASTER_GUIDE.md
+DISCREET_MASTER_BUILD.md
+
+# Patent / legal
+patent/
+sb0015*
+sb0016*
