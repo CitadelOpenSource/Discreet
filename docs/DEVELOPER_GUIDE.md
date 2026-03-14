@@ -2,7 +2,7 @@
 
 > **New here?** See [GUIDE/QUICKSTART.md](../GUIDE/QUICKSTART.md) for setup, [GUIDE/CONTRIBUTING.md](../GUIDE/CONTRIBUTING.md) for contribution workflow, and [GUIDE/DEPLOYMENT.md](../GUIDE/DEPLOYMENT.md) for production deployment.
 
-Welcome to Discreet — an end-to-end encrypted Discord alternative. This guide covers architecture, code style, and development patterns.
+Welcome to Discreet — an end-to-end encrypted community platform. This guide covers architecture, code style, and development patterns.
 
 ## Architecture Overview
 

@@ -1,6 +1,6 @@
 # Contributing to Discreet
 
-We're building an encrypted Discord alternative — and we want your help.
+We're building an encrypted community platform — and we want your help.
 
 ## Quick start
 

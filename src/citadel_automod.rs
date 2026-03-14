@@ -6,7 +6,7 @@
 //
 // Usage:
 //   let config = load_automod_config(&db, server_id).await;
-//   match check_message(&config, &message_text) {
+//   match check_message(&config, &message_text, false, Some("myinstance.com")) {
 //       AutoModAction::Allow => { /* send normally */ }
 //       AutoModAction::Warn(reason) => { /* flag for review */ }
 //       AutoModAction::Delete(reason) => { /* block the message */ }
@@ -38,7 +38,7 @@ pub struct AutoModConfig {
     #[serde(default = "default_spam_threshold")]
     pub spam_threshold_per_minute: u32,
 
-    /// Block Discord/Slack/etc. invite links.
+    /// Block external platform invite links.
     #[serde(default)]
     pub block_invites: bool,
 
@@ -96,7 +96,11 @@ pub enum AutoModAction {
 /// If `nsfw` is true the bad-words check is skipped (NSFW channels
 /// are expected to contain adult language) but structural rules
 /// (invite spam, mention spam, caps) still apply.
-pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool) -> AutoModAction {
+///
+/// `instance_domain` is the current instance's domain (e.g. "discreet.chat").
+/// When provided, invite links pointing to the same instance are allowed
+/// while invite links to *other* Discreet instances are blocked.
+pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool, instance_domain: Option<&str>) -> AutoModAction {
     if !config.enabled {
         return AutoModAction::Allow;
     }
@@ -115,6 +119,7 @@ pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool) -> AutoM
 
     // ── Invite links ────────────────────────────────────────────────────
     if config.block_invites {
+        // External platform invite patterns — always blocked
         let invite_patterns = [
             "discord.gg/",
             "discord.com/invite/",
@@ -123,10 +128,30 @@ pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool) -> AutoM
             "slack.com/join/",
             "t.me/",
             "telegram.me/",
+            "signal.group/",
         ];
         for pattern in &invite_patterns {
             if lower.contains(pattern) {
-                return AutoModAction::Delete("Invite links are not allowed".into());
+                return AutoModAction::Delete("External invite links are not allowed".into());
+            }
+        }
+
+        // Block /invite/ URLs from different Discreet instances
+        if let Some(domain) = instance_domain {
+            // Simple pattern match — find /invite/ URLs and check the host
+            let domain_lower = domain.to_lowercase();
+            let search = &lower;
+            let mut pos = 0;
+            while let Some(idx) = search[pos..].find("/invite/") {
+                let abs = pos + idx;
+                // Walk backwards to find the host in https://HOST/invite/
+                if let Some(proto_end) = search[..abs].rfind("://") {
+                    let host = &search[proto_end + 3..abs];
+                    if !host.is_empty() && !host.contains(' ') && host != domain_lower {
+                        return AutoModAction::Delete("Invite links from other instances are not allowed".into());
+                    }
+                }
+                pos = abs + 8; // skip past "/invite/"
             }
         }
     }
@@ -273,7 +298,7 @@ mod tests {
     #[test]
     fn test_disabled_allows_everything() {
         let config = AutoModConfig::default(); // enabled: false
-        assert_eq!(check_message(&config, "any bad stuff", false), AutoModAction::Allow);
+        assert_eq!(check_message(&config, "any bad stuff", false, None), AutoModAction::Allow);
     }
 
     #[test]
@@ -281,7 +306,7 @@ mod tests {
         let mut config = enabled_config();
         config.bad_words = vec!["badword".into()];
         assert!(matches!(
-            check_message(&config, "This has BADWORD in it", false),
+            check_message(&config, "This has BADWORD in it", false, None),
             AutoModAction::Delete(_)
         ));
     }
@@ -290,7 +315,7 @@ mod tests {
     fn test_bad_word_no_match() {
         let mut config = enabled_config();
         config.bad_words = vec!["badword".into()];
-        assert_eq!(check_message(&config, "This is fine", false), AutoModAction::Allow);
+        assert_eq!(check_message(&config, "This is fine", false, None), AutoModAction::Allow);
     }
 
     #[test]
@@ -298,11 +323,11 @@ mod tests {
         let mut config = enabled_config();
         config.block_invites = true;
         assert!(matches!(
-            check_message(&config, "Join us at discord.gg/abc123", false),
+            check_message(&config, "Join us at discord.gg/abc123", false, None),
             AutoModAction::Delete(_)
         ));
         assert!(matches!(
-            check_message(&config, "Check t.me/somechannel", false),
+            check_message(&config, "Check t.me/somechannel", false, None),
             AutoModAction::Delete(_)
         ));
     }
@@ -311,7 +336,7 @@ mod tests {
     fn test_invite_links_allowed_when_disabled() {
         let config = enabled_config();
         assert_eq!(
-            check_message(&config, "Join discord.gg/abc123", false),
+            check_message(&config, "Join discord.gg/abc123", false, None),
             AutoModAction::Allow
         );
     }
@@ -321,7 +346,7 @@ mod tests {
         let mut config = enabled_config();
         config.block_links = true;
         assert!(matches!(
-            check_message(&config, "Check https://example.com", false),
+            check_message(&config, "Check https://example.com", false, None),
             AutoModAction::Delete(_)
         ));
     }
@@ -331,11 +356,11 @@ mod tests {
         let mut config = enabled_config();
         config.max_mentions = 3;
         assert!(matches!(
-            check_message(&config, "@one @two @three @four", false),
+            check_message(&config, "@one @two @three @four", false, None),
             AutoModAction::Delete(_)
         ));
         assert_eq!(
-            check_message(&config, "@one @two @three", false),
+            check_message(&config, "@one @two @three", false, None),
             AutoModAction::Allow
         );
     }
@@ -345,7 +370,7 @@ mod tests {
         let mut config = enabled_config();
         config.max_caps_percent = 0.8;
         assert!(matches!(
-            check_message(&config, "THIS IS ALL CAPS MESSAGE HERE", false),
+            check_message(&config, "THIS IS ALL CAPS MESSAGE HERE", false, None),
             AutoModAction::Warn(_)
         ));
     }
@@ -355,7 +380,7 @@ mod tests {
         let mut config = enabled_config();
         config.max_caps_percent = 0.8;
         // Less than 10 alpha chars — skip caps check
-        assert_eq!(check_message(&config, "OK SURE", false), AutoModAction::Allow);
+        assert_eq!(check_message(&config, "OK SURE", false, None), AutoModAction::Allow);
     }
 
     #[test]
@@ -364,13 +389,13 @@ mod tests {
         config.bad_words = vec!["badword".into()];
         // NSFW channel: bad words allowed
         assert_eq!(
-            check_message(&config, "This has badword", true),
+            check_message(&config, "This has badword", true, None),
             AutoModAction::Allow
         );
         // But mention spam still applies in NSFW
         config.max_mentions = 2;
         assert!(matches!(
-            check_message(&config, "@a @b @c", true),
+            check_message(&config, "@a @b @c", true, None),
             AutoModAction::Delete(_)
         ));
     }
@@ -382,5 +407,35 @@ mod tests {
         assert_eq!(config.spam_threshold_per_minute, 5);
         assert_eq!(config.max_mentions, 10);
         assert!((config.max_caps_percent - 0.8).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_signal_group_blocked() {
+        let mut config = enabled_config();
+        config.block_invites = true;
+        assert!(matches!(
+            check_message(&config, "Join signal.group/#abc", false, None),
+            AutoModAction::Delete(_)
+        ));
+    }
+
+    #[test]
+    fn test_same_instance_invite_allowed() {
+        let mut config = enabled_config();
+        config.block_invites = true;
+        assert_eq!(
+            check_message(&config, "Join https://myinstance.com/invite/abc123", false, Some("myinstance.com")),
+            AutoModAction::Allow
+        );
+    }
+
+    #[test]
+    fn test_different_instance_invite_blocked() {
+        let mut config = enabled_config();
+        config.block_invites = true;
+        assert!(matches!(
+            check_message(&config, "Join https://other.com/invite/abc123", false, Some("myinstance.com")),
+            AutoModAction::Delete(_)
+        ));
     }
 }

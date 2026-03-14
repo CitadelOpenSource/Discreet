@@ -650,6 +650,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // Versioned API.
         .nest("/api/v1", api_v1)
+        // Invite deep-links — serve Vite client so it can handle /invite/:code
+        .route(
+            "/invite/:code",
+            axum::routing::get(|| async {
+                match tokio::fs::read_to_string("client-next/dist/index.html").await {
+                    Ok(html) => axum::response::Html(html).into_response(),
+                    Err(_) => axum::response::Redirect::temporary("/app").into_response(),
+                }
+            }),
+        )
         // Vite client — serves client-next/dist/ at /app and returns index.html
         // for any path that doesn't match a static asset, enabling
         // React Router client-side navigation.

@@ -1,62 +1,39 @@
 /**
- * GifPicker — Tenor API v2 integration.
- * Renders as a portal at document.body. Shows trending GIFs on open,
- * switches to search results as the user types (300ms debounce).
- * Closes when clicking outside.
+ * GifPicker — Simple GIF URL input.
+ * Users paste a direct GIF URL which renders inline in chat.
+ * No third-party API calls — privacy-first design.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { T } from '../theme';
-
-// ─── Types ────────────────────────────────────────────────
-
-interface TenorMedia {
-  gif?:     { url: string };
-  tinygif?: { url: string };
-}
-
-interface TenorResult {
-  id?:    string;
-  media?: TenorMedia[];
-}
 
 export interface GifPickerProps {
   onSelect: (url: string) => void;
   onClose:  () => void;
 }
 
-// ─── Constants ────────────────────────────────────────────
+const GIF_EXTENSIONS = ['.gif', '.gifv', '.webp'];
 
-const TENOR_KEY = 'LIVDSRZULELA';
-const TENOR_BASE = 'https://g.tenor.com/v1';
-
-// ─── Helpers ──────────────────────────────────────────────
-
-function getThumbUrl(g: TenorResult): string {
-  return g?.media?.[0]?.tinygif?.url || g?.media?.[0]?.gif?.url || '';
+function isGifUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (u.protocol === 'http:' || u.protocol === 'https:') &&
+      (GIF_EXTENSIONS.some(ext => u.pathname.toLowerCase().endsWith(ext)) ||
+       u.hostname.includes('giphy.com') ||
+       u.hostname.includes('tenor.com') ||
+       u.hostname.includes('imgur.com') ||
+       u.hostname.includes('gfycat.com'));
+  } catch { return false; }
 }
-
-function getFullUrl(g: TenorResult): string {
-  return g?.media?.[0]?.gif?.url || g?.media?.[0]?.tinygif?.url || '';
-}
-
-// ─── Component ────────────────────────────────────────────
 
 export function GifPicker({ onSelect, onClose }: GifPickerProps) {
-  const [query, setQuery]     = useState('');
-  const [gifs, setGifs]       = useState<TenorResult[]>([]);
-  const [trending, setTrending] = useState<TenorResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [url, setUrl]         = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [err, setErr]         = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
-  // Load trending + close-on-outside-click
+  // Close on outside click
   useEffect(() => {
-    fetch(`${TENOR_BASE}/trending?key=${TENOR_KEY}&limit=20&media_filter=minimal`)
-      .then(r => r.json())
-      .then(d => setTrending(d.results || []))
-      .catch(() => setError('Could not load GIFs'));
-
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
@@ -64,63 +41,73 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const search = async (q: string) => {
-    if (!q.trim()) { setGifs([]); setError(null); return; }
-    setLoading(true); setError(null);
-    try {
-      const r = await fetch(`${TENOR_BASE}/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=20&media_filter=minimal`);
-      const d = await r.json();
-      setGifs(d.results || []);
-      if (!d.results?.length) setError('No GIFs found');
-    } catch { setError('Search failed — check connection'); }
-    setLoading(false);
+  const handlePaste = (value: string) => {
+    setUrl(value);
+    setErr('');
+    const trimmed = value.trim();
+    if (!trimmed) { setPreview(null); return; }
+    if (isGifUrl(trimmed)) {
+      setPreview(trimmed);
+    } else {
+      setPreview(null);
+      if (trimmed.length > 10) setErr('Paste a direct link to a .gif, .webp, or supported image host');
+    }
   };
 
-  // 300ms debounce on query
-  useEffect(() => {
-    const timer = setTimeout(() => { if (query) search(query); else setError(null); }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  const results = query ? gifs : trending;
+  const handleSend = () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (isGifUrl(trimmed)) {
+      onSelect(trimmed);
+      onClose();
+    } else {
+      setErr('Not a valid GIF URL');
+    }
+  };
 
   return ReactDOM.createPortal(
-    <div ref={ref} style={{ position: 'fixed', bottom: 70, right: 80, width: 340, maxHeight: 420, background: '#111320', borderRadius: 12, border: `1px solid ${T.bd}`, boxShadow: '0 12px 40px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', zIndex: 10000, overflow: 'hidden', fontFamily: "'DM Sans',sans-serif" }}>
+    <div ref={ref} style={{ position: 'fixed', bottom: 70, right: 80, width: 340, background: '#111320', borderRadius: 12, border: `1px solid ${T.bd}`, boxShadow: '0 12px 40px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', zIndex: 10000, overflow: 'hidden', fontFamily: "'DM Sans',sans-serif" }}>
       {/* Header */}
       <div style={{ padding: '10px 12px 8px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: T.ac }}>GIF</span>
         <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search GIFs..."
+          value={url}
+          onChange={e => handlePaste(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
+          placeholder="Paste a GIF URL..."
           autoFocus
           style={{ flex: 1, background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, padding: '8px 12px', color: T.tx, fontSize: 13, outline: 'none', fontFamily: "'DM Sans',sans-serif", boxSizing: 'border-box' }}
         />
       </div>
 
-      {/* Grid */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 6 }}>
-        {loading && <div style={{ textAlign: 'center', padding: 20, color: T.mt }}>Searching...</div>}
-        {error && !loading && <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 12 }}>{error}</div>}
-        {!loading && !error && results.length === 0 && !query && (
-          <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 12 }}>Loading trending GIFs...</div>
+      {/* Preview / Help */}
+      <div style={{ padding: 12, minHeight: 80 }}>
+        {err && <div style={{ fontSize: 11, color: T.err, marginBottom: 8 }}>{err}</div>}
+
+        {preview ? (
+          <div style={{ textAlign: 'center' }}>
+            <img
+              src={preview}
+              alt="GIF preview"
+              style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, background: T.sf2 }}
+              onError={() => { setPreview(null); setErr('Could not load image'); }}
+            />
+            <button
+              onClick={handleSend}
+              style={{ marginTop: 8, background: T.ac, color: '#000', border: 'none', borderRadius: 6, padding: '8px 20px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Send GIF
+            </button>
+          </div>
+        ) : (
+          <div style={{ color: T.mt, fontSize: 11, lineHeight: 1.6, textAlign: 'center', padding: '12px 8px' }}>
+            Paste a direct link to a GIF image.<br />
+            Supported: .gif, .webp, Imgur, Tenor, Giphy, Gfycat<br />
+            <span style={{ fontSize: 10, opacity: 0.6, marginTop: 4, display: 'block' }}>
+              No third-party tracking — your privacy is preserved.
+            </span>
+          </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-          {results.map((g, i) => {
-            const thumb = getThumbUrl(g);
-            if (!thumb) return null;
-            return (
-              <img
-                key={g.id || i}
-                src={thumb}
-                onClick={() => { onSelect(getFullUrl(g)); onClose(); }}
-                style={{ width: '100%', borderRadius: 6, cursor: 'pointer', display: 'block', background: T.sf2 }}
-                loading="lazy"
-                alt=""
-              />
-            );
-          })}
-        </div>
       </div>
     </div>,
     document.body

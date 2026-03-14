@@ -46,7 +46,8 @@ import { PermissionsAndroid, Platform } from 'react-native';
 export const SERVICE_UUID  = 'd15c0001-0001-0001-0001-00d15c000001';
 export const CHAR_UUID     = 'd15c0002-0001-0001-0001-00d15c000001'; // discovery beacon (read)
 export const CHAR_KEY_UUID = 'd15c0010-0001-0001-0001-00d15c000001'; // ECDH public key (read/write)
-export const CHAR_MSG_UUID = 'd15c0011-0001-0001-0001-00d15c000001'; // encrypted messages (write+notify)
+export const CHAR_MSG_UUID     = 'd15c0011-0001-0001-0001-00d15c000001'; // encrypted messages (write+notify)
+export const CHAR_CONTACT_UUID = 'd15c0012-0001-0001-0001-00d15c000001'; // contact exchange (read/write)
 
 // Discovery timing
 const EXPIRY_MS      = 30_000;
@@ -65,6 +66,7 @@ const FRAG_TIMEOUT_MS    = 30_000; // discard incomplete reassembly after this
 const STORE_ECDH_PRIV  = 'prox_ecdh_priv';  // JWK-encoded private key
 const STORE_ECDH_PUB   = 'prox_ecdh_pub';   // base64 raw public key (65 bytes)
 const STORE_QUEUE      = 'proximity_queue';  // JSON array of QueuedMessage
+const STORE_CONTACTS   = 'proximity_contacts'; // JSON array of BleContact
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,15 @@ export interface QueuedMessage {
   fragmentIndex: number;
   fragmentTotal: number;
   messageId:     string;
+}
+
+/** Contact info exchanged via BLE CHAR_CONTACT_UUID. */
+export interface BleContact {
+  user_id:              string;
+  username:             string;
+  preferred_instance_url: string;
+  exchanged_at:         number;
+  friend_request_sent?: boolean;
 }
 
 /** On-wire frame written to / read from CHAR_MSG_UUID. Short keys save BLE bytes. */
@@ -914,6 +925,108 @@ export class ProximityService {
         }
       }, /* emitCurrentState */ true);
     });
+  }
+
+  // ── Public — Contact Exchange ─────────────────────────────────────────────
+
+  /**
+   * Exchange contact info with a nearby peer over BLE.
+   *
+   * Writes our contact card to the peer's CHAR_CONTACT_UUID and reads theirs.
+   * Both devices store the exchanged contact in AsyncStorage.
+   */
+  async exchangeContact(
+    deviceId: string,
+    myCard: { username: string; instanceUrl: string },
+  ): Promise<{ ok: boolean; contact?: BleContact; reason?: string }> {
+    let device: Device;
+    try {
+      device = await this.manager.connectToDevice(deviceId, {
+        timeout: CONN_TIMEOUT_MS,
+        requestMTU: 512,
+      });
+      await device.discoverAllServicesAndCharacteristics();
+    } catch (e) {
+      return { ok: false, reason: `Connection failed: ${e}` };
+    }
+
+    // Write our contact card
+    const myCardJson = JSON.stringify({
+      uid: this.userId,
+      un:  myCard.username,
+      iu:  myCard.instanceUrl,
+      ts:  Date.now(),
+    });
+
+    try {
+      await device.writeCharacteristicWithResponseForService(
+        SERVICE_UUID, CHAR_CONTACT_UUID,
+        rawToB64(new TextEncoder().encode(myCardJson)),
+      );
+    } catch (e) {
+      await device.cancelConnection().catch(() => {});
+      return { ok: false, reason: `Write failed: ${e}` };
+    }
+
+    // Read peer's contact card
+    let peerContact: BleContact;
+    try {
+      const char = await device.readCharacteristicForService(SERVICE_UUID, CHAR_CONTACT_UUID);
+      if (!char.value) throw new Error('empty contact characteristic');
+      const raw = new TextDecoder().decode(b64ToRaw(char.value));
+      const parsed = JSON.parse(raw);
+      peerContact = {
+        user_id: parsed.uid,
+        username: parsed.un,
+        preferred_instance_url: parsed.iu,
+        exchanged_at: Date.now(),
+      };
+    } catch (e) {
+      await device.cancelConnection().catch(() => {});
+      return { ok: false, reason: `Read failed: ${e}` };
+    }
+
+    await device.cancelConnection().catch(() => {});
+
+    // Store in AsyncStorage
+    await this._storeContact(peerContact);
+
+    return { ok: true, contact: peerContact };
+  }
+
+  /** Load all stored BLE contacts from AsyncStorage. */
+  async getStoredContacts(): Promise<BleContact[]> {
+    try {
+      const raw = await AsyncStorage.getItem(STORE_CONTACTS);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  /** Remove a stored contact by user_id. */
+  async removeStoredContact(userId: string): Promise<void> {
+    const contacts = (await this.getStoredContacts()).filter(c => c.user_id !== userId);
+    await AsyncStorage.setItem(STORE_CONTACTS, JSON.stringify(contacts));
+  }
+
+  /** Mark a contact's friend request as sent. */
+  async markContactFriendRequestSent(userId: string): Promise<void> {
+    const contacts = await this.getStoredContacts();
+    const idx = contacts.findIndex(c => c.user_id === userId);
+    if (idx >= 0) {
+      contacts[idx].friend_request_sent = true;
+      await AsyncStorage.setItem(STORE_CONTACTS, JSON.stringify(contacts));
+    }
+  }
+
+  private async _storeContact(contact: BleContact): Promise<void> {
+    const contacts = await this.getStoredContacts();
+    const idx = contacts.findIndex(c => c.user_id === contact.user_id);
+    if (idx >= 0) {
+      contacts[idx] = { ...contacts[idx], ...contact };
+    } else {
+      contacts.push(contact);
+    }
+    await AsyncStorage.setItem(STORE_CONTACTS, JSON.stringify(contacts));
   }
 }
 

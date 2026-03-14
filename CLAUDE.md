@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Discreet** is a privacy-focused, Discord-like communication platform built in Rust (backend) and React/TypeScript (web client). The core guarantee: the server stores and relays ciphertext but **cannot decrypt it**. Fully self-hostable, runs on a Raspberry Pi.
+**Discreet** is a privacy-focused, community communication platform built in Rust (backend) and React/TypeScript (web client). The core guarantee: the server stores and relays ciphertext but **cannot decrypt it**. Fully self-hostable, runs on a Raspberry Pi.
 
 - Backend: ~14,500 lines of Rust (Axum + tokio + PostgreSQL + Redis)
 - Web client: ~18,500 lines of TypeScript (React 18 + Vite)

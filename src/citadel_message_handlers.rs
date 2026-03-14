@@ -198,7 +198,7 @@ pub async fn send_message(
         } else {
         let automod_config = load_automod_config(&state.db, channel.server_id).await;
         if automod_config.enabled {
-            match check_message(&automod_config, &req.content_ciphertext, channel.nsfw) {
+            match check_message(&automod_config, &req.content_ciphertext, channel.nsfw, state.config.federation_domain.as_deref()) {
                 AutoModAction::Allow => {}
                 AutoModAction::Warn(reason) => {
                     // Allow the message but notify the author via WebSocket.

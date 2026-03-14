@@ -150,6 +150,7 @@ pub struct InviteInfo {
 
 #[derive(Debug, Serialize)]
 pub struct InviteResolutionInfo {
+    pub server_id: Uuid,
     pub server_name: String,
     pub member_count: i64,
     pub icon_url: Option<String>,
@@ -1039,7 +1040,7 @@ pub async fn resolve_invite_code(
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let invite_server = sqlx::query!(
-        "SELECT s.name AS server_name, s.icon_url,
+        "SELECT s.id AS server_id, s.name AS server_name, s.icon_url,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM server_invites i
          INNER JOIN servers s ON s.id = i.server_id
@@ -1055,6 +1056,7 @@ pub async fn resolve_invite_code(
 
     if let Some(server) = invite_server {
         return Ok(Json(InviteResolutionInfo {
+            server_id: server.server_id,
             server_name: server.server_name,
             member_count: server.member_count.unwrap_or(0),
             icon_url: server.icon_url,
@@ -1062,7 +1064,7 @@ pub async fn resolve_invite_code(
     }
 
     let vanity_server = sqlx::query!(
-        "SELECT s.name AS server_name, s.icon_url,
+        "SELECT s.id AS server_id, s.name AS server_name, s.icon_url,
                 (SELECT COUNT(*) FROM server_members sm WHERE sm.server_id = s.id) AS member_count
          FROM servers s
          WHERE s.vanity_code = $1",
@@ -1073,6 +1075,7 @@ pub async fn resolve_invite_code(
     .ok_or_else(|| AppError::NotFound("Invite code not found".into()))?;
 
     Ok(Json(InviteResolutionInfo {
+        server_id: vanity_server.server_id,
         server_name: vanity_server.server_name,
         member_count: vanity_server.member_count.unwrap_or(0),
         icon_url: vanity_server.icon_url,
