@@ -7,6 +7,13 @@
 .env.local
 .env.production
 
+# Generated override (contains passwords)
+docker-compose.override.yml
+
+# Key material
+*.key
+*.pem
+
 # OS
 .DS_Store
 Thumbs.db
