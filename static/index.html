@@ -157,13 +157,24 @@ a{color:var(--accent);text-decoration:none}
 }
 
 /* ── Features ─────────────────────────────────────────── */
-.features{max-width:960px;margin:0 auto;padding:40px 24px 60px}
-.features h2{text-align:center;font-size:24px;font-weight:700;margin-bottom:32px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
-.card{padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
-.card .icon{font-size:28px;margin-bottom:10px}
-.card h3{font-size:15px;font-weight:700;margin-bottom:6px}
-.card p{font-size:13px;color:var(--text-secondary);line-height:1.5}
+.features{max-width:1100px;margin:0 auto;padding:80px 24px 60px}
+.features h2{text-align:center;font-size:clamp(1.5rem,3vw,2rem);font-weight:700;color:#fff;margin-bottom:48px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:12px;transition:border-color 0.2s ease}
+.card:hover{border-color:rgba(0,212,170,0.15)}
+.card .card-icon{margin-bottom:16px}
+.card h3{font-size:16px;font-weight:600;color:#fff;margin-bottom:8px}
+.card p{font-size:14px;color:var(--text-secondary);line-height:1.6}
+@media(max-width:860px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:540px){.grid{grid-template-columns:1fr}}
+
+/* ── Radar Demo ──────────────────────────────────────── */
+.radar-section{padding:60px 24px 80px;text-align:center}
+.radar-title{font-size:18px;font-weight:600;color:var(--accent);margin-bottom:8px}
+.radar-wrap{max-width:480px;margin:0 auto}
+.radar-subtitle{font-size:14px;color:var(--text-secondary);margin-top:16px}
+@keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes radarPulse{0%,100%{opacity:0.4}50%{opacity:1}}
 
 /* ── Comparison ───────────────────────────────────────── */
 .compare{max-width:800px;margin:0 auto;padding:20px 24px 60px}
@@ -223,41 +234,121 @@ footer .copy{font-size:11px}
   </div>
 </section>
 
-<div class="features">
-  <h2>What you get</h2>
+<section class="features">
+  <h2>Built for Privacy, Designed for Scale</h2>
   <div class="grid">
     <div class="card">
-      <div class="icon">🔐</div>
-      <h3>E2EE Messaging</h3>
-      <p>MLS (RFC 9420) for groups, Signal Protocol for DMs. The server stores ciphertext — it cannot decrypt your messages, even under compulsion.</p>
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 4L6 11v9c0 8.4 5.96 16.24 14 18 8.04-1.76 14-9.6 14-18v-9L20 4z"/>
+          <path d="M14 20l4 4 8-8"/>
+        </svg>
+      </div>
+      <h3>End-to-End Encrypted</h3>
+      <p>MLS RFC 9420 group encryption. AES-256-GCM. Your server stores ciphertext it cannot decrypt.</p>
     </div>
     <div class="card">
-      <div class="icon">🎙️</div>
-      <h3>Voice &amp; Video</h3>
-      <p>WebRTC peer-to-peer calls with SFrame (RFC 9605) encryption. Screen sharing. The media server routes encrypted frames it cannot read.</p>
-    </div>
-    <div class="card">
-      <div class="icon">🤖</div>
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="16" r="8"/>
+          <path d="M12 16h-4M32 16h-4M20 8V4M20 24v4"/>
+          <path d="M14.34 10.34L11.52 7.52M25.66 10.34l2.82-2.82M14.34 21.66l-2.82 2.82M25.66 21.66l2.82 2.82"/>
+          <circle cx="20" cy="16" r="3"/>
+          <path d="M10 32h20M14 36h12"/>
+        </svg>
+      </div>
       <h3>AI Agents</h3>
-      <p>LLM-powered bots that hold actual MLS leaf secrets and participate in group key exchange. Multi-provider: Anthropic, OpenAI, Ollama. Patent pending.</p>
+      <p>Encrypted AI assistants join conversations as full MLS group members. Modular provider support. Patent pending.</p>
     </div>
     <div class="card">
-      <div class="icon">🏠</div>
-      <h3>Self-Hosting</h3>
-      <p>Single Rust binary. Docker Compose, Raspberry Pi, or Oracle Cloud free tier. Your data never leaves hardware you control. $5/year electricity on a Pi.</p>
-    </div>
-    <div class="card">
-      <div class="icon">📡</div>
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="20" r="4"/>
+          <circle cx="20" cy="20" r="10" stroke-dasharray="3 3"/>
+          <circle cx="20" cy="20" r="16" stroke-dasharray="3 3"/>
+          <path d="M20 4v4M20 32v4M4 20h4M32 20h4"/>
+        </svg>
+      </div>
       <h3>Proximity Mesh</h3>
-      <p>Encrypted BLE text and Wi-Fi Direct voice without internet. Messages queue offline and sync on reconnect. Designed for environments where connectivity fails.</p>
+      <p>Encrypted offline communication via Bluetooth LE. X25519 key exchange. SAS verification. No internet required.</p>
     </div>
     <div class="card">
-      <div class="icon">🛡️</div>
-      <h3>AutoMod &amp; Safety</h3>
-      <p>Profanity filtering, spam detection, invite blocking, mention limits. Argon2id passwords, TOTP 2FA, one-time recovery keys, per-connection rate limits.</p>
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6a8 8 0 0 1 8 8v6a8 8 0 0 1-16 0v-6a8 8 0 0 1 8-8z"/>
+          <path d="M32 18v2a12 12 0 0 1-24 0v-2"/>
+          <path d="M20 30v6M14 36h12"/>
+        </svg>
+      </div>
+      <h3>Encrypted Voice</h3>
+      <p>SFrame encrypted calls. WebRTC. Noise suppression. Push-to-talk. Latency monitoring.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="6" width="24" height="28" rx="2"/>
+          <path d="M14 14h12M14 20h12M14 26h12"/>
+          <circle cx="12" cy="14" r="1" fill="#00D4AA" stroke="none"/>
+          <circle cx="12" cy="20" r="1" fill="#00D4AA" stroke="none"/>
+          <circle cx="12" cy="26" r="1" fill="#00D4AA" stroke="none"/>
+        </svg>
+      </div>
+      <h3>Self-Hostable</h3>
+      <p>One command. Your hardware. Your data. Deploy on Oracle, AWS, Raspberry Pi, or any Linux box.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8l-6 6 6 6"/>
+          <path d="M28 8l6 6-6 6"/>
+          <path d="M23 4L17 36"/>
+        </svg>
+      </div>
+      <h3>Open Source</h3>
+      <p>100,000+ lines. AGPL-3.0 licensed. Every line auditable. Zero telemetry. Zero ads.</p>
     </div>
   </div>
-</div>
+</section>
+
+<section class="radar-section">
+  <div class="radar-title">Proximity Radar</div>
+  <div class="radar-wrap">
+    <svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background -->
+      <circle cx="150" cy="150" r="140" fill="#0a0e17" stroke="#1a2332" stroke-width="1"/>
+      <!-- Concentric rings -->
+      <circle cx="150" cy="150" r="46.2" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <circle cx="150" cy="150" r="92.4" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <circle cx="150" cy="150" r="140" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <!-- Range labels -->
+      <text x="200" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">5m</text>
+      <text x="246" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">15m</text>
+      <text x="275" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">30m</text>
+      <!-- Crosshairs -->
+      <line x1="150" y1="10" x2="150" y2="290" stroke="#1a2332" stroke-width="0.3"/>
+      <line x1="10" y1="150" x2="290" y2="150" stroke="#1a2332" stroke-width="0.3"/>
+      <!-- Rotating sweep -->
+      <g style="transform-origin:150px 150px;animation:radarSweep 4s linear infinite">
+        <line x1="150" y1="150" x2="150" y2="10" stroke="url(#sweepGrad)" stroke-width="1.5"/>
+        <defs>
+          <linearGradient id="sweepGrad" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="#00D4AA" stop-opacity="0.1"/>
+            <stop offset="100%" stop-color="#00D4AA" stop-opacity="0.8"/>
+          </linearGradient>
+        </defs>
+      </g>
+      <!-- Device dots -->
+      <circle cx="170" cy="125" r="4" fill="#00D4AA" style="animation:radarPulse 1s ease-in-out infinite alternate"/>
+      <circle cx="120" cy="170" r="4" fill="#00D4AA" style="animation:radarPulse 1s ease-in-out 0.2s infinite alternate"/>
+      <circle cx="195" cy="180" r="4" fill="#00D4AA" style="animation:radarPulse 1s ease-in-out 0.5s infinite alternate"/>
+      <circle cx="105" cy="110" r="4" fill="#00D4AA" style="animation:radarPulse 1s ease-in-out 0.7s infinite alternate"/>
+      <circle cx="215" cy="100" r="4" fill="#00D4AA" style="animation:radarPulse 1s ease-in-out 0.3s infinite alternate"/>
+      <!-- Center dot -->
+      <circle cx="150" cy="150" r="3" fill="#00D4AA"/>
+    </svg>
+  </div>
+  <div class="radar-subtitle">Encrypted offline communication — zero infrastructure required.</div>
+</section>
 
 <div class="compare">
   <h2>How it compares</h2>
