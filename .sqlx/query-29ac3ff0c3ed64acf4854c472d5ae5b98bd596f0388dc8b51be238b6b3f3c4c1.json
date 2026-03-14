@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id as \"user_id!\" FROM event_rsvps WHERE event_id = $1 AND status = 'accepted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "29ac3ff0c3ed64acf4854c472d5ae5b98bd596f0388dc8b51be238b6b3f3c4c1"
+}

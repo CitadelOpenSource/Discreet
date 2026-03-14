@@ -416,6 +416,12 @@ export class CitadelAPI {
   async createEvent(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/events`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async rsvpEvent(eid: string, status: string) { return (await this.fetch(`/events/${eid}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) })).json(); }
 
+  // ── Notifications ──
+  async listNotifications(limit = 50, before?: string) { try { const params = new URLSearchParams({ limit: String(limit) }); if (before) params.set('before', before); const r = await this.fetch(`/notifications?${params}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async getUnreadNotificationCount() { try { const r = await this.fetch('/notifications/unread-count'); if (r.ok) { const d = await r.json(); return d.unread_count ?? 0; } return 0; } catch { return 0; } }
+  async markNotificationRead(id: string) { try { await this.fetch(`/notifications/${id}/read`, { method: 'PATCH' }); } catch {} }
+  async markAllNotificationsRead() { try { await this.fetch('/notifications/read-all', { method: 'POST' }); } catch {} }
+
   // ── AutoMod ──
   async getAutomod(sid: string) { try { const r = await this.fetch(`/servers/${sid}/automod`); return r.ok ? r.json() : null; } catch { return null; } }
   async updateAutomod(sid: string, config: any) { return this.fetch(`/servers/${sid}/automod`, { method: 'PUT', body: JSON.stringify(config) }); }

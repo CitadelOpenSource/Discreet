@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO event_rsvps (event_id, user_id, status, responded_at) VALUES ($1, $2, $3, NOW())\n         ON CONFLICT (event_id, user_id) DO UPDATE SET status = $3, responded_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ec3860d08a7970b98686dd53bfdfac31fb3faed664cdd81b8a059bb22ade862a"
+}

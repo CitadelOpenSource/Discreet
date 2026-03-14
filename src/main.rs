@@ -58,6 +58,7 @@ use citadel_server::citadel_group_dm_handlers;
 use citadel_server::citadel_health;
 use citadel_server::citadel_meeting_handlers;
 use citadel_server::citadel_message_handlers;
+use citadel_server::citadel_notification_handlers;
 use citadel_server::citadel_pin_handlers;
 use citadel_server::citadel_poll_handlers;
 use citadel_server::citadel_rate_limit;
@@ -391,6 +392,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Background task: dispatch pending event reminders every 60 seconds.
+    {
+        let db = state.db.clone();
+        let st = state.clone();
+        tokio::spawn(citadel_event_handlers::reminder_dispatcher(db, st));
+    }
+
     // Build the versioned API sub-router.
     // ALL routes registered on a single Router to avoid Axum merge() conflicts
     // with overlapping path prefixes (e.g. /servers/:id + /servers/:id/channels).
@@ -447,8 +455,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/emojis/:id", axum::routing::delete(citadel_emoji_handlers::delete_emoji))
         // Events
         .route("/servers/:server_id/events", axum::routing::get(citadel_event_handlers::list_events).post(citadel_event_handlers::create_event))
-        .route("/events/:event_id", axum::routing::patch(citadel_event_handlers::update_event).delete(citadel_event_handlers::delete_event))
+        .route("/events/:event_id", axum::routing::put(citadel_event_handlers::update_event).delete(citadel_event_handlers::delete_event))
         .route("/events/:event_id/rsvp", axum::routing::post(citadel_event_handlers::rsvp_event))
+        .route("/events/:event_id/rsvps", axum::routing::get(citadel_event_handlers::list_rsvps))
+        .route("/events/:event_id/remind", axum::routing::post(citadel_event_handlers::remind_event))
+        // Notifications
+        .route("/notifications", axum::routing::get(citadel_notification_handlers::list_notifications))
+        .route("/notifications/unread-count", axum::routing::get(citadel_notification_handlers::unread_count))
+        .route("/notifications/read-all", axum::routing::post(citadel_notification_handlers::mark_all_read))
+        .route("/notifications/:notification_id/read", axum::routing::patch(citadel_notification_handlers::mark_read))
         // Soundboard
         .route("/servers/:server_id/automod", axum::routing::get(citadel_automod::get_automod_config).put(citadel_automod::update_automod_config))
         .route("/servers/:server_id/soundboard", axum::routing::get(citadel_soundboard_handlers::list_clips).post(citadel_soundboard_handlers::upload_clip))

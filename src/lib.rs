@@ -38,6 +38,7 @@ pub mod citadel_health;
 pub mod citadel_meeting_handlers;
 pub mod citadel_message_handlers;
 pub mod citadel_mls_handlers;
+pub mod citadel_notification_handlers;
 pub mod citadel_permissions;
 pub mod citadel_platform_admin_handlers;
 pub mod citadel_platform_permissions;

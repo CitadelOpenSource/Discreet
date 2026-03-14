@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE server_events SET reminder_minutes = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea34929d2233614fe04fd9175d844018956fe08b749ff9c4979e8de39992cc62"
+}

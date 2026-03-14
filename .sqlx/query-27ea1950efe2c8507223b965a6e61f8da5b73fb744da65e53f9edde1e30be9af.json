@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT user_id, server_id, muted, mute_until, level, suppress_everyone\n         FROM server_notification_settings\n         WHERE user_id = $1 AND server_id = $2",
+  "query": "SELECT creator_id, server_id, title, start_time, voice_channel_id, invite_code FROM server_events WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "user_id",
+        "name": "creator_id",
         "type_info": "Uuid"
       },
       {
@@ -15,28 +15,27 @@
       },
       {
         "ordinal": 2,
-        "name": "muted",
-        "type_info": "Bool"
+        "name": "title",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 3,
-        "name": "mute_until",
+        "name": "start_time",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 4,
-        "name": "level",
-        "type_info": "Text"
+        "name": "voice_channel_id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 5,
-        "name": "suppress_everyone",
-        "type_info": "Bool"
+        "name": "invite_code",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -44,10 +43,10 @@
       false,
       false,
       false,
-      true,
       false,
-      false
+      true,
+      true
     ]
   },
-  "hash": "5f4809d8f75ac2ae9d5f42890ebd67c9fd7e4a8a2feda3260597961a8f2cebde"
+  "hash": "27ea1950efe2c8507223b965a6e61f8da5b73fb744da65e53f9edde1e30be9af"
 }
