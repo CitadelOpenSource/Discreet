@@ -74,5 +74,9 @@ DISCREET_MASTER_BUILD.md
 
 # Patent / legal
 patent/
+/*.pdf
 sb0015*
 sb0016*
+
+# Sensitive handoff docs
+AI_PARTNER_HANDOFF.md
