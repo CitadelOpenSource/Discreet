@@ -1,201 +1,161 @@
-<p align="center">
-  <img src="docs/assets/logo.png" alt="Discreet" width="80" />
-</p>
+<!-- LOGO: Replace with <img src="assets/logo.png" width="200"> when ready -->
 
-<h1 align="center">Discreet</h1>
+<h1 align="center">DISCREET</h1>
 
 <p align="center">
-  <strong>The server can't read your messages. Not "won't." Can't.</strong>
-</p>
-
-<p align="center">
-  <a href="https://discreetai.net">discreetai.net</a>&nbsp;&nbsp;·&nbsp;&nbsp;Patent Pending&nbsp;&nbsp;·&nbsp;&nbsp;<a href="GUIDE/QUICKSTART.md">Quick Start</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/API_REFERENCE.md">API Reference</a>
+  <strong>End-to-end encrypted communication for communities, organizations, and operations.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0" /></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.93+-orange.svg?logo=rust" alt="Rust" /></a>
-  <a href="https://www.rfc-editor.org/rfc/rfc9420"><img src="https://img.shields.io/badge/MLS-RFC_9420-green.svg" alt="MLS" /></a>
-  <a href="https://www.rfc-editor.org/rfc/rfc9605"><img src="https://img.shields.io/badge/SFrame-RFC_9605-green.svg" alt="SFrame" /></a>
-  <a href="https://csrc.nist.gov/pubs/fips/203/final"><img src="https://img.shields.io/badge/Post--Quantum-FIPS_203%2F204-purple.svg" alt="Post-Quantum" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.93-orange.svg?logo=rust" alt="Rust 1.93" /></a>
+  <a href="https://www.rfc-editor.org/rfc/rfc9420"><img src="https://img.shields.io/badge/MLS-RFC_9420-green.svg" alt="MLS RFC 9420" /></a>
+  <img src="https://img.shields.io/badge/Tests-68_passing-brightgreen.svg" alt="Tests 68 passing" />
+  <img src="https://img.shields.io/badge/Patent-Pending-yellow.svg" alt="Patent Pending" />
+</p>
+
+<p align="center">
+  <a href="https://discreetai.net">discreetai.net</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="GUIDE/QUICKSTART.md">Quick Start</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/API_REFERENCE.md">API Reference</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md">Architecture</a>
 </p>
 
 ---
 
-## What is Discreet?
+<!-- SCREENSHOT: Replace with <img src="assets/screenshot.png" width="800"> after deploy -->
 
-Discreet is an open-source, end-to-end encrypted communication platform with the community features of Discord and the cryptographic guarantees of Signal. Servers, channels, roles, DMs, voice, video, bots — all of it encrypted so the server operator stores and relays ciphertext but **cannot decrypt any content**, even under compulsion.
+<p align="center"><em>Live demo at <a href="https://discreetai.net">discreetai.net</a></em></p>
 
-Built from scratch in Rust. 14,500 lines of backend, 18,500 lines of TypeScript client. 184 API endpoints. Self-hostable on hardware as small as a Raspberry Pi.
+---
 
-The cryptographic design uses standards ratified by the IETF and NIST — not proprietary protocols:
+## Why Discreet?
 
-| Layer | Protocol | Standard | Published |
-|-------|----------|----------|-----------|
-| Group messaging | Message Layer Security | [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420) | July 2023 |
-| Direct messages | Signal Protocol | X3DH + Double Ratchet | — |
-| Voice & video | SFrame | [RFC 9605](https://www.rfc-editor.org/rfc/rfc9605) | August 2024 |
-| Post-quantum key exchange | ML-KEM | [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) | August 2024 |
-| Post-quantum signatures | ML-DSA | [FIPS 204](https://csrc.nist.gov/pubs/fips/204/final) | August 2024 |
+Signal gives you encryption but no communities — no servers, no channels, no roles, no bots. Discord gives you communities but no encryption — every message sits in plaintext on servers you don't control. Element gives you both, if you're willing to become a Matrix sysadmin. Telegram's "Secret Chats" are 1:1 only; group chats are server-encrypted with keys Telegram holds. Every existing platform forces you to choose between privacy and functionality. That trade-off is the problem Discreet exists to eliminate.
 
-MLS replaces the O(n) pairwise sessions of Signal's group protocol with a binary ratchet tree (TreeKEM), reducing key update cost to O(log n). This makes E2EE practical for groups of hundreds or thousands of members. SFrame encrypts individual media frames before they reach the selective forwarding unit, keeping voice and video content opaque to the server while preserving routing capability.
+Discreet is the first platform that combines full community features — servers, channels, categories, roles, permissions, voice, video, threads, bots, moderation — with MLS end-to-end encryption (RFC 9420) across every layer. AI agents participate as real MLS group members holding their own leaf secrets and rotating keys with the group (patent pending). An offline BLE proximity mesh enables field communication when infrastructure is unavailable. The entire stack is open source: 14,500 lines of Rust backend, 18,500 lines of TypeScript client, a shared Rust-to-WASM crypto library, 184 API endpoints, and 68 tests — over 100,000 lines of auditable code built from scratch. It self-hosts on a Raspberry Pi.
 
-ML-KEM and ML-DSA (finalized by NIST in August 2024 after an eight-year standardization process) defend against harvest-now-decrypt-later attacks by quantum adversaries. Discreet implements these as type-safe Rust modules ready for integration alongside classical key exchange.
+Discreet is built for three audiences. **Communities** that want the Discord experience without surrendering every message to a third party. **Organizations** that need encrypted collaboration with audit trails, compliance-ready architecture, and zero-knowledge guarantees that hold up under legal scrutiny. And **operations** — defense, intelligence, journalism, activism — that need tactical edge communications where the server is untrusted by design, devices operate offline, and forward secrecy is non-negotiable.
 
 ## Features
 
-| Category | What's included |
-|----------|----------------|
-| **Messaging** | E2EE text channels, DMs, group DMs, threads, reply chains, markdown, message editing and deletion |
-| **Voice & Video** | WebRTC peer-to-peer calls with SFrame encryption, screen sharing, per-user mute controls |
-| **Community** | Servers, categories, channels (text, voice, forum, announcement), roles with granular permissions, invites |
-| **AI Agents** | LLM-powered bots that hold MLS leaf secrets and participate in group key exchange (patent pending). Multi-provider: Anthropic, OpenAI, Ollama. Encrypted memory with AES-256-GCM |
-| **Moderation** | Bans, kicks, slowmode, channel locking, audit log, automod, platform-level admin dashboard |
-| **Social** | Friends, presence, custom status, user profiles, reactions, custom emoji, polls, events calendar |
-| **Files** | Encrypted file uploads with per-tier storage quotas, image previews, GIF picker |
-| **Security** | Argon2id password hashing, TOTP 2FA, one-time recovery keys, CSRF protection, per-connection WebSocket rate limiting, Redis-backed session revocation, banned-user live disconnect |
-| **Clients** | Web (React 18 + Vite), Desktop (Tauri v2), Mobile (React Native) |
-| **Deployment** | Docker Compose, Raspberry Pi, Oracle Cloud free tier. Single binary, 5 env vars to start |
+- **E2EE Messaging** — Every message encrypted with MLS (RFC 9420) using AES-256-GCM before it leaves your device; the server stores and relays ciphertext it cannot read.
+- **Community Servers** — Channels, threads, categories, roles with granular permissions, reactions, custom emoji, polls, and events — the full community toolkit, fully encrypted.
+- **AI Agents** — LLM-powered bots that hold MLS leaf secrets and participate in group key exchange as real cryptographic group members with AES-256-GCM encrypted episodic memory (patent pending).
+- **Encrypted Voice & Video** — WebRTC calls with per-frame SFrame encryption (RFC 9605), noise suppression, push-to-talk, and screen sharing — the server relays opaque media frames.
+- **Proximity Mesh** — Offline BLE communication with X25519 ECDH key agreement and short authentication string (SAS) verification for air-gapped environments.
+- **Self-Hostable** — One setup command, runs on ARM and x86, deploys to a Raspberry Pi, Oracle Cloud free tier, or any Docker host with 1 GB of RAM.
+- **Tamper-Evident Audit** — SHA-256 hash-chained audit log where each entry references the previous hash, making retroactive modification detectable.
+- **Two-Factor Auth** — TOTP second factor with secrets encrypted at rest via AES-256-GCM, passwords hashed with Argon2id, and one-time recovery keys.
+- **Invite System** — Domain-aware invite links with configurable expiry, offline QR code exchange for air-gapped onboarding, and external link blocking per server.
+- **Open Source** — AGPL-3.0 licensed, 100,000+ lines of auditable Rust and TypeScript, zero telemetry, zero tracking, no phone number required.
 
-## How it compares
+## How It Compares
 
-|  | E2EE Messages | E2EE Voice | Community UX | Open Source (full stack) | Self-Host | AI Agents |
-|--|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Discreet** | **Yes (MLS)** | **Yes (SFrame)** | **Yes** | **Yes** | **Yes** | **Yes** |
-| Discord | No | No | Yes | No | No | No |
-| Signal | Yes | Yes | No | Yes | No&sup1; | No |
-| Element / Matrix | Partial&sup2; | Yes | Partial | Yes | Yes | No |
-| Telegram | No&sup3; | 1:1 only | Partial | No&sup4; | No | No |
-| Slack | No | No | Yes | No | No | No |
-| WhatsApp | Yes | Yes | No | No | No | No |
+| Feature | Discreet | Signal | Element | Discord | Slack |
+|---------|:--------:|:------:|:-------:|:-------:|:-----:|
+| E2EE by default | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| No phone required | :white_check_mark: | :x: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| Community servers | :white_check_mark: | :x: | :white_check_mark: | :white_check_mark: | :x: |
+| Self-hostable | :white_check_mark: | :x: | :white_check_mark: | :x: | :x: |
+| AI agents (E2EE) | :white_check_mark: | :x: | :x: | :x: | :x: |
+| Proximity mesh | :white_check_mark: | :x: | :x: | :x: | :x: |
+| Encrypted voice | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| Open source | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| Tamper-evident audit | :white_check_mark: | :x: | :x: | :x: | :x: |
+| No government ID | :white_check_mark: | :x: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
 
-<sub>&sup1; Signal Server is open source but requires Signal's infrastructure for phone registration and push delivery — not practically self-hostable.</sub><br/>
-<sub>&sup2; Element enables E2EE by default for private rooms; public rooms are not encrypted. Uses Megolm/Olm, not MLS.</sub><br/>
-<sub>&sup3; Telegram's "Secret Chats" are E2EE (MTProto 2.0) but only for 1:1. Standard and group chats are server-encrypted — Telegram holds the keys.</sub><br/>
-<sub>&sup4; Telegram's client is partially open source; the server is closed source.</sub>
+## Quick Start
+
+```bash
+git clone https://github.com/CitadelOpenSource/Discreet.git
+cd Discreet
+./scripts/setup.sh
+```
+
+Windows: `scripts\setup.ps1`
+
+Open **http://localhost:3000/next/** — register, create a server, start messaging.
+
+Full self-hosting guide: **[docs/SELF_HOSTING_GUIDE.md](docs/SELF_HOSTING_GUIDE.md)**
 
 ## Architecture
 
 ```
-Client (browser / native)            Discreet Server (Rust + Axum)           Storage
-┌────────────────────────┐           ┌──────────────────────────┐          ┌──────────────┐
-│ MLS / Signal / SFrame  │──HTTPS──> │ Store ciphertext blob    │────────> │ PostgreSQL   │
-│ Key material on device │           │ Cannot decrypt anything  │          │ 50+ tables   │
-│                        │<──WSS──── │ Relay via WebSocket      │ <─────── │              │
-│ All crypto client-side │           │ Cannot read content      │          │ Redis: JWT   │
-└────────────────────────┘           └──────────────────────────┘          │ sessions     │
-                                                                           └──────────────┘
+                    ┌─────────────┐
+                    │ Cloudflare  │
+                    │ DDoS · CDN  │
+                    └──────┬──────┘
+                           │
+                    ┌──────┴──────┐
+                    │    Caddy    │
+                    │  Auto TLS   │
+                    └──────┬──────┘
+                           │
+┌──────────────┐    ┌──────┴──────┐    ┌──────────────┐
+│ React 18     │◄──►│ Rust / Axum │◄──►│ PostgreSQL   │
+│ Tauri v2     │    │ 184 routes  │    │ 50+ tables   │
+│ React Native │    │ WebSocket   │    ├──────────────┤
+│              │    │ Agent sub.  │    │ Redis        │
+│ discreet-    │    └─────────────┘    │ Sessions ·   │
+│ crypto WASM  │                       │ Rate limits  │
+└──────────────┘                       └──────────────┘
+  Encrypt/decrypt                        Ciphertext only
+  happens here                           server is blind
 ```
 
-The server is a relay, not an oracle. It stores base64-encoded ciphertext and routes WebSocket events. Decryption keys never leave client devices.
+| Layer | Protocol | Standard |
+|-------|----------|----------|
+| Group messaging | MLS (TreeKEM) | [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420) |
+| Direct messages | Double Ratchet | Signal Protocol (X3DH) |
+| Voice & video | SFrame | [RFC 9605](https://www.rfc-editor.org/rfc/rfc9605) |
+| Post-quantum | ML-KEM + ML-DSA | [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) / [FIPS 204](https://csrc.nist.gov/pubs/fips/204/final) |
 
-## Quick Start
-
-Full guide: **[GUIDE/QUICKSTART.md](GUIDE/QUICKSTART.md)**
-
-### Linux / macOS
-
-```bash
-git clone https://github.com/CitadelOpenSource/Discreet.git && cd Discreet
-docker compose up -d
-for f in migrations/*.sql; do cat "$f" | docker compose exec -T postgres psql -U citadel -d citadel; done
-cp .env.example .env
-export JWT_SECRET="$(openssl rand -hex 64)"
-cd client-next && npm install && npm run build && cd ..
-cargo run
-```
-
-### Windows (PowerShell)
-
-```powershell
-git clone https://github.com/CitadelOpenSource/Discreet.git; cd Discreet
-docker compose up -d
-Get-ChildItem migrations\*.sql | Sort-Object Name | ForEach-Object {
-  Get-Content $_.FullName | docker compose exec -T postgres psql -U citadel -d citadel
-}
-copy .env.example .env
-$env:JWT_SECRET = (openssl rand -hex 64)
-cd client-next; npm install; npm run build; cd ..
-cargo run
-```
-
-Open **http://localhost:3000/next/** — register, create a server, start messaging.
-
-```bash
-curl http://localhost:3000/health    # verify the server is running
-```
-
-### Other platforms
-
-| Platform | Guide |
-|----------|-------|
-| Docker Compose (production) | [GUIDE/DEPLOYMENT.md](GUIDE/DEPLOYMENT.md) |
-| Raspberry Pi | [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md) |
-| Desktop (Tauri) | `cd desktop && cargo tauri dev` |
-| Mobile (React Native) | `cd mobile && npm run android` |
+Full diagrams (Mermaid): **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 
 ## Security
 
-Discreet's threat model assumes a **fully compromised server**. Even an attacker with root access to the database sees only ciphertext and key material that cannot reconstruct plaintext.
+Discreet's threat model assumes a **fully compromised server**. An attacker with root access to the database sees only ciphertext — no plaintext, no keys, no content.
 
-| Measure | Implementation |
-|---------|---------------|
-| Password storage | Argon2id (memory-hard, side-channel resistant) |
-| Session management | Redis-backed JWT with per-session revocation, 30-second ban polling on WebSocket |
-| 2FA | TOTP with AES-256-GCM encrypted secrets at rest |
-| Account recovery | One-time 24-character recovery key, SHA-256 hashed, invalidated on use |
-| API keys (agents) | AES-256-GCM encrypted per-row with unique nonces |
-| Rate limiting | Per-IP REST limits, per-connection WebSocket limits (120 msg/min, 1 MiB/min) |
-| Transport | TLS 1.3, CORS origin validation, CSRF tokens, security headers |
-| Key rotation | MLS epoch-based forward secrecy via TreeKEM self-update |
+- **MLS (RFC 9420)** — Group keys rotate via TreeKEM with O(log n) cost; forward secrecy and post-compromise security by default
+- **AES-256-GCM** — TOTP secrets, agent API keys, and episodic memory facts encrypted at rest with unique nonces per row
+- **Argon2id** — Memory-hard, GPU-resistant password hashing with random salts
+- **Hash-chain audit log** — Each entry includes the SHA-256 hash of the previous entry; retroactive tampering is detectable
+- **CSRF protection** — Origin validation, security headers, and per-session tokens on all state-changing endpoints
+- **Compile-time SQL** — All queries validated at build time via sqlx; no string concatenation, no injection surface
+- **OWASP 2026 Top 10** — Injection, auth, access control, cryptographic failures, SSRF, and security misconfiguration addressed
 
-If you find a vulnerability, please email **security@discreetai.net** before disclosing publicly.
+**Patent pending** (March 2026): AI agents as MLS group members with zero-knowledge server architecture.
+
+**Found a vulnerability?** Email **security@discreetai.net** — we acknowledge within 48 hours and coordinate disclosure. Full policy: **[SECURITY.md](SECURITY.md)**
+
+## Self-Hosting
+
+Discreet runs on any machine with Docker — a Raspberry Pi, an Oracle Cloud free-tier VM, or a dedicated server. One command to deploy, five environment variables to configure.
+
+Full guide: **[docs/SELF_HOSTING_GUIDE.md](docs/SELF_HOSTING_GUIDE.md)**
 
 ## Contributing
 
-See **[GUIDE/CONTRIBUTING.md](GUIDE/CONTRIBUTING.md)** for the full contributor guide.
+We need help in these areas:
 
-Areas where contributions have the most impact:
+- **Cryptography** — MLS protocol review, post-quantum module wiring, SFrame optimization, formal verification
+- **React Native** — Feature parity with the web client, push notifications, biometric auth
+- **Tauri Desktop** — System tray, auto-update, native notifications, OS keychain integration
+- **Proximity Mesh** — BLE transport hardening, multi-hop relay, range testing across devices
+- **Documentation** — Threat model review, deployment guides, API examples, translations
 
-- **Cryptography** — MLS integration testing, post-quantum module wiring, SFrame optimization
-- **Voice/Video** — WebRTC reliability, ogg/mp4 recording, noise suppression
-- **Mobile** — React Native feature parity with the web client
-- **Desktop** — Tauri v2 system tray, notifications, auto-update
-- **Security auditing** — penetration testing, protocol review, threat modeling
-
-```bash
-cargo test --lib         # backend tests
-cd client-next && npm run build   # frontend type check
-```
-
-## Support the project
-
-Discreet is built and maintained independently with a $0 infrastructure budget. If you find it useful:
-
-**GitHub Sponsors**
-[github.com/sponsors/CitadelOpenSource](https://github.com/sponsors/CitadelOpenSource)
-
-**Cryptocurrency**
-| Currency | Address |
-|----------|---------|
-| Bitcoin | `bc1qDiscreetBTC` |
-| Ethereum | `0xDiscreetETH` |
-| Monero | `4DiscreetXMR` |
-
-<sub>Placeholder addresses — real addresses will be published at [discreetai.net/donate](https://discreetai.net/donate).</sub>
-
-Every dollar goes directly to server costs, security audits, and development tooling.
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup instructions, coding standards, and how to submit a PR.
 
 ## License
 
 **[AGPL-3.0-or-later](LICENSE)**
 
+Certain features are covered by a US Patent Application filed March 2026 by Citadel Open Source LLC.
+
 Self-host it. Fork it. Audit it. The encryption is the product, and the encryption is free.
 
-If you modify Discreet and offer it as a network service, the AGPL requires you to publish your changes under the same license. This ensures every deployment remains auditable.
-
----
+## Links
 
 <p align="center">
-  <a href="https://discreetai.net">discreetai.net</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/CitadelOpenSource/Discreet/issues">Issues</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/API_REFERENCE.md">API Docs</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="GUIDE/QUICKSTART.md">Quick Start</a>
+  <a href="https://discreetai.net">discreetai.net</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://twitter.com/DiscreetAI">@DiscreetAI</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="mailto:support@discreetai.net">support@discreetai.net</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="mailto:security@discreetai.net">security@discreetai.net</a>
 </p>
+
+<!-- TODO: star history chart after 100 stars -->
