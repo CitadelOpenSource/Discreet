@@ -565,6 +565,16 @@ pub fn should_extract(
 
 // ─── Full Pipeline ──────────────────────────────────────────────────────
 
+/// Parameters for the episodic memory pipeline.
+pub struct EpisodicPipelineParams {
+    pub agent_id: Uuid,
+    pub channel_id: Uuid,
+    pub server_id: Uuid,
+    pub agent_key_secret: String,
+    pub message_text: String,
+    pub current_msg_count: u64,
+}
+
 /// Run the complete episodic memory pipeline.
 ///
 /// Call this asynchronously after the agent completes a response.
@@ -575,25 +585,24 @@ pub fn should_extract(
 pub async fn run_episodic_pipeline(
     db: &PgPool,
     provider: &dyn LlmProvider,
-    agent_id: Uuid,
-    channel_id: Uuid,
+    params: &EpisodicPipelineParams,
     recent_messages: &[AgentMessage],
     config: &AgentModelConfig,
-    master_secret: &[u8],
-    current_msg_count: u64,
 ) -> Result<(), AgentError> {
+    let master_secret = params.agent_key_secret.as_bytes();
+
     // Load existing memory
-    let mut store = load_memory_store(db, agent_id, channel_id, master_secret).await?;
+    let mut store = load_memory_store(db, params.agent_id, params.channel_id, master_secret).await?;
 
     // Check if extraction should run
-    if !should_extract(current_msg_count, store.last_extraction_msg_count, None) {
+    if !should_extract(params.current_msg_count, store.last_extraction_msg_count, None) {
         return Ok(());
     }
 
     info!(
-        agent_id = %agent_id,
-        channel_id = %channel_id,
-        current_msg_count,
+        agent_id = %params.agent_id,
+        channel_id = %params.channel_id,
+        params.current_msg_count,
         existing_facts = store.facts.len(),
         "Running episodic memory extraction"
     );
@@ -609,8 +618,8 @@ pub async fn run_episodic_pipeline(
 
     if new_facts.is_empty() {
         debug!("No new facts extracted");
-        store.last_extraction_msg_count = current_msg_count;
-        save_memory_store(db, agent_id, channel_id, &store, master_secret).await?;
+        store.last_extraction_msg_count = params.current_msg_count;
+        save_memory_store(db, params.agent_id, params.channel_id, &store, master_secret).await?;
         return Ok(());
     }
 
@@ -643,14 +652,14 @@ pub async fn run_episodic_pipeline(
     // Phase 3: Apply operations to the memory store
     let ops_count = operations.len();
     apply_operations(&mut store, &operations);
-    store.last_extraction_msg_count = current_msg_count;
+    store.last_extraction_msg_count = params.current_msg_count;
 
     // Phase 4: Encrypt and save
-    save_memory_store(db, agent_id, channel_id, &store, master_secret).await?;
+    save_memory_store(db, params.agent_id, params.channel_id, &store, master_secret).await?;
 
     info!(
-        agent_id = %agent_id,
-        channel_id = %channel_id,
+        agent_id = %params.agent_id,
+        channel_id = %params.channel_id,
         operations = ops_count,
         total_facts = store.facts.len(),
         "Episodic memory updated"

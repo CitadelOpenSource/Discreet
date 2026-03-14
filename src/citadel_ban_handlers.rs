@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::citadel_audit::log_action;
+use crate::citadel_audit::{log_action, AuditEntry};
 use crate::citadel_auth::AuthUser;
 use crate::citadel_error::AppError;
 use crate::citadel_permissions::{require_permission, Permission};
@@ -143,13 +143,15 @@ pub async fn ban_member(
 
     log_action(
         &state.db,
-        server_id,
-        auth.user_id,
-        "MEMBER_BAN",
-        Some("user"),
-        Some(req.user_id),
-        None,
-        reason_text,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "MEMBER_BAN",
+            target_type: Some("user"),
+            target_id: Some(req.user_id),
+            changes: None,
+            reason: reason_text,
+        },
     )
     .await
     .ok();
@@ -196,13 +198,15 @@ pub async fn unban_member(
 
     log_action(
         &state.db,
-        server_id,
-        auth.user_id,
-        "MEMBER_UNBAN",
-        Some("user"),
-        Some(user_id),
-        None,
-        None,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "MEMBER_UNBAN",
+            target_type: Some("user"),
+            target_id: Some(user_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();

@@ -44,6 +44,7 @@ export interface SettingsModalProps {
   setUserMap?: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
   curServer?: { id: string } | null;
   onLogout?: () => void;
+  onUpgrade?: () => void;
   /** Full response from GET /api/v1/platform/me — null until loaded. */
   platformUser?: { account_tier?: string; platform_role?: string | null; badge_type?: string | null; permissions?: string[] } | null;
   /** Current dev-tier impersonation (null = real tier). */
@@ -659,7 +660,7 @@ function SecurityStatus({ platformUser, onSetupStep }: SecurityStatusProps) {
             ))}
           </div>
           <button
-            onClick={() => setShowUpgrade(true)}
+            onClick={() => onUpgrade ? onUpgrade() : setShowUpgrade(true)}
             style={{
               width: '100%', padding: '10px 0',
               background: `linear-gradient(135deg, ${T.ac}, ${T.ac2})`,
@@ -1068,7 +1069,7 @@ function ActiveSessions() {
 
 // ─── Main Component ───────────────────────────────────────
 
-export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout, platformUser, devTierOverride, onSetDevTierOverride }: SettingsModalProps) {
+export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout, onUpgrade, platformUser, devTierOverride, onSetDevTierOverride }: SettingsModalProps) {
   const [s, setS] = useState<UserSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const [tab, setTab] = useState('appearance');
@@ -1311,6 +1312,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             { key: 'd_show_typing',      label: 'Show Typing Indicators',          desc: 'See when others are typing in a channel',                               local: true,   def: true },
             { key: 'd_sticker_preview',  label: 'Sticker & Emoji Previews',        desc: 'Show larger previews when hovering emoji/stickers',                     local: true,   def: true },
             { key: 'd_smooth_scroll',    label: 'Smooth Scrolling',                desc: 'Enable smooth scroll animations in chat',                               local: true,   def: true },
+            { key: 'd_slash_suggestions',label: 'Slash Command Suggestions',       desc: 'Show autocomplete dropdown when typing / commands',                     local: true,   def: true },
             { key: 'd_show_recent_emoji',label: 'Show Recently Used Emojis',       desc: 'Show your recently used emojis section in the emoji picker',            local: true,   def: true },
             { key: 'd_twemoji_render',   label: 'Twemoji Rendering',               desc: 'Render emojis as Twemoji images (fixes flags on Windows)',              local: true,   def: true },
           ].map(opt => {
@@ -1672,7 +1674,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <div style={{ fontSize: 13, fontWeight: 600 }}>{(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.icon ?? '✅'} {(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.label ?? 'Free'}</div>
               <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>See what's available on other plans</div>
             </div>
-            <button onClick={() => window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>View Plans</button>
+            <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>View Plans</button>
           </div>
 
           {/* ─ Security ─ */}

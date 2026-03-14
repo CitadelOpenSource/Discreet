@@ -13,7 +13,7 @@ import { BugReportButton } from './components/BugReportButton';
 import { Av } from './components/Av';
 import { Modal } from './components/Modal';
 import { CtxMenu } from './components/CtxMenu';
-import { EmojiPicker } from './components/EmojiPicker';
+import { EmojiPicker, getQuickReact, type CustomEmoji } from './components/EmojiPicker';
 import { FriendsView } from './components/FriendsView';
 import { VideoGrid } from './components/VideoGrid';
 import { SearchPanel } from './components/SearchPanel';
@@ -27,6 +27,7 @@ import { ChannelSidebar } from './components/ChannelSidebar';
 import { NotificationCenter, type AppNotification, makeNotification, loadNotifications, saveNotifications } from './components/NotificationCenter';
 // ── Lazy-loaded heavy modals (reduce initial bundle) ──────
 const SettingsModal      = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const UpgradeFlow        = lazy(() => import('./components/UpgradeFlow').then(m => ({ default: m.UpgradeFlow })));
 const ServerSettingsModal = lazy(() => import('./components/ServerSettingsModal').then(m => ({ default: m.ServerSettingsModal })));
 const BotConfigModal     = lazy(() => import('./components/BotConfigModal').then(m => ({ default: m.BotConfigModal })));
 const AvatarCreator      = lazy(() => import('./components/AvatarCreator').then(m => ({ default: m.AvatarCreator })));
@@ -43,7 +44,7 @@ import { EventsPanel } from './components/EventsPanel';
 import { LeaderboardPanel, RankBadge } from './components/Gamification';
 import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { useVoice } from './hooks/useVoice';
-import { SlashSuggestions, processSlashCommand } from './hooks/useSlashCommands';
+import { SlashSuggestions, processSlashCommand, type SlashContext } from './hooks/useSlashCommands';
 import { filterMessage, getProfanityLevel } from './utils/profanityFilter';
 import { sanitizeInput, validateMessageLength, rateLimitCheck } from './utils/security';
 import { PRIVILEGE_LEVELS, getUserLevel, hasPrivilege } from './utils/permissions';
@@ -80,8 +81,7 @@ async function dec(cid: string, b64: string): Promise<string> {
   try { const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const pw = `citadel:${cid}:0`, salt = new TextEncoder().encode('mls-group-secret'); const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']); const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, key, d.slice(12)); return new TextDecoder().decode(pt); } catch { return b64; }
 }
 
-// ── Quick Emojis ──────────────────────────────────────────
-const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀', '✅', '🚀'];
+// ── Quick Emojis (dynamic — see EmojiPicker.getQuickReact) ──
 
 // ── Channel permission overrides ───────────────────────────
 type PermState = 'allow' | 'neutral' | 'deny';
@@ -586,6 +586,7 @@ export default function App() {
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
   const [editMsg, setEditMsg] = useState<Msg | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [serverEmoji, setServerEmoji] = useState<CustomEmoji[]>([]);
   const [panel, setPanel] = useState<'members' | 'search' | 'thread' | null>('members');
   const [threadParent, setThreadParent] = useState<Msg | null>(null);
   const [threadReplies, setThreadReplies] = useState<Msg[]>([]);
@@ -699,7 +700,7 @@ export default function App() {
         if (expiresIn < 5 * 60 * 1000) api.tryRefresh();
       }
     } catch {}
-    loadServers(); loadDms(); api.getMe().then(setMe).catch(() => {});
+    loadServers(true); loadDms(); api.getMe().then(setMe).catch(() => {});
     api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null } })); } }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
@@ -817,6 +818,22 @@ export default function App() {
         vc.engine.applyServerMute();
         setToast('You have been muted by an admin');
         setTimeout(() => setToast(''), 3000);
+      }
+      // Auto-reply from away/afk user — inject as local system message
+      if (evt.type === 'auto_reply' && evt.channel_id) {
+        const ch = curChannelRef.current;
+        if (ch && evt.channel_id === ch.id) {
+          setMessages(prev => [...prev, {
+            id: 'auto_reply_' + Date.now(),
+            channel_id: evt.channel_id,
+            author_id: evt.user_id,
+            authorName: evt.username,
+            text: evt.message,
+            content_ciphertext: '',
+            created_at: new Date().toISOString(),
+            is_auto_reply: true,
+          }]);
+        }
       }
       // Latency pong response — measure round-trip time
       if (evt.type === 'ws_pong' && pingRef.current > 0) {
@@ -946,7 +963,7 @@ export default function App() {
   }, [voiceChannel?.id]);
 
   // ── Loaders ─────────────────────────────────────────────
-  const loadServers = async () => { setLoadingServers(true); try { const s = await api.listServers(); if (Array.isArray(s)) setServers(s); } catch {} finally { setLoadingServers(false); } };
+  const loadServers = async (autoSelect?: boolean) => { setLoadingServers(true); try { const s = await api.listServers(); if (Array.isArray(s)) { setServers(s); if (autoSelect && s.length === 1 && !curServer) selectServer(s[0]); } } catch {} finally { setLoadingServers(false); } };
   const loadDms = async () => {
     try {
       const d = await api.listDms();
@@ -1019,6 +1036,7 @@ export default function App() {
     if (curDmRef.current)      localStorage.setItem(`d_dm_last_read_${curDmRef.current.id}`, now);
     setCurServer(s); setCurChannel(null); setCurDm(null); setMessages([]); setView('server'); setMobileMenuOpen(false);
     setMembersLoaded(null); setMembers([]);
+    api.listEmojis(s.id).then((e: any) => setServerEmoji(Array.isArray(e) ? e : []));
     const [chs] = await Promise.all([loadChannels(s.id), loadCategories(s.id), loadRoles(s.id)]);
     // Auto-join: localStorage default → 'welcome'/'general' → first text channel
     const textChs = chs.filter((c: Channel) => !c.channel_type || c.channel_type === 'text');
@@ -1059,7 +1077,7 @@ export default function App() {
     setCurGroupDm(gdm); setCurDm(null); setCurServer(null); setView('dm'); setMobileMenuOpen(false);
     try { const raw = await api.getGroupDmMessages(gdm.id); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
   };
-  const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setMobileMenuOpen(false); };
+  const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setServerEmoji([]); setMobileMenuOpen(false); };
   const getName = (uid: string) => userMap[uid] || uid?.slice(0, 8) || '?';
 
   // Inline badge shown after a username. badge_type drives the emoji; account_tier
@@ -1087,7 +1105,7 @@ export default function App() {
 
   const sendMessage = async () => {
     if (!msgInput.trim()) return;
-    const text = sanitizeInput(msgInput.trim());
+    let text = sanitizeInput(msgInput.trim());
     if (!text) return;
     if (!validateMessageLength(text)) {
       setToast('Message too long — max 4,000 characters');
@@ -1106,31 +1124,38 @@ export default function App() {
       return;
     }
     try {
-      // Slash tool overlays (always allowed in DMs; server-gated in channels)
-      const toolCmd = msgInput.trim().toLowerCase();
-      const slashToolsAllowed = view !== 'server' || curServer?.slash_commands_enabled !== false;
-      if (slashToolsAllowed) {
-        if (toolCmd === '/calc' || toolCmd === '/calculator') { setSlashTool('calc'); setMsgInput(''); return; }
-        if (toolCmd === '/convert' || toolCmd === '/converter') { setSlashTool('convert'); setMsgInput(''); return; }
-        if (toolCmd === '/color' || toolCmd === '/colour' || toolCmd === '/colorpicker') { setSlashTool('color'); setMsgInput(''); return; }
-      }
-      // Slash commands
-      if (msgInput.startsWith('/') && curChannel) {
-        const handled = await processSlashCommand(msgInput, {
+      // Slash commands — unified registry handles tool overlays, presence, etc.
+      if (msgInput.startsWith('/')) {
+        const slashCtx: SlashContext = {
           members: members.map(m => ({ user_id: m.user_id, username: m.username, display_name: m.display_name })),
           allRoles: roles.map(r => ({ id: r.id, name: r.name })),
           curServer, curChannel, voiceChannel,
+          isGuest: !!me?.is_guest,
           setMembers: setMembers as any,
           setModal: setModal as any,
           setShowInputEmoji: setShowEmojiPicker,
           setWatchParty: () => {},
           setShowMeeting,
           handleAssignRole: async (uid: string, rid: string) => { if (curServer) await api.assignRole(curServer.id, uid, rid); },
-          loadMsgs: () => loadMessages(curChannel),
+          loadMsgs: () => curChannel ? loadMessages(curChannel) : undefined,
           setInput: (text: string) => setMsgInput(text),
           goDiscover: () => { setView('home'); setHomeTab('discover'); },
-        });
-        if (handled) { setMsgInput(''); return; }
+          setSlashTool,
+          changeStatus,
+          setToast: (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); },
+          logout: async () => { await api.logout(); setAuthed(false); },
+          clearMessages: () => setMessages([]),
+        };
+        const result = await processSlashCommand(msgInput, slashCtx);
+        if (result.handled) {
+          if (result.sendText) {
+            // Visible command — override text and fall through to send
+            text = result.sendText;
+          } else {
+            setMsgInput('');
+            return;
+          }
+        }
       }
       if (editMsg) {
         const ct = await enc(curChannel!.id, msgInput.trim());
@@ -1151,7 +1176,8 @@ export default function App() {
           const found = members.find((mb: any) => mb.username?.toLowerCase() === name || mb.display_name?.toLowerCase() === name);
           if (found) mentionIds.push(found.user_id);
         }
-        const res = await api.sendMessage(curChannel.id, ct, 0, replyTo?.id, replyTo?.id, mentionIds.length ? mentionIds : undefined);
+        const threadRoot = replyTo ? (replyTo.parent_message_id || replyTo.id) : undefined;
+        const res = await api.sendMessage(curChannel.id, ct, 0, replyTo?.id, threadRoot, mentionIds.length ? mentionIds : undefined);
         console.log('[send] response:', res);
         setMsgInput(''); setReplyTo(null); playSound('send'); await loadMessages(curChannel);
         // Trigger bot responses for any @mentioned bots in this message
@@ -2419,6 +2445,15 @@ export default function App() {
                 return { background: isSelf ? 'rgba(0,212,170,0.2)' : 'rgba(88,101,242,0.2)', color: isSelf ? T.ac : '#5865F2', padding: '0 3px', borderRadius: 3, cursor: 'pointer', fontWeight: 600 };
               };
 
+              // Auto-reply system message — gray italic, no avatar
+              if (m.is_auto_reply) {
+                return (
+                  <div key={m.id} style={{ padding: '2px 16px 2px 62px', fontSize: 13, color: T.mt, fontStyle: 'italic' }}>
+                    {m.authorName || getName(m.author_id)} is away: {m.text}
+                  </div>
+                );
+              }
+
               return (
                 <React.Fragment key={m.id}>
                 {showDateSep && (
@@ -2535,7 +2570,7 @@ export default function App() {
                 </div>
                 {/* Quick react bar on hover */}
                 <div className="msg-actions" style={{ position: 'absolute', top: -4, right: 16, display: 'none', gap: 2, background: T.sf, borderRadius: 4, border: `1px solid ${T.bd}`, padding: 2, zIndex: 10 }}>
-                  {QUICK_EMOJIS.slice(0, 5).map(em => (
+                  {getQuickReact().map(em => (
                     <span key={em} onClick={() => addReaction(m.id, em)} style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 14 }} title={em}>{em}</span>
                   ))}
                   <span onClick={() => setEmojiTarget(m.id)} style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 12, color: T.mt }} title="More reactions">＋</span>
@@ -2588,7 +2623,7 @@ export default function App() {
           <div className="input-bar" style={{ position: 'relative' }}>
             {/* Slash command suggestions */}
             {msgInput.startsWith('/') && (
-              <SlashSuggestions input={msgInput} members={members} roles={roles} onSet={setMsgInput} />
+              <SlashSuggestions input={msgInput} members={members} roles={roles} isGuest={!!me?.is_guest} onSet={setMsgInput} />
             )}
             {/* @mention autocomplete */}
             {(() => {
@@ -2976,6 +3011,7 @@ export default function App() {
             setUserMap={setUserMap}
             curServer={curServer}
             onLogout={async () => { await api.logout(); setAuthed(false); setModal(null); }}
+            onUpgrade={() => { setModal('upgrade'); }}
             platformUser={platformUser}
             devTierOverride={devTierOverride}
             onSetDevTierOverride={(t) => {
@@ -3420,7 +3456,7 @@ export default function App() {
       {emojiTarget && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setEmojiTarget(null)}>
           <div style={{ position: 'fixed', bottom: 80, right: 20, zIndex: 10000 }} onClick={e => e.stopPropagation()}>
-            <EmojiPicker full onSelect={em => addReaction(emojiTarget, em)} onClose={() => setEmojiTarget(null)} />
+            <EmojiPicker full onSelect={em => addReaction(emojiTarget, em)} onClose={() => setEmojiTarget(null)} customEmoji={serverEmoji} />
           </div>
         </div>
       )}
@@ -3429,7 +3465,7 @@ export default function App() {
       {showEmojiPicker && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setShowEmojiPicker(false)}>
           <div style={{ position: 'fixed', bottom: 70, right: panel ? 240 : 20, zIndex: 10000 }} onClick={e => e.stopPropagation()}>
-            <EmojiPicker full onSelect={em => { setMsgInput(p => p + em); setShowEmojiPicker(false); }} onClose={() => setShowEmojiPicker(false)} />
+            <EmojiPicker full onSelect={em => { setMsgInput(p => p + em); setShowEmojiPicker(false); }} onClose={() => setShowEmojiPicker(false)} customEmoji={serverEmoji} />
           </div>
         </div>
       )}
@@ -3594,10 +3630,23 @@ export default function App() {
       {upgradeFeature && (
         <UpgradeModal
           feature={upgradeFeature}
-          onCreateAccount={() => { setUpgradeFeature(null); setAuthed(false); }}
-          onViewTiers={() => { setUpgradeFeature(null); window.open('/app/tiers', '_blank'); }}
+          onCreateAccount={() => { setUpgradeFeature(null); setModal('upgrade'); }}
+          onViewTiers={() => { setUpgradeFeature(null); setModal('upgrade'); }}
           onClose={() => setUpgradeFeature(null)}
         />
+      )}
+
+      {/* Progressive Upgrade Flow */}
+      {modal === 'upgrade' && (
+        <Suspense fallback={null}>
+          <UpgradeFlow
+            tier={tier}
+            me={me}
+            onClose={() => setModal(null)}
+            onLogout={async () => { setModal(null); await api.logout(); setAuthed(false); }}
+            onRefreshMe={() => api.getMe().then((u: any) => setMe(u)).catch(() => {})}
+          />
+        </Suspense>
       )}
 
       {/* ── OBS Setup Modal ── */}

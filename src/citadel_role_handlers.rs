@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::citadel_audit::log_action;
+use crate::citadel_audit::{log_action, AuditEntry};
 use crate::citadel_auth::AuthUser;
 use crate::citadel_error::AppError;
 use crate::citadel_permissions::{require_permission, Permission};
@@ -103,13 +103,15 @@ pub async fn create_role(
 
     log_action(
         &state.db,
-        server_id,
-        auth.user_id,
-        "ROLE_CREATE",
-        Some("role"),
-        Some(role_id),
-        None,
-        None,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "ROLE_CREATE",
+            target_type: Some("role"),
+            target_id: Some(role_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();
@@ -175,10 +177,8 @@ pub async fn update_role(
     require_permission(&state, role.server_id, auth.user_id, Permission::MANAGE_ROLES).await?;
 
     // Can't modify the @everyone role's name.
-    if role.position == 0 {
-        if req.name.is_some() {
-            return Err(AppError::BadRequest("Cannot rename the @everyone role".into()));
-        }
+    if role.position == 0 && req.name.is_some() {
+        return Err(AppError::BadRequest("Cannot rename the @everyone role".into()));
     }
 
     if let Some(ref name) = req.name {
@@ -213,13 +213,15 @@ pub async fn update_role(
 
     log_action(
         &state.db,
-        updated.server_id,
-        auth.user_id,
-        "ROLE_UPDATE",
-        Some("role"),
-        Some(role_id),
-        None,
-        None,
+        AuditEntry {
+            server_id: updated.server_id,
+            actor_id: auth.user_id,
+            action: "ROLE_UPDATE",
+            target_type: Some("role"),
+            target_id: Some(role_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();
@@ -263,13 +265,15 @@ pub async fn delete_role(
 
     log_action(
         &state.db,
-        role.server_id,
-        auth.user_id,
-        "ROLE_DELETE",
-        Some("role"),
-        Some(role_id),
-        None,
-        None,
+        AuditEntry {
+            server_id: role.server_id,
+            actor_id: auth.user_id,
+            action: "ROLE_DELETE",
+            target_type: Some("role"),
+            target_id: Some(role_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();
@@ -329,9 +333,16 @@ pub async fn assign_role(
     .execute(&state.db).await?;
 
     let _ = log_action(
-        &state.db, server_id, auth.user_id, "ASSIGN_ROLE",
-        Some("member"), Some(user_id),
-        Some(serde_json::json!({ "role_id": role_id })), None,
+        &state.db,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "ASSIGN_ROLE",
+            target_type: Some("member"),
+            target_id: Some(user_id),
+            changes: Some(serde_json::json!({ "role_id": role_id })),
+            reason: None,
+        },
     ).await;
 
     Ok(StatusCode::NO_CONTENT)
@@ -357,9 +368,16 @@ pub async fn unassign_role(
     }
 
     let _ = log_action(
-        &state.db, server_id, auth.user_id, "UNASSIGN_ROLE",
-        Some("member"), Some(user_id),
-        Some(serde_json::json!({ "role_id": role_id })), None,
+        &state.db,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "UNASSIGN_ROLE",
+            target_type: Some("member"),
+            target_id: Some(user_id),
+            changes: Some(serde_json::json!({ "role_id": role_id })),
+            reason: None,
+        },
     ).await;
 
     Ok(StatusCode::NO_CONTENT)

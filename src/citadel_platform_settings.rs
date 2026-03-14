@@ -45,6 +45,9 @@ pub struct PlatformSettings {
     pub default_retention_days: u32,
     /// Global disappearing messages default: "off", "24h", "7d", "30d".
     pub global_disappearing_default: String,
+    /// Official server ID — new users auto-join this server on registration.
+    /// Empty string means disabled.
+    pub official_server_id: String,
 }
 
 impl Default for PlatformSettings {
@@ -61,6 +64,7 @@ impl Default for PlatformSettings {
             ai_emergency_stop: false,
             default_retention_days: 0,
             global_disappearing_default: "off".into(),
+            official_server_id: String::new(),
         }
     }
 }
@@ -128,6 +132,9 @@ pub async fn get_platform_settings(state: &AppState) -> Result<PlatformSettings,
             "global_disappearing_default" => {
                 settings.global_disappearing_default = v.as_str().unwrap_or("off").to_string();
             }
+            "official_server_id" => {
+                settings.official_server_id = v.as_str().unwrap_or("").to_string();
+            }
             _ => {}
         }
     }
@@ -183,6 +190,8 @@ pub struct UpdateSettingsRequest {
     pub default_retention_days: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_disappearing_default: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub official_server_id: Option<String>,
 }
 
 pub async fn update_settings(
@@ -205,6 +214,7 @@ pub async fn update_settings(
         req.ai_emergency_stop.map(|v| ("ai_emergency_stop", json!(v))),
         req.default_retention_days.map(|v| ("default_retention_days", json!(v))),
         req.global_disappearing_default.as_ref().map(|v| ("global_disappearing_default", json!(v))),
+        req.official_server_id.as_ref().map(|v| ("official_server_id", json!(v))),
     ]
     .into_iter()
     .flatten()

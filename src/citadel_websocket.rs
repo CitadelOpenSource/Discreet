@@ -81,7 +81,7 @@ pub async fn ws_connect(
                 .and_then(|v| v.to_str().ok())
             {
                 let allowed: Vec<&str> = cors.split(',').map(|s| s.trim()).collect();
-                if !allowed.iter().any(|a| *a == origin) {
+                if !allowed.contains(&origin) {
                     tracing::warn!(
                         origin = origin,
                         allowed = %cors,
@@ -611,7 +611,7 @@ async fn handle_client_message(
         "admin_mute" => {
             if let Some(target_uid) = msg.target {
                 let has_perm = crate::citadel_permissions::check_permission(
-                    &state, server_id, user_id,
+                    state, server_id, user_id,
                     crate::citadel_permissions::Permission::MUTE_MEMBERS,
                 ).await.unwrap_or(false);
                 if has_perm {

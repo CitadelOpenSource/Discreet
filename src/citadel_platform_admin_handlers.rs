@@ -342,6 +342,9 @@ pub async fn set_user_role(
         .await?;
     }
 
+    // Invalidate cached user state so changes take effect immediately.
+    crate::citadel_auth::invalidate_user_cache(&state, target_id).await;
+
     // Fetch and return the updated profile.
     let row = sqlx::query!(
         r#"SELECT id, username, account_tier, platform_role, badge_type, email_verified
@@ -742,16 +745,14 @@ pub async fn unban_user(
     .await
     .unwrap_or_default();
 
-    for ip_opt in &session_ips {
-        if let Some(ip) = ip_opt {
-            sqlx::query!(
-                "DELETE FROM platform_ip_bans WHERE ip_address = $1",
-                ip,
-            )
-            .execute(&state.db)
-            .await
-            .ok();
-        }
+    for ip in session_ips.iter().flatten() {
+        sqlx::query!(
+            "DELETE FROM platform_ip_bans WHERE ip_address = $1",
+            ip,
+        )
+        .execute(&state.db)
+        .await
+        .ok();
     }
 
     tracing::info!(

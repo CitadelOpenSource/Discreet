@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET custom_status = $1, status_emoji = $2, presence_mode = $3,\n         auto_response_message = $4, updated_at = NOW()\n         WHERE id = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "737fbee42edfe27cfaf397e9e76fc853492790374463dc7760041e2af68412e2"
+}

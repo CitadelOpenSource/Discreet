@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
 use crate::citadel_agent_config::{load_server_agent_config, store_encrypted_api_key};
 use crate::citadel_agent_memory::{agent_memory_fact_count, build_context, clear_agent_memory};
-use crate::citadel_agent_episodic_memory::run_episodic_pipeline;
+use crate::citadel_agent_episodic_memory::{run_episodic_pipeline, EpisodicPipelineParams};
 use crate::citadel_agent_provider::{AgentMessage, create_provider, strip_metadata, sanitize_agent_input, cap_response, check_agent_rate_limit};
 
 // ─── Personas ──────────────────────────────────────────────────────────
@@ -917,15 +917,20 @@ pub async fn prompt_bot(
         let master_secret = state.config.agent_key_secret.clone();
         tokio::spawn(async move {
             let msg_count = messages_for_memory.len() as u64;
+            let params = EpisodicPipelineParams {
+                agent_id: bot_id,
+                channel_id,
+                server_id,
+                agent_key_secret: master_secret,
+                message_text: String::new(),
+                current_msg_count: msg_count,
+            };
             if let Err(e) = run_episodic_pipeline(
                 &db,
                 provider.as_ref(),
-                bot_id,
-                channel_id,
+                &params,
                 &messages_for_memory,
                 &model_config,
-                master_secret.as_bytes(),
-                msg_count,
             )
             .await
             {
@@ -991,7 +996,7 @@ pub async fn get_agent_config(
     .await?
     .ok_or_else(|| AppError::NotFound("Agent config not found".into()))?;
 
-    let has_api_key = row.api_key_encrypted.as_ref().map_or(false, |b| !b.is_empty());
+    let has_api_key = row.api_key_encrypted.as_ref().is_some_and(|b| !b.is_empty());
     let fact_count = agent_memory_fact_count(&state.db, bot_id).await;
 
     Ok(Json(serde_json::json!({
@@ -1140,7 +1145,7 @@ pub async fn update_agent_config(
     .await?
     .ok_or_else(|| AppError::NotFound("Agent config not found".into()))?;
 
-    let has_api_key = row.api_key_encrypted.as_ref().map_or(false, |b| !b.is_empty());
+    let has_api_key = row.api_key_encrypted.as_ref().is_some_and(|b| !b.is_empty());
     let fact_count = agent_memory_fact_count(&state.db, bot_id).await;
 
     tracing::info!(

@@ -647,8 +647,16 @@ pub async fn update_server(
         "disappearing_messages_default": req.disappearing_messages_default,
     });
     let _ = citadel_audit::log_action(
-        &state.db, server_id, auth.user_id, "UPDATE_SERVER",
-        Some("server"), Some(server_id), Some(changes), None,
+        &state.db,
+        citadel_audit::AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "UPDATE_SERVER",
+            target_type: Some("server"),
+            target_id: Some(server_id),
+            changes: Some(changes),
+            reason: None,
+        },
     ).await;
 
     // Return the updated server.
@@ -923,10 +931,16 @@ pub async fn create_invite(
     tracing::info!(server_id = %server_id, code = %code, "Invite created");
 
     let _ = citadel_audit::log_action(
-        &state.db, server_id, auth.user_id, "CREATE_INVITE",
-        Some("invite"), None,
-        Some(serde_json::json!({ "code": &code, "max_uses": req.max_uses })),
-        None,
+        &state.db,
+        citadel_audit::AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "CREATE_INVITE",
+            target_type: Some("invite"),
+            target_id: None,
+            changes: Some(serde_json::json!({ "code": &code, "max_uses": req.max_uses })),
+            reason: None,
+        },
     ).await;
 
     Ok((
@@ -1403,8 +1417,16 @@ pub async fn archive_server(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, auth.user_id, "SERVER_ARCHIVED",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: auth.user_id,
+                action: "SERVER_ARCHIVED",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
 
         tracing::info!(server_id = %server_id, "Server archived by owner");
@@ -1418,8 +1440,16 @@ pub async fn archive_server(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, auth.user_id, "SERVER_UNARCHIVED",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: auth.user_id,
+                action: "SERVER_UNARCHIVED",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
 
         tracing::info!(server_id = %server_id, "Server unarchived by owner");
@@ -1455,10 +1485,16 @@ pub async fn schedule_server_deletion(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, auth.user_id, "SERVER_DELETION_SCHEDULED",
-            Some("server"), Some(server_id),
-            Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
-            None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: auth.user_id,
+                action: "SERVER_DELETION_SCHEDULED",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
+                reason: None,
+            },
         ).await;
 
         tracing::info!(server_id = %server_id, deletion_at = %deletion_at, "Server deletion scheduled");
@@ -1471,8 +1507,16 @@ pub async fn schedule_server_deletion(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, auth.user_id, "SERVER_DELETION_CANCELLED",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: auth.user_id,
+                action: "SERVER_DELETION_CANCELLED",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
 
         tracing::info!(server_id = %server_id, "Server deletion cancelled");
@@ -1568,8 +1612,16 @@ pub async fn admin_archive_server(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, caller.user_id, "SERVER_ARCHIVED_BY_ADMIN",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: caller.user_id,
+                action: "SERVER_ARCHIVED_BY_ADMIN",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
     } else {
         sqlx::query!(
@@ -1580,8 +1632,16 @@ pub async fn admin_archive_server(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, caller.user_id, "SERVER_UNARCHIVED_BY_ADMIN",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: caller.user_id,
+                action: "SERVER_UNARCHIVED_BY_ADMIN",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
     }
 
@@ -1609,10 +1669,16 @@ pub async fn admin_schedule_deletion(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, caller.user_id, "SERVER_DELETION_SCHEDULED_BY_ADMIN",
-            Some("server"), Some(server_id),
-            Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
-            None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: caller.user_id,
+                action: "SERVER_DELETION_SCHEDULED_BY_ADMIN",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: Some(serde_json::json!({ "deletion_at": deletion_at.to_rfc3339() })),
+                reason: None,
+            },
         ).await;
     } else {
         sqlx::query!(
@@ -1623,8 +1689,16 @@ pub async fn admin_schedule_deletion(
         .await?;
 
         let _ = citadel_audit::log_action(
-            &state.db, server_id, caller.user_id, "SERVER_DELETION_CANCELLED_BY_ADMIN",
-            Some("server"), Some(server_id), None, None,
+            &state.db,
+            citadel_audit::AuditEntry {
+                server_id,
+                actor_id: caller.user_id,
+                action: "SERVER_DELETION_CANCELLED_BY_ADMIN",
+                target_type: Some("server"),
+                target_id: Some(server_id),
+                changes: None,
+                reason: None,
+            },
         ).await;
     }
 

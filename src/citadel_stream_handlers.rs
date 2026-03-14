@@ -122,10 +122,16 @@ pub async fn start_stream(
 
     // Audit log.
     let _ = crate::citadel_audit::log_action(
-        &state.db, channel.server_id, auth.user_id,
-        "STREAM_START", Some("channel"), Some(channel_id),
-        Some(serde_json::json!({ "quality": &quality, "title": &req.title })),
-        None,
+        &state.db,
+        crate::citadel_audit::AuditEntry {
+            server_id: channel.server_id,
+            actor_id: auth.user_id,
+            action: "STREAM_START",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: Some(serde_json::json!({ "quality": &quality, "title": &req.title })),
+            reason: None,
+        },
     ).await;
 
     Ok((StatusCode::CREATED, Json(StreamSession {
@@ -168,9 +174,16 @@ pub async fn stop_stream(
     ).await;
 
     let _ = crate::citadel_audit::log_action(
-        &state.db, channel.server_id, auth.user_id,
-        "STREAM_END", Some("channel"), Some(channel_id),
-        None, None,
+        &state.db,
+        crate::citadel_audit::AuditEntry {
+            server_id: channel.server_id,
+            actor_id: auth.user_id,
+            action: "STREAM_END",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: None,
+            reason: None,
+        },
     ).await;
 
     Ok(StatusCode::NO_CONTENT)

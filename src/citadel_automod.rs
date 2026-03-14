@@ -132,10 +132,8 @@ pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool) -> AutoM
     }
 
     // ── All external links ──────────────────────────────────────────────
-    if config.block_links {
-        if lower.contains("http://") || lower.contains("https://") {
-            return AutoModAction::Delete("External links are not allowed".into());
-        }
+    if config.block_links && (lower.contains("http://") || lower.contains("https://")) {
+        return AutoModAction::Delete("External links are not allowed".into());
     }
 
     // ── Mention spam ────────────────────────────────────────────────────

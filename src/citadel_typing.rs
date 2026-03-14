@@ -93,11 +93,17 @@ pub struct TypingCooldown {
     entries: RwLock<HashMap<(Uuid, Uuid), Instant>>,
 }
 
-impl TypingCooldown {
-    pub fn new() -> Self {
+impl Default for TypingCooldown {
+    fn default() -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
         }
+    }
+}
+
+impl TypingCooldown {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Returns true if the user may send a typing event (cooldown elapsed).

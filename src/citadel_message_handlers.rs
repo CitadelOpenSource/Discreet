@@ -162,6 +162,14 @@ pub async fn send_message(
         require_permission(&state, channel.server_id, auth.user_id, PERM_ATTACH_FILES).await?;
     }
 
+    // Clear auto_response when user sends a message (they're back).
+    let _ = sqlx::query!(
+        "UPDATE users SET auto_response_message = NULL WHERE id = $1 AND auto_response_message IS NOT NULL",
+        auth.user_id,
+    )
+    .execute(&state.db)
+    .await;
+
     // ── AutoMod check ─────────────────────────────────────────────────────
     // Skip automod for DM and group-DM channels — those are E2EE and private.
     // DM channels live in dm_channels/group_dm_channels, not the channels table,
@@ -334,6 +342,66 @@ pub async fn send_message(
                 "author_id": auth.user_id,
                 "mentioned_user_id": uid,
             })).await;
+        }
+    }
+
+    // ── Auto-reply for away/afk users ────────────────────────────────────
+    // If a mentioned user has auto_response_message set, broadcast a system
+    // auto_reply event. Rate-limited to one per sender×channel×target per 5 min.
+    {
+        let auto_reply_targets: Vec<Uuid> = individual_mentions
+            .iter()
+            .copied()
+            .filter(|&uid| uid != auth.user_id)
+            .collect();
+
+        if !auto_reply_targets.is_empty() {
+            let rows = sqlx::query!(
+                "SELECT id, username, auto_response_message FROM users
+                 WHERE id = ANY($1) AND auto_response_message IS NOT NULL",
+                &auto_reply_targets,
+            )
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+
+            for row in rows {
+                if let Some(ref auto_msg) = row.auto_response_message {
+                    // Rate limit: one auto-reply per sender→target per channel per 5 min.
+                    let rate_key = format!(
+                        "auto_reply:{}:{}:{}",
+                        auth.user_id, channel_id, row.id
+                    );
+                    let mut redis_conn = state.redis.clone();
+                    let already_sent: bool = redis::cmd("EXISTS")
+                        .arg(&rate_key)
+                        .query_async(&mut redis_conn)
+                        .await
+                        .unwrap_or(false);
+
+                    if already_sent {
+                        continue;
+                    }
+
+                    // Set rate-limit key with 5-minute TTL.
+                    let _: Result<(), _> = redis::cmd("SET")
+                        .arg(&rate_key)
+                        .arg("1")
+                        .arg("EX")
+                        .arg(300_i64)
+                        .query_async(&mut redis_conn)
+                        .await;
+
+                    // Broadcast auto_reply as a system event (not stored as a message).
+                    state.ws_broadcast(channel.server_id, serde_json::json!({
+                        "type": "auto_reply",
+                        "channel_id": channel_id,
+                        "user_id": row.id,
+                        "username": row.username,
+                        "message": auto_msg,
+                    })).await;
+                }
+            }
         }
     }
 
@@ -768,14 +836,19 @@ pub async fn bulk_delete_messages(
 
     // Audit log entry.
     if let Err(e) = crate::citadel_audit::log_action(
-        &state.db, channel.server_id, auth.user_id,
-        "BULK_DELETE_MESSAGES",
-        Some("channel"), Some(channel_id),
-        Some(serde_json::json!({
-            "count": count,
-            "reason": req.reason.as_deref().unwrap_or("Word search & delete"),
-        })),
-        req.reason.as_deref(),
+        &state.db,
+        crate::citadel_audit::AuditEntry {
+            server_id: channel.server_id,
+            actor_id: auth.user_id,
+            action: "BULK_DELETE_MESSAGES",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: Some(serde_json::json!({
+                "count": count,
+                "reason": req.reason.as_deref().unwrap_or("Word search & delete"),
+            })),
+            reason: req.reason.as_deref(),
+        },
     ).await {
         tracing::warn!("Audit log failed for bulk delete: {}", e);
     }
