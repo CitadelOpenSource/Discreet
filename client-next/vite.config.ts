@@ -23,9 +23,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false,
     target: 'esnext',
-    chunkSizeWarningLimit: 750,
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       external: ['discreet-crypto'],
       output: {

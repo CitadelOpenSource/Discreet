@@ -20,6 +20,7 @@ const _path = window.location.pathname.replace(/\/+$/, '');
 const _isPrivacy = _path === '/app/privacy';
 const _isTerms   = _path === '/app/terms';
 const _isTiers   = _path === '/app/tiers';
+const _isSupport = _path === '/app/support';
 
 const App = React.lazy(() => import('./App'));
 const GuestMeetingJoin = React.lazy(() =>
@@ -30,6 +31,7 @@ const TermsOfService = React.lazy(() => import('./components/TermsOfService'));
 const TierComparisonPage = React.lazy(() =>
   import('./components/TierComparisonPage').then(m => ({ default: m.TierComparisonPage }))
 );
+const SupportPage = React.lazy(() => import('./pages/SupportPage'));
 
 const Spinner = (
   <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, background:'#07090f', color:'#e0e4ea' }}>
@@ -48,6 +50,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           ? <TermsOfService />
           : _isTiers
           ? <TierComparisonPage onBack={() => window.history.back()} isGuest />
+          : _isSupport
+          ? <SupportPage />
           : _meetCode
           ? <GuestMeetingJoin code={_meetCode} />
           : <App />
