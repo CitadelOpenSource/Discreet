@@ -201,6 +201,38 @@ impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
             return Err(AppError::Unauthorized("Session expired or revoked".into()));
         }
 
+        // ── Update last_active_at (throttled: at most once per 60s) ────────
+        {
+            let throttle_key = format!("session_active:{}", token_data.claims.sid);
+            let mut rc = state.redis.clone();
+            let already: bool = redis::cmd("GET")
+                .arg(&throttle_key)
+                .query_async::<_, Option<String>>(&mut rc)
+                .await
+                .unwrap_or(None)
+                .is_some();
+            if !already {
+                // Set throttle flag (60s TTL) and fire-and-forget DB update.
+                let _: Result<(), _> = redis::cmd("SET")
+                    .arg(&throttle_key)
+                    .arg("1")
+                    .arg("EX")
+                    .arg(60_u64)
+                    .query_async(&mut rc)
+                    .await;
+                let db = state.db.clone();
+                let sid = token_data.claims.sid;
+                tokio::spawn(async move {
+                    let _ = sqlx::query!(
+                        "UPDATE sessions SET last_active_at = NOW() WHERE id = $1",
+                        sid,
+                    )
+                    .execute(&db)
+                    .await;
+                });
+            }
+        }
+
         // ── Load live user state (cached 30s in Redis) ─────────────────────
         let user_state = load_user_state(state, token_data.claims.sub).await?;
 

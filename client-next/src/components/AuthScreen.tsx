@@ -10,9 +10,25 @@ interface AuthScreenProps {
   onAuth: () => void;
 }
 
-// ─── Password strength ────────────────────────────────────────────────────────
+// ─── Password requirements (OWASP 2026) ──────────────────────────────────────
 
-type StrengthLevel = 'too-short' | 'weak' | 'fair' | 'good' | 'strong';
+interface PwRequirement {
+  label: string;
+  met: boolean;
+}
+
+function checkPasswordRequirements(pw: string): PwRequirement[] {
+  return [
+    { label: 'At least 12 characters',        met: pw.length >= 12 },
+    { label: 'No more than 128 characters',    met: pw.length <= 128 },
+    { label: 'One uppercase letter (A-Z)',     met: /[A-Z]/.test(pw) },
+    { label: 'One lowercase letter (a-z)',     met: /[a-z]/.test(pw) },
+    { label: 'One digit (0-9)',                met: /[0-9]/.test(pw) },
+    { label: 'One special character (!@#...)', met: /[^a-zA-Z0-9]/.test(pw) },
+  ];
+}
+
+type StrengthLevel = 'too-short' | 'weak' | 'fair' | 'strong' | 'very-strong';
 
 interface StrengthResult {
   level: StrengthLevel;
@@ -23,7 +39,7 @@ interface StrengthResult {
 
 function passwordStrength(pw: string): StrengthResult {
   if (pw.length === 0) return { level: 'too-short', label: '', color: T.bd, score: 0 };
-  if (pw.length < 8)   return { level: 'too-short', label: 'Too short', color: '#ff4757', score: 0 };
+  if (pw.length < 12)  return { level: 'too-short', label: 'Too short', color: '#ff4757', score: 0 };
 
   let types = 0;
   if (/[a-z]/.test(pw)) types++;
@@ -31,12 +47,14 @@ function passwordStrength(pw: string): StrengthResult {
   if (/[0-9]/.test(pw)) types++;
   if (/[^a-zA-Z0-9]/.test(pw)) types++;
 
-  const long = pw.length >= 12;
+  const long = pw.length >= 16;
+  const vlong = pw.length >= 20;
 
-  if (types === 1) return { level: 'weak',   label: 'Weak',      color: '#ff6b35', score: 1 };
-  if (types === 2) return { level: 'fair',   label: 'Fair',      color: '#faa61a', score: 2 };
-  if (types === 3) return { level: 'good',   label: long ? 'Strong' : 'Good', color: long ? '#2ecc71' : '#00d4aa', score: long ? 4 : 3 };
-  return            { level: 'strong', label: 'Strong',     color: '#2ecc71', score: 4 };
+  if (types <= 1) return { level: 'weak',        label: 'Weak',        color: '#ff6b35', score: 1 };
+  if (types === 2) return { level: 'fair',        label: 'Fair',        color: '#faa61a', score: 2 };
+  if (types === 3) return { level: 'strong',      label: long ? 'Strong' : 'Fair', color: long ? '#2ecc71' : '#faa61a', score: long ? 3 : 2 };
+  if (vlong)       return { level: 'very-strong', label: 'Very Strong', color: '#00d4aa', score: 4 };
+  return                   { level: 'strong',      label: 'Strong',      color: '#2ecc71', score: 3 };
 }
 
 // ─── Username validation ──────────────────────────────────────────────────────
@@ -81,8 +99,17 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [loading, setLoading]   = useState(false);
 
   // Register-only
+  const [confirmPw, setConfirmPw] = useState('');
   const [email, setEmail]         = useState('');
+  const [dob, setDob]             = useState('');
   const [termsOk, setTermsOk]     = useState(false);
+
+  // Verification code modal (shown after registration with email)
+  const [verifyModal, setVerifyModal] = useState(false);
+  const [verifyCode, setVerifyCode]   = useState('');
+  const [verifyErr, setVerifyErr]     = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Login-only
   const [rememberMe, setRememberMe]   = useState(false);
@@ -103,13 +130,16 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
 
   const usernameErr = mode === 'register' ? validateUsername(username) : '';
   const strength    = useMemo(() => passwordStrength(password), [password]);
+  const pwRequirements = useMemo(() => checkPasswordRequirements(password), [password]);
+  const allReqsMet = pwRequirements.every(r => r.met);
 
   const canSubmit = (() => {
     if (loading) return false;
     if (!username.trim() || !password) return false;
     if (mode === 'register') {
       if (usernameErr) return false;
-      if (password.length < 8) return false;
+      if (!allReqsMet) return false;
+      if (password !== confirmPw) return false;
       if (!termsOk) return false;
     }
     return true;
@@ -118,6 +148,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const switchMode = (m: 'login' | 'register') => {
     setMode(m);
     setError('');
+    setConfirmPw('');
     setForgotShown(false);
     setFpStep('email'); setFpEmail(''); setFpToken(''); setFpNewPw(''); setFpError(''); setFpMsg('');
   };
@@ -130,13 +161,19 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     try {
       const res = mode === 'login'
         ? await api.login(username, password)
-        : await api.register(username, password, email || undefined);
+        : await api.register(username, password, email || undefined, dob || undefined);
       if (res.ok) {
         const u = username.trim().toLowerCase();
         if (u === 'admin' || u === 'dev') _storage.setItem('d_dev_local', 'true');
         if (rememberMe) _storage.setItem('d_remember_me', '1');
         if (mode === 'register' && res.data?.recovery_key) {
           setRecoveryKey(res.data.recovery_key);
+          setLoading(false);
+          return;
+        }
+        // If verification code was sent, show the modal instead of completing auth.
+        if (mode === 'register' && res.data?.verification_pending) {
+          setVerifyModal(true);
           setLoading(false);
           return;
         }
@@ -252,20 +289,20 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                       style={{ ...getInp(), marginBottom: 10, fontFamily: 'monospace' }} autoFocus />
                     <label style={label()}>New Password</label>
                     <input
-                      type="password" placeholder="Minimum 8 characters" value={fpNewPw}
+                      type="password" placeholder="Minimum 12 characters" value={fpNewPw}
                       onChange={e => { setFpNewPw(e.target.value); setFpError(''); }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('fp-reset-btn')?.click(); } }}
                       style={{ ...getInp(), marginBottom: 8 }} autoComplete="new-password" />
                     {fpError && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{fpError}</div>}
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button id="fp-reset-btn" type="button" disabled={fpLoading || !fpToken.trim() || fpNewPw.length < 8} onClick={async () => {
+                      <button id="fp-reset-btn" type="button" disabled={fpLoading || !fpToken.trim() || fpNewPw.length < 12} onClick={async () => {
                         setFpError(''); setFpLoading(true);
                         try {
                           await api.resetPassword(fpToken.trim(), fpNewPw);
                           setFpStep('done');
                         } catch (e: any) { setFpError(e.message || 'Reset failed'); }
                         setFpLoading(false);
-                      }} style={btn(!fpLoading && !!fpToken.trim() && fpNewPw.length >= 8)}>
+                      }} style={btn(!fpLoading && !!fpToken.trim() && fpNewPw.length >= 12)}>
                         {fpLoading ? 'Resetting…' : 'Reset Password'}
                       </button>
                       <button type="button" onClick={() => { setFpStep('email'); setFpToken(''); setFpNewPw(''); setFpError(''); }}
@@ -304,13 +341,13 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
 
               <label style={label()}>Password</label>
               <input
-                style={{ ...getInp(), marginBottom: 8, borderColor: password.length > 0 && password.length < 8 ? '#ff4757' : undefined }}
+                style={{ ...getInp(), marginBottom: 8, borderColor: password.length > 0 && !allReqsMet ? '#ff4757' : undefined }}
                 type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Minimum 8 characters" autoComplete="new-password" />
+                placeholder="Minimum 12 characters" autoComplete="new-password" />
 
-              {/* Strength indicator */}
+              {/* Strength meter */}
               {password.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
+                <div style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
                     {[1, 2, 3, 4].map(i => (
                       <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, transition: 'background .2s',
@@ -319,17 +356,54 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                   </div>
                   <div style={{ fontSize: 11, color: strength.color, fontWeight: 600 }}>
                     {strength.label}
-                    {strength.level === 'too-short' && <span style={{ color: T.mt, fontWeight: 400 }}> — minimum 8 characters</span>}
+                    {strength.level === 'too-short' && <span style={{ color: T.mt, fontWeight: 400 }}> — minimum 12 characters</span>}
                   </div>
+                </div>
+              )}
+
+              {/* Requirements checklist */}
+              {password.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  {pwRequirements.map((r, i) => (
+                    <div key={i} style={{ fontSize: 11, lineHeight: 1.8, color: r.met ? '#2ecc71' : T.mt, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>{r.met ? '\u2713' : '\u2717'}</span>
+                      {r.label}
+                    </div>
+                  ))}
                 </div>
               )}
               {password.length === 0 && <div style={{ marginBottom: 14 }} />}
 
+              {/* Confirm password */}
+              {password.length > 0 && (
+                <>
+                  <label style={label()}>Confirm Password</label>
+                  <input
+                    style={{ ...getInp(), marginBottom: 4, borderColor: confirmPw.length > 0 && password !== confirmPw ? '#ff4757' : undefined }}
+                    type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+                    placeholder="Re-enter your password" autoComplete="new-password" />
+                  {confirmPw.length > 0 && (
+                    <div style={{ fontSize: 11, marginBottom: 10, color: password === confirmPw ? '#2ecc71' : '#ff4757', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>{password === confirmPw ? '\u2713' : '\u2717'}</span>
+                      {password === confirmPw ? 'Passwords match' : 'Passwords do not match'}
+                    </div>
+                  )}
+                  {confirmPw.length === 0 && <div style={{ marginBottom: 14 }} />}
+                </>
+              )}
+
               <label style={label()}>Email <span style={{ color: T.mt, fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(optional)</span></label>
               <input style={{ ...getInp(), marginBottom: 6 }} type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="alice@example.com" autoComplete="email" />
-              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginBottom: 18 }}>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginBottom: 14 }}>
                 Adding an email enables account recovery and qualifies your account for the Verified tier.
+              </div>
+
+              <label style={label()}>Date of Birth <span style={{ color: T.mt, fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(optional)</span></label>
+              <input style={{ ...getInp(), marginBottom: 6 }} type="date" value={dob} onChange={e => setDob(e.target.value)}
+                max={new Date(Date.now() - 13 * 365.25 * 86400000).toISOString().slice(0, 10)} />
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginBottom: 18 }}>
+                You must be at least 13 years old to use Discreet.
               </div>
 
               {/* Terms checkbox */}
@@ -412,7 +486,11 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                 style={{ ...btn(true), flex: 1, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>
                 {keyCopied ? 'Copied!' : 'Copy Key'}
               </button>
-              <button type="button" onClick={() => { setRecoveryKey(''); onAuth(); }}
+              <button type="button" onClick={() => {
+                  setRecoveryKey('');
+                  if (verifyModal) return; // verify modal will show next
+                  onAuth();
+                }}
                 style={{ ...btn(true), flex: 1 }}>
                 I've Saved It — Continue
               </button>
@@ -420,6 +498,96 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           </div>
         </div>
       )}
+
+      {/* Verification code modal */}
+      {verifyModal && !recoveryKey && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 420, background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 'clamp(24px, 5vw, 36px)', boxShadow: '0 12px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>{'\u2709'}</div>
+              <h2 style={{ margin: 0, color: T.tx, fontSize: 20, fontWeight: 700 }}>Verify Your Email</h2>
+              <p style={{ margin: '8px 0 0', color: T.mt, fontSize: 13 }}>
+                We sent a 6-digit code to <strong style={{ color: T.tx }}>{email}</strong>
+              </p>
+            </div>
+
+            <input
+              style={{ ...getInp(), textAlign: 'center', fontSize: 24, fontFamily: 'monospace', letterSpacing: '8px', marginBottom: 12 }}
+              value={verifyCode} onChange={e => { setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setVerifyErr(''); }}
+              placeholder="000000" maxLength={6} autoFocus />
+
+            {verifyErr && (
+              <div style={{ fontSize: 12, color: '#ff4757', marginBottom: 10, textAlign: 'center' }}>{verifyErr}</div>
+            )}
+
+            <button type="button" disabled={verifyLoading || verifyCode.length !== 6} onClick={async () => {
+              setVerifyLoading(true); setVerifyErr('');
+              try {
+                const r = await api.verifyCode(verifyCode);
+                if (r.ok) { setVerifyModal(false); onAuth(); }
+                else setVerifyErr(r.data?.error?.message || 'Invalid code');
+              } catch { setVerifyErr('Network error'); }
+              setVerifyLoading(false);
+            }} style={{ ...btn(verifyCode.length === 6 && !verifyLoading), width: '100%', marginBottom: 12 }}>
+              {verifyLoading ? 'Verifying…' : 'Verify'}
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <button type="button" disabled={resendCooldown > 0} onClick={async () => {
+                try {
+                  const r = await api.resendCode();
+                  if (r.ok) {
+                    setResendCooldown(60);
+                    const iv = setInterval(() => setResendCooldown(c => { if (c <= 1) { clearInterval(iv); return 0; } return c - 1; }), 1000);
+                  } else {
+                    setVerifyErr(r.data?.error?.message || 'Failed to resend');
+                  }
+                } catch { setVerifyErr('Network error'); }
+              }} style={{ background: 'none', border: 'none', color: resendCooldown > 0 ? T.mt : T.ac, cursor: resendCooldown > 0 ? 'default' : 'pointer', fontSize: 13, fontWeight: 500, padding: 0 }}>
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+              </button>
+
+              <button type="button" onClick={() => {
+                setVerifyModal(false);
+                _storage.setItem('d_verify_skipped', '1');
+                onAuth();
+              }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13, padding: 0 }}>
+                Skip for Now
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: T.mt, marginTop: 14, lineHeight: 1.5, textAlign: 'center' }}>
+              Code expires in 10 minutes. Check your spam folder if you don't see it.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Dismissible verification banner ─────────────────────────────────────────
+// Import and render this in App.tsx when the user is unverified and skipped verification.
+
+export function VerifyEmailBanner({ onVerify, onDismiss }: { onVerify: () => void; onDismiss: () => void }) {
+  return (
+    <div style={{
+      padding: '10px 16px', background: 'rgba(0,212,170,0.08)', borderBottom: `1px solid rgba(0,212,170,0.2)`,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    }}>
+      <span style={{ fontSize: 13, color: T.tx }}>
+        Verify your email to unlock all features.
+      </span>
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button onClick={onVerify} style={{
+          padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none',
+          background: T.ac, color: '#fff', cursor: 'pointer',
+        }}>Verify Now</button>
+        <button onClick={onDismiss} style={{
+          padding: '5px 10px', fontSize: 12, borderRadius: 6, border: `1px solid ${T.bd}`,
+          background: 'transparent', color: T.mt, cursor: 'pointer',
+        }}>{'\u2715'}</button>
+      </div>
     </div>
   );
 }

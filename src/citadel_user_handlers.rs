@@ -369,9 +369,15 @@ pub struct DeleteAccountRequest {
 pub async fn delete_account(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<DeleteAccountRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    use crate::citadel_auth_handlers::require_reauth;
+
     let uid = auth.user_id;
+
+    // Require reauthentication.
+    require_reauth(&state, uid, &headers).await?;
 
     // ── 1. Verify password ────────────────────────────────────────────────
     let stored_hash = sqlx::query_scalar!(
@@ -719,11 +725,15 @@ pub async fn export_my_data(
 pub async fn change_password(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     use crate::citadel_auth_handlers::{
-        create_session, hash_password, validate_password_pub, verify_password_pub,
+        create_session, hash_password, require_reauth, validate_password_pub, verify_password_pub,
     };
+
+    // Require reauthentication.
+    require_reauth(&state, auth.user_id, &headers).await?;
 
     // Fetch current password hash.
     let user = sqlx::query!(
@@ -918,10 +928,14 @@ pub struct ChangeEmailRequest {
 pub async fn change_email(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<ChangeEmailRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    use crate::citadel_auth_handlers::{generate_hex_token, verify_password_pub};
+    use crate::citadel_auth_handlers::{generate_hex_token, require_reauth, verify_password_pub};
     use crate::citadel_email_handlers::send_verification_link_email;
+
+    // Require reauthentication.
+    require_reauth(&state, auth.user_id, &headers).await?;
 
     // ── 1. Validate email format ─────────────────────────────────────────
     let new_email = req.new_email.trim().to_lowercase();

@@ -153,14 +153,29 @@ export class CitadelAPI {
   }
 
   // ── Auth ──
-  async register(u: string, p: string, e?: string) {
+  async register(u: string, p: string, e?: string, dob?: string) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p, email: e || undefined, device_name: 'web' }),
+      body: JSON.stringify({ username: u, password: p, email: e || undefined, date_of_birth: dob || undefined, device_name: 'web' }),
     });
     const d = await res.json();
     if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
     return { ok: res.ok, data: d };
+  }
+
+  async verifyCode(code: string) {
+    const res = await this.authFetch(`${API_BASE}/auth/verify-code`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const d = await res.json();
+    if (res.ok && d.access_token) this.token = d.access_token;
+    return { ok: res.ok, data: d };
+  }
+
+  async resendCode() {
+    const res = await this.authFetch(`${API_BASE}/auth/resend-code`, { method: 'POST' });
+    return { ok: res.ok, data: await res.json() };
   }
 
   async login(u: string, p: string) {
@@ -348,11 +363,37 @@ export class CitadelAPI {
   async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
-  async changeEmail(newEmail: string, password: string) { const r = await this.fetch('/users/@me/email', { method: 'PUT', body: JSON.stringify({ new_email: newEmail, password }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
-  async changePassword(currentPassword: string, newPassword: string) { const r = await this.fetch('/users/@me/password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
+  /** Verify password and get a single-use reauth token (5 min TTL). */
+  async verifyPassword(password: string): Promise<{ reauth_token: string; expires_in: number }> {
+    const r = await this.fetch('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); }
+    return r.json();
+  }
+  async changeEmail(newEmail: string, password: string, reauthToken?: string) {
+    const headers: Record<string, string> = {};
+    if (reauthToken) headers['X-Reauth-Token'] = reauthToken;
+    const r = await this.fetch('/users/@me/email', { method: 'PUT', headers, body: JSON.stringify({ new_email: newEmail, password }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json();
+  }
+  async changePassword(currentPassword: string, newPassword: string, reauthToken?: string) {
+    const headers: Record<string, string> = {};
+    if (reauthToken) headers['X-Reauth-Token'] = reauthToken;
+    const r = await this.fetch('/users/@me/password', { method: 'POST', headers, body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json();
+  }
   async listSessions() { try { const r = await this.fetch('/auth/sessions'); return r.ok ? r.json() : []; } catch { return []; } }
   async revokeSession(id: string) { const r = await this.fetch(`/auth/sessions/${id}`, { method: 'DELETE' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } }
-  async deleteAccount() { return this.fetch('/users/@me', { method: 'DELETE' }); }
+  async revokeAllOtherSessions(reauthToken?: string) {
+    const headers: Record<string, string> = {};
+    if (reauthToken) headers['X-Reauth-Token'] = reauthToken;
+    const r = await this.fetch('/auth/sessions/all-others', { method: 'DELETE', headers });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json();
+  }
+  async deleteAccount(reauthToken?: string) {
+    const headers: Record<string, string> = {};
+    if (reauthToken) headers['X-Reauth-Token'] = reauthToken;
+    return this.fetch('/users/@me', { method: 'DELETE', headers });
+  }
 
   // ── Bots ──
   async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }

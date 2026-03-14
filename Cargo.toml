@@ -2,7 +2,7 @@
 name = "citadel-server"
 version = "0.4.0-alpha"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.80"
 authors = ["John <john@citadel.rs>"]
 description = "Discreet — end-to-end encrypted community platform — the server can't read your messages"
 license = "AGPL-3.0-or-later"
