@@ -407,6 +407,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/verify-email", axum::routing::get(citadel_email_handlers::verify_email_by_token))
         // Resend verification email (JWT required, max 3/hour)
         .route("/auth/resend-verification", axum::routing::post(citadel_email_handlers::resend_verification))
+        // 6-digit code verification (JWT required)
+        .route("/auth/verify-code", axum::routing::post(citadel_auth_handlers::verify_registration_code))
+        .route("/auth/resend-code", axum::routing::post(citadel_auth_handlers::resend_registration_code))
         .route("/auth/forgot-password", axum::routing::post(citadel_email_handlers::forgot_password))
         .route("/auth/reset-password", axum::routing::post(citadel_email_handlers::reset_password))
         // Server discovery
@@ -416,7 +419,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/refresh", axum::routing::post(citadel_auth_handlers::refresh))
         .route("/auth/me/refresh", axum::routing::get(citadel_auth_handlers::refresh_claims))
         .route("/auth/logout", axum::routing::post(citadel_auth_handlers::logout))
+        .route("/auth/verify-password", axum::routing::post(citadel_auth_handlers::verify_password_endpoint))
         .route("/auth/sessions", axum::routing::get(citadel_auth_handlers::list_sessions))
+        .route("/auth/sessions/all-others", axum::routing::delete(citadel_auth_handlers::revoke_all_other_sessions))
         .route("/auth/sessions/:id", axum::routing::delete(citadel_auth_handlers::revoke_session))
         // ── 2FA (login completion — no JWT required) ──
         .route("/auth/2fa/verify", axum::routing::post(citadel_auth_handlers::complete_2fa_login))

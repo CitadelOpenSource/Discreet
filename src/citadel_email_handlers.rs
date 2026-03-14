@@ -19,7 +19,7 @@ use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppS
 
 /// Returns true if any email delivery provider is configured (env vars present).
 /// Used to decide whether dev_token / dev_link fields should be exposed.
-fn email_provider_configured() -> bool {
+pub fn email_provider_configured() -> bool {
     std::env::var("RESEND_API_KEY").map(|v| !v.is_empty()).unwrap_or(false)
 }
 
@@ -193,12 +193,7 @@ pub async fn reset_password(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ResetPasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    if req.new_password.len() < 8 {
-        return Err(AppError::BadRequest("Password must be at least 8 characters".into()));
-    }
-    if req.new_password.len() > 128 {
-        return Err(AppError::BadRequest("Password must not exceed 128 characters".into()));
-    }
+    crate::citadel_auth_handlers::validate_password_pub(&req.new_password)?;
 
     let row = sqlx::query!(
         "SELECT user_id FROM email_tokens WHERE token_type = 'reset' AND token = $1 AND expires_at > NOW()",
@@ -460,4 +455,52 @@ async fn send_email(_state: &AppState, to: &str, subject: &str, body: &str) -> b
         subject
     );
     false
+}
+
+// ─── 6-digit verification code helpers ──────────────────────────────────
+
+/// Generate a cryptographically random 6-digit code (100000–999999).
+pub fn generate_verification_code() -> String {
+    use rand::Rng;
+    let code: u32 = rand::thread_rng().gen_range(100_000..1_000_000);
+    code.to_string()
+}
+
+/// Send a 6-digit verification code email (not a clickable link).
+/// Codes resist email-forwarding phishing because there's nothing to click.
+pub async fn send_verification_code_email(state: &AppState, to: &str, code: &str) -> bool {
+    send_email(
+        state,
+        to,
+        "Your Discreet verification code",
+        &format!(
+            "Your verification code is:\n\n\
+             {}\n\n\
+             Enter this code in the Discreet app to verify your email.\n\
+             This code expires in 10 minutes.\n\n\
+             If you did not create a Discreet account, you can safely ignore this email.",
+            code
+        ),
+    )
+    .await
+}
+
+/// Send a lockout alert when an account hits 20 failed login attempts.
+pub async fn send_lockout_alert_email(state: &AppState, to: &str, ip: &str, login: &str) -> bool {
+    send_email(
+        state,
+        to,
+        "Security Alert: Your Discreet account has been locked",
+        &format!(
+            "Your Discreet account ({login}) has been temporarily locked for 24 hours \
+             due to 20 failed login attempts from IP address {ip}.\n\n\
+             If this was you, wait 24 hours and try again. If you forgot your password, \
+             use your recovery key to reset it.\n\n\
+             If this was NOT you, someone may be trying to access your account. \
+             Your password was NOT compromised — the lockout prevented further attempts. \
+             Consider changing your password after the lockout expires.\n\n\
+             — Discreet Security"
+        ),
+    )
+    .await
 }

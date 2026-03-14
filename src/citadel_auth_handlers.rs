@@ -10,10 +10,12 @@
 //   POST /auth/2fa/verify           — Complete 2FA login: accepts session_token + code, returns JWT
 //   POST /auth/refresh              — Exchange refresh token for new access token
 //   POST /auth/logout               — Revoke current session
-//   GET  /auth/sessions             — List active sessions
-//   DELETE /auth/sessions/:id       — Revoke a specific session
+//   GET  /auth/sessions             — List active sessions (IPs masked)
+//   DELETE /auth/sessions/:id       — Revoke a specific session (not current)
+//   DELETE /auth/sessions/all-others — Revoke all sessions except current (reauth)
+//   POST /auth/verify-password      — Verify password, return single-use reauth token (5 min)
 //
-// 2FA management (user-scoped, require valid JWT):
+// 2FA management (user-scoped, require valid JWT + reauth):
 //   POST /users/@me/2fa/setup       — Generate TOTP secret + provisioning URI
 //   POST /users/@me/2fa/verify      — Validate 6-digit code to enable 2FA
 //   POST /users/@me/2fa/disable     — Disable 2FA (requires valid code)
@@ -47,12 +49,14 @@ pub struct RegisterRequest {
     pub username: String,
     /// Optional email for account recovery.
     pub email: Option<String>,
-    /// Minimum 8 characters.
+    /// Minimum 12 characters, OWASP 2026 complexity.
     pub password: String,
     /// Display name (defaults to username).
     pub display_name: Option<String>,
     /// Optional device identifier (e.g., "Firefox on Linux").
     pub device_name: Option<String>,
+    /// Optional date of birth (YYYY-MM-DD). Must be 13+ if provided (COPPA).
+    pub date_of_birth: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +122,8 @@ pub struct AuthResponse {
     pub expires_in: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_pending: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -203,6 +209,7 @@ pub struct SessionInfo {
     pub device_name: Option<String>,
     pub ip_address: Option<String>,
     pub created_at: String,
+    pub last_active_at: String,
     pub expires_at: String,
     /// True if this is the session making the request.
     pub current: bool,
@@ -260,6 +267,19 @@ pub async fn register(
         }
     }
 
+    // Validate date of birth if provided (COPPA: must be 13+).
+    let dob_date: Option<chrono::NaiveDate> = if let Some(ref dob) = req.date_of_birth {
+        let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d")
+            .map_err(|_| AppError::BadRequest("Invalid date format. Use YYYY-MM-DD.".into()))?;
+        let age = chrono::Utc::now().date_naive().years_since(parsed);
+        if age.map_or(true, |y| y < 13) {
+            return Err(AppError::BadRequest("You must be at least 13 years old to register.".into()));
+        }
+        Some(parsed)
+    } else {
+        None
+    };
+
     // Check username uniqueness.
     let exists = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)",
@@ -310,13 +330,14 @@ pub async fn register(
     }
 
     sqlx::query!(
-        "INSERT INTO users (id, username, display_name, email, password_hash)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO users (id, username, display_name, email, password_hash, date_of_birth)
+         VALUES ($1, $2, $3, $4, $5, $6)",
         user_id,
         req.username,
         display_name,
         req.email,
         password_hash,
+        dob_date,
     )
     .execute(&state.db)
     .await?;
@@ -342,37 +363,41 @@ pub async fn register(
     .await
     .ok(); // best-effort — don't fail registration
 
-    // ── Email verification ────────────────────────────────────────────────
-    // Only triggered when the user supplied an email address.
+    // ── Email verification (6-digit code via Redis) ────────────────────────
+    // When the user supplies an email, send a 6-digit code (not a link).
+    // Codes resist phishing (can't be forwarded as a clickable link) and
+    // are stored as Argon2id hashes in Redis with a 10-minute TTL.
+    let mut verification_sent = false;
     if let Some(ref email) = req.email {
-        let smtp_configured = !std::env::var("SMTP_HOST").unwrap_or_default().is_empty();
+        if crate::citadel_email_handlers::email_provider_configured() {
+            // Generate a 6-digit code, hash it, store in Redis.
+            let code = crate::citadel_email_handlers::generate_verification_code();
+            let code_hash = hash_password(&code)?;
+            let redis_key = format!("verify_code:{}", user_id);
+            let mut redis_conn = state.redis.clone();
+            let _: Result<(), _> = redis::cmd("SET")
+                .arg(&redis_key)
+                .arg(&code_hash)
+                .arg("EX")
+                .arg(600_u64) // 10 minutes
+                .query_async(&mut redis_conn)
+                .await;
+            // Also store the email in Redis for lookup during verification.
+            let email_key = format!("verify_email:{}", user_id);
+            let _: Result<(), _> = redis::cmd("SET")
+                .arg(&email_key)
+                .arg(email.as_str())
+                .arg("EX")
+                .arg(600_u64)
+                .query_async(&mut redis_conn)
+                .await;
 
-        if smtp_configured {
-            // Production: store a 24-hour token and send a clickable link.
-            let token = generate_hex_token();
-            let base_url = std::env::var("BASE_URL")
-                .unwrap_or_else(|_| "http://localhost:3000".to_string());
-            let verify_link = format!("{}/verify?token={}", base_url, token);
-
-            // Store token (upsert so re-registration replaces any stale token).
-            sqlx::query!(
-                "INSERT INTO email_tokens (user_id, email, token, token_type, expires_at)
-                 VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '24 hours')
-                 ON CONFLICT (user_id, token_type) DO UPDATE
-                     SET token = $3, email = $2, expires_at = NOW() + INTERVAL '24 hours'",
-                user_id, email, token,
-            )
-            .execute(&state.db)
-            .await?;
-
-            // Fire-and-forget — never fail registration because of SMTP.
-            let _ = crate::citadel_email_handlers::send_verification_link_email(
-                &state, email, &verify_link,
-            )
-            .await;
+            let _ = crate::citadel_email_handlers::send_verification_code_email(
+                &state, email, &code,
+            ).await;
+            verification_sent = true;
         } else {
-            // Development mode: auto-verify and log the token so developers
-            // can see it without needing an SMTP server.
+            // Development mode: auto-verify.
             sqlx::query!(
                 "UPDATE users
                  SET email_verified = TRUE,
@@ -393,8 +418,7 @@ pub async fn register(
             tracing::info!(
                 user_id  = %user_id,
                 email    = %email,
-                "[DEV] SMTP not configured — email address auto-verified. \
-                 Set SMTP_HOST in production to send real verification emails.",
+                "[DEV] Email provider not configured — email auto-verified.",
             );
         }
     }
@@ -437,11 +461,179 @@ pub async fn register(
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
             recovery_key: Some(recovery_key),
+            verification_pending: if verification_sent { Some(true) } else { None },
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::CREATED,
     ))
+}
+
+// ─── POST /auth/verify-code ───────────────────────────────────────────
+//
+// JWT-authenticated. Accepts the 6-digit code emailed during registration.
+// Code is stored as an Argon2id hash in Redis with 10-minute TTL.
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyCodeRequest {
+    pub code: String,
+}
+
+pub async fn verify_registration_code(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<VerifyCodeRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let redis_key = format!("verify_code:{}", auth.user_id);
+    let email_key = format!("verify_email:{}", auth.user_id);
+    let mut redis_conn = state.redis.clone();
+
+    // Retrieve the hashed code from Redis.
+    let stored_hash: Option<String> = redis::cmd("GET")
+        .arg(&redis_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(None);
+
+    let hash = stored_hash.ok_or_else(|| {
+        AppError::BadRequest("No pending verification code. Request a new one.".into())
+    })?;
+
+    // Verify the code against the Argon2id hash.
+    if !verify_password(req.code.trim(), &hash)? {
+        return Err(AppError::BadRequest("Invalid verification code.".into()));
+    }
+
+    // Retrieve the email.
+    let email: Option<String> = redis::cmd("GET")
+        .arg(&email_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(None);
+
+    let email = email.ok_or_else(|| {
+        AppError::Internal("Verification email not found in cache.".into())
+    })?;
+
+    // Mark email as verified and upgrade tier.
+    sqlx::query!(
+        "UPDATE users
+         SET email         = $1,
+             email_verified = TRUE,
+             account_tier   = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'verified'
+                 ELSE account_tier
+             END,
+             badge_type     = CASE
+                 WHEN account_tier IN ('guest', 'unverified') THEN 'shield'
+                 ELSE badge_type
+             END
+         WHERE id = $2",
+        email, auth.user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Clean up Redis keys.
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(&redis_key)
+        .arg(&email_key)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Invalidate auth cache + issue fresh token.
+    crate::citadel_auth::invalidate_user_cache(&state, auth.user_id).await;
+    let access_token = issue_access_token(auth.user_id, auth.session_id, &state.config)?;
+
+    tracing::info!(user_id = %auth.user_id, "Email verified via 6-digit code");
+
+    Ok(Json(serde_json::json!({
+        "message": "Email verified successfully",
+        "access_token": access_token,
+        "expires_in": state.config.jwt_expiry_secs,
+    })))
+}
+
+// ─── POST /auth/resend-code ──────────────────────────────────────────
+//
+// JWT-authenticated. Rate-limited to 1 per 60 seconds per user.
+
+pub async fn resend_registration_code(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // ── Rate limit: 1 per 60s ──────────────────────────────────────────
+    let rate_key = format!("resend_code_rate:{}", auth.user_id);
+    let mut redis_conn = state.redis.clone();
+
+    let exists: Option<String> = redis::cmd("GET")
+        .arg(&rate_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(None);
+
+    if exists.is_some() {
+        return Err(AppError::RateLimited(
+            "Please wait 60 seconds before requesting a new code.".into(),
+        ));
+    }
+
+    // ── Guard: not already verified, has an email ──────────────────────
+    let user = sqlx::query!(
+        "SELECT email, email_verified FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    if user.email_verified {
+        return Err(AppError::BadRequest("Email is already verified.".into()));
+    }
+
+    let email = user.email.ok_or_else(|| {
+        AppError::BadRequest("No email address on file.".into())
+    })?;
+
+    // ── Generate new 6-digit code ──────────────────────────────────────
+    let code = crate::citadel_email_handlers::generate_verification_code();
+    let code_hash = hash_password(&code)?;
+
+    let redis_key = format!("verify_code:{}", auth.user_id);
+    let email_key = format!("verify_email:{}", auth.user_id);
+
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(&redis_key)
+        .arg(&code_hash)
+        .arg("EX")
+        .arg(600_u64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(&email_key)
+        .arg(&email)
+        .arg("EX")
+        .arg(600_u64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Set rate-limit cooldown (60s).
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(&rate_key)
+        .arg("1")
+        .arg("EX")
+        .arg(60_u64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    let _ = crate::citadel_email_handlers::send_verification_code_email(
+        &state, &email, &code,
+    ).await;
+
+    Ok(Json(serde_json::json!({
+        "message": "Verification code sent."
+    })))
 }
 
 // ─── POST /auth/guest ──────────────────────────────────────────────────
@@ -585,6 +777,7 @@ pub async fn register_guest(
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
             recovery_key: None,
+            verification_pending: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -665,6 +858,48 @@ pub async fn login(
         return Err(AppError::ServiceUnavailable("Login is currently disabled. Please try again later.".into()));
     }
 
+    // ── Extract IP ──────────────────────────────────────────────────────────
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let mut redis_conn = state.redis.clone();
+
+    // ── Global IP rate limit: 20 login attempts per IP per minute ────────
+    {
+        let ip_rate_key = format!("login_ip_rate:{}", ip);
+        let ip_count: i64 = redis::cmd("INCR")
+            .arg(&ip_rate_key)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or(1);
+        if ip_count == 1 {
+            let _: Result<bool, _> = redis::cmd("EXPIRE")
+                .arg(&ip_rate_key)
+                .arg(60_i64)
+                .query_async(&mut redis_conn)
+                .await;
+        }
+        if ip_count > 20 {
+            tracing::warn!(
+                ip = %ip,
+                count = ip_count,
+                "LOGIN_IP_RATE_LIMITED — exceeded 20 attempts/min"
+            );
+            return Err(AppError::RateLimited(
+                "Too many login attempts from this address. Please wait a minute.".into(),
+            ));
+        }
+    }
+
     // Find user by username or email.
     let user = sqlx::query!(
         "SELECT id, username, display_name, email, password_hash, created_at, totp_enabled,
@@ -674,8 +909,21 @@ pub async fn login(
         req.login,
     )
     .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::Unauthorized("Invalid credentials".into()))?;
+    .await?;
+
+    // If user not found, still return the same error to prevent enumeration,
+    // but log the attempt.
+    let user = match user {
+        Some(u) => u,
+        None => {
+            tracing::warn!(
+                ip = %ip,
+                login = %req.login,
+                "LOGIN_FAILED — user not found"
+            );
+            return Err(AppError::Unauthorized("Invalid credentials".into()));
+        }
+    };
 
     // ── Account ban check ─────────────────────────────────────────────────────
     if user.banned_at.is_some() {
@@ -702,21 +950,9 @@ pub async fn login(
 
     // ── IP ban check ──────────────────────────────────────────────────────────
     {
-        let ip = headers
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-            .or_else(|| {
-                headers
-                    .get("x-real-ip")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| "unknown".to_string());
-
         let ip_banned = sqlx::query_scalar!(
             "SELECT EXISTS(SELECT 1 FROM platform_ip_bans WHERE ip_address = $1 AND (expires_at IS NULL OR expires_at > NOW()))",
-            ip,
+            &ip,
         )
         .fetch_one(&state.db)
         .await?
@@ -729,11 +965,12 @@ pub async fn login(
         }
     }
 
-    // ── Account lockout (Redis) ──────────────────────────────────────────────
-    // Track failed password attempts per user. After 5 consecutive failures,
-    // block login for 15 minutes. The counter is cleared on success.
-    let lockout_key = format!("login_attempts:{}", user.id);
-    let mut redis_conn = state.redis.clone();
+    // ── Progressive lockout (Redis) ──────────────────────────────────────────
+    // Track failed attempts per IP+username combo.
+    //   5 failures  → 15-min lock  (900s TTL)
+    //  10 failures  → 1-hour lock  (3600s TTL)
+    //  20 failures  → 24-hour lock (86400s TTL) + email alert
+    let lockout_key = format!("login_attempts:{}:{}", ip, req.login.to_lowercase());
 
     let attempts: i64 = redis::cmd("GET")
         .arg(&lockout_key)
@@ -743,7 +980,36 @@ pub async fn login(
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    if attempts >= 5 {
+    if attempts >= 20 {
+        tracing::warn!(
+            ip = %ip,
+            login = %req.login,
+            user_id = %user.id,
+            attempts = attempts,
+            "LOGIN_LOCKED_24H — account locked for 24 hours"
+        );
+        return Err(AppError::RateLimited(
+            "Account locked due to too many failed attempts. Try again in 24 hours.".into(),
+        ));
+    } else if attempts >= 10 {
+        tracing::warn!(
+            ip = %ip,
+            login = %req.login,
+            user_id = %user.id,
+            attempts = attempts,
+            "LOGIN_LOCKED_1H — account locked for 1 hour"
+        );
+        return Err(AppError::RateLimited(
+            "Account temporarily locked. Try again in 1 hour.".into(),
+        ));
+    } else if attempts >= 5 {
+        tracing::warn!(
+            ip = %ip,
+            login = %req.login,
+            user_id = %user.id,
+            attempts = attempts,
+            "LOGIN_LOCKED_15M — account locked for 15 minutes"
+        );
         return Err(AppError::RateLimited(
             "Account temporarily locked. Try again in 15 minutes.".into(),
         ));
@@ -751,16 +1017,46 @@ pub async fn login(
 
     // Verify password.
     if !verify_password(&req.password, &user.password_hash)? {
-        // Increment the failure counter and (re)set a 15-minute expiry.
-        let _: Result<i64, _> = redis::cmd("INCR")
+        // Increment the failure counter.
+        let new_count: i64 = redis::cmd("INCR")
             .arg(&lockout_key)
             .query_async(&mut redis_conn)
-            .await;
+            .await
+            .unwrap_or(attempts + 1);
+
+        // Set TTL based on new failure count.
+        let ttl = if new_count >= 20 { 86400_i64 }      // 24 hours
+                  else if new_count >= 10 { 3600_i64 }   // 1 hour
+                  else { 900_i64 };                       // 15 minutes
         let _: Result<bool, _> = redis::cmd("EXPIRE")
             .arg(&lockout_key)
-            .arg(900_i64)
+            .arg(ttl)
             .query_async(&mut redis_conn)
             .await;
+
+        tracing::warn!(
+            ip = %ip,
+            login = %req.login,
+            user_id = %user.id,
+            attempts = new_count,
+            "LOGIN_FAILED — wrong password"
+        );
+
+        // At 20 failures, send email alert to the account owner.
+        if new_count == 20 {
+            if let Some(ref email) = user.email {
+                let state_clone = state.clone();
+                let email_clone = email.clone();
+                let ip_clone = ip.clone();
+                let login_clone = req.login.clone();
+                tokio::spawn(async move {
+                    crate::citadel_email_handlers::send_lockout_alert_email(
+                        &state_clone, &email_clone, &ip_clone, &login_clone,
+                    ).await;
+                });
+            }
+        }
+
         // Same error message to prevent username enumeration.
         return Err(AppError::Unauthorized("Invalid credentials".into()));
     }
@@ -806,7 +1102,7 @@ pub async fn login(
     let (access_token, refresh_token, _session_id) =
         create_session(&state, user.id, req.device_name.as_deref()).await?;
 
-    tracing::info!(user_id = %user.id, username = %user.username, "User logged in");
+    tracing::info!(user_id = %user.id, username = %user.username, ip = %ip, "LOGIN_SUCCESS");
 
     Ok(auth_response_with_cookie(
         AuthResponse {
@@ -821,6 +1117,7 @@ pub async fn login(
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
             recovery_key: None,
+            verification_pending: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -900,6 +1197,7 @@ pub async fn complete_2fa_login(
             refresh_token: refresh_token.clone(),
             expires_in: state.config.jwt_expiry_secs,
             recovery_key: None,
+            verification_pending: None,
         },
         &refresh_token,
         state.config.refresh_expiry_secs,
@@ -1081,10 +1379,10 @@ pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let rows = sqlx::query!(
-        "SELECT id, device_name, ip_address, created_at, expires_at
+        "SELECT id, device_name, ip_address, created_at, last_active_at, expires_at
          FROM sessions
          WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
-         ORDER BY created_at DESC",
+         ORDER BY last_active_at DESC",
         auth.user_id,
     )
     .fetch_all(&state.db)
@@ -1095,14 +1393,90 @@ pub async fn list_sessions(
         .map(|r| SessionInfo {
             id: r.id,
             device_name: r.device_name,
-            ip_address: r.ip_address.map(|ip| ip.to_string()),
+            ip_address: r.ip_address.map(|ip| mask_ip(&ip.to_string())),
             created_at: r.created_at.to_rfc3339(),
+            last_active_at: r.last_active_at.to_rfc3339(),
             expires_at: r.expires_at.to_rfc3339(),
             current: r.id == auth.session_id,
         })
         .collect();
 
     Ok(Json(sessions))
+}
+
+/// Mask an IP address for privacy: 192.168.1.42 → 192.168.x.x, ::1 → ::x
+fn mask_ip(ip: &str) -> String {
+    if let Some(dot_pos) = ip.find('.') {
+        // IPv4 — keep first two octets
+        if let Some(second_dot) = ip[dot_pos + 1..].find('.') {
+            let prefix = &ip[..dot_pos + 1 + second_dot];
+            return format!("{}.x.x", prefix);
+        }
+    }
+    // IPv6 or unrecognized — just show "x"
+    if ip.contains(':') {
+        return format!("{}:x", ip.split(':').next().unwrap_or("x"));
+    }
+    "x.x.x.x".to_string()
+}
+
+// ─── DELETE /auth/sessions/all-others ───────────────────────────────────
+
+pub async fn revoke_all_other_sessions(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    // Require reauthentication.
+    require_reauth(&state, auth.user_id, &headers).await?;
+
+    let result = sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW()
+         WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL",
+        auth.user_id,
+        auth.session_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Also add revoked session IDs to Redis for fast rejection.
+    let revoked_ids = sqlx::query_scalar!(
+        "SELECT id FROM sessions
+         WHERE user_id = $1 AND id != $2 AND revoked_at IS NOT NULL
+         AND revoked_at > NOW() - INTERVAL '5 seconds'",
+        auth.user_id,
+        auth.session_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    if !revoked_ids.is_empty() {
+        let revoked_key = format!("revoked_sessions:{}", auth.user_id);
+        let mut redis_conn = state.redis.clone();
+        for sid in &revoked_ids {
+            let _: Result<(), _> = redis::cmd("SADD")
+                .arg(&revoked_key)
+                .arg(sid.to_string())
+                .query_async(&mut redis_conn)
+                .await;
+        }
+        let _: Result<(), _> = redis::cmd("EXPIRE")
+            .arg(&revoked_key)
+            .arg(86400_u64) // 24h TTL
+            .query_async(&mut redis_conn)
+            .await;
+    }
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        count = result.rows_affected(),
+        "Revoked all other sessions"
+    );
+
+    Ok((StatusCode::OK, Json(serde_json::json!({
+        "revoked": result.rows_affected()
+    }))))
 }
 
 // ─── DELETE /auth/sessions/:id ──────────────────────────────────────────
@@ -1112,6 +1486,13 @@ pub async fn revoke_session(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Cannot revoke current session via this endpoint — use /auth/logout instead.
+    if session_id == auth.session_id {
+        return Err(AppError::BadRequest(
+            "Cannot sign out current session. Use logout instead.".into(),
+        ));
+    }
+
     // Users can only revoke their own sessions.
     let result = sqlx::query!(
         "UPDATE sessions SET revoked_at = NOW()
@@ -1142,7 +1523,11 @@ pub async fn revoke_session(
 pub async fn setup_2fa(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
+    // Require reauthentication.
+    require_reauth(&state, auth.user_id, &headers).await?;
+
     // Check if 2FA is already enabled.
     let already = sqlx::query_scalar!(
         "SELECT totp_enabled FROM users WHERE id = $1",
@@ -1240,8 +1625,12 @@ pub async fn verify_2fa(
 pub async fn disable_2fa(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<TotpVerifyRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Require reauthentication.
+    require_reauth(&state, auth.user_id, &headers).await?;
+
     let row = sqlx::query!(
         "SELECT totp_enabled, totp_secret FROM users WHERE id = $1",
         auth.user_id,
@@ -1417,6 +1806,94 @@ fn verify_totp(secret_b32: &str, code: &str) -> Result<bool, AppError> {
     Ok(totp.check_current(code).unwrap_or(false))
 }
 
+// ─── POST /auth/verify-password ──────────────────────────────────────────
+//
+// Verifies the user's current password and returns a single-use reauth_token
+// stored in Redis with a 5-minute TTL. Dangerous endpoints (change password,
+// change email, 2FA setup/disable, delete account, revoke all sessions, rotate
+// keys) require this token via the X-Reauth-Token header.
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyPasswordRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReauthTokenResponse {
+    pub reauth_token: String,
+    /// Seconds until expiry.
+    pub expires_in: u64,
+}
+
+pub async fn verify_password_endpoint(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<VerifyPasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Fetch password hash.
+    let user = sqlx::query!(
+        "SELECT password_hash FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    if !verify_password(&req.password, &user.password_hash)? {
+        return Err(AppError::Unauthorized("Incorrect password".into()));
+    }
+
+    // Generate a single-use token, store in Redis.
+    let token = generate_hex_token();
+    let redis_key = format!("reauth:{}:{}", auth.user_id, token);
+    let mut redis_conn = state.redis.clone();
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(&redis_key)
+        .arg("1")
+        .arg("EX")
+        .arg(300_u64) // 5 minutes
+        .query_async(&mut redis_conn)
+        .await;
+
+    Ok(Json(ReauthTokenResponse {
+        reauth_token: token,
+        expires_in: 300,
+    }))
+}
+
+/// Validate and consume a single-use reauth token from the X-Reauth-Token header.
+/// Call this at the start of any dangerous endpoint.
+pub async fn require_reauth(
+    state: &AppState,
+    user_id: Uuid,
+    headers: &axum::http::HeaderMap,
+) -> Result<(), AppError> {
+    let token = headers
+        .get("x-reauth-token")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized(
+            "Reauthentication required. Please verify your password first.".into(),
+        ))?;
+
+    let redis_key = format!("reauth:{}:{}", user_id, token);
+    let mut redis_conn = state.redis.clone();
+
+    // GETDEL atomically fetches and deletes — single-use.
+    let existed: Option<String> = redis::cmd("GETDEL")
+        .arg(&redis_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(None);
+
+    if existed.is_none() {
+        return Err(AppError::Unauthorized(
+            "Invalid or expired reauth token. Please verify your password again.".into(),
+        ));
+    }
+
+    Ok(())
+}
+
 // ─── Password Hashing (Argon2id) ────────────────────────────────────────
 
 /// Hash a password with Argon2id (memory-hard, GPU-resistant).
@@ -1493,40 +1970,50 @@ fn validate_username(username: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// 10k most common passwords, compiled into the binary.
+/// Replace src/common_passwords_10k.txt with the full SecLists file:
+///   https://github.com/danielmiessler/SecLists/blob/master/Passwords/Common-Credentials/10k-most-common.txt
+static COMMON_PASSWORDS: std::sync::LazyLock<std::collections::HashSet<&'static str>> =
+    std::sync::LazyLock::new(|| {
+        include_str!("common_passwords_10k.txt")
+            .lines()
+            .filter(|l| !l.is_empty())
+            .collect()
+    });
+
 fn validate_password(password: &str) -> Result<(), AppError> {
-    if password.len() < 8 {
-        return Err(AppError::BadRequest(
-            "Password must be at least 8 characters".into()
-        ));
+    let mut failures: Vec<&str> = Vec::new();
+
+    if password.len() < 12 {
+        failures.push("Must be at least 12 characters");
     }
     if password.len() > 128 {
-        return Err(AppError::BadRequest(
-            "Password must not exceed 128 characters".into()
-        ));
+        failures.push("Must not exceed 128 characters");
     }
-    // Require at least one uppercase, one lowercase, one digit.
-    let has_upper = password.chars().any(|c| c.is_ascii_uppercase());
-    let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
-    let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    if !has_upper || !has_lower || !has_digit {
-        return Err(AppError::BadRequest(
-            "Password must contain at least one uppercase letter, one lowercase letter, and one digit".into()
-        ));
+    if !password.chars().any(|c| c.is_ascii_uppercase()) {
+        failures.push("Must contain at least one uppercase letter");
     }
-    // Block extremely common passwords.
-    let common = [
-        "password", "12345678", "123456789", "qwerty123", "password1",
-        "iloveyou", "abcdefgh", "1234567890", "baseball1", "football1",
-        "welcome1", "letmein1", "admin123", "passw0rd", "abc12345",
-        "hello123", "changeme1", "password123", "trustno1",
-    ];
+    if !password.chars().any(|c| c.is_ascii_lowercase()) {
+        failures.push("Must contain at least one lowercase letter");
+    }
+    if !password.chars().any(|c| c.is_ascii_digit()) {
+        failures.push("Must contain at least one digit");
+    }
+    if !password.chars().any(|c| !c.is_alphanumeric()) {
+        failures.push("Must contain at least one special character");
+    }
+
+    // Check against common passwords list (case-insensitive).
     let lower = password.to_lowercase();
-    if common.iter().any(|c| lower == *c) {
-        return Err(AppError::BadRequest(
-            "This password is too common. Please choose a stronger password.".into()
-        ));
+    if COMMON_PASSWORDS.contains(lower.as_str()) {
+        failures.push("This password is too common");
     }
-    Ok(())
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(failures.join(". ") + "."))
+    }
 }
 
 // ─── TOTP Secret Encryption ─────────────────────────────────────────────

@@ -119,6 +119,61 @@ const notifSound = {
   },
 };
 
+// ─── Reauth Modal ─────────────────────────────────────────
+// Prompts for current password before dangerous operations.
+// Returns a single-use reauth_token valid for 5 minutes.
+
+interface ReauthModalProps {
+  onSuccess: (reauthToken: string) => void;
+  onCancel: () => void;
+}
+
+function ReauthModal({ onSuccess, onCancel }: ReauthModalProps) {
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleVerify = async () => {
+    if (!pw.trim()) { setErr('Please enter your password.'); return; }
+    setLoading(true);
+    setErr('');
+    try {
+      const res = await api.verifyPassword(pw);
+      onSuccess(res.reauth_token);
+    } catch (e: any) {
+      setErr(e.message || 'Incorrect password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.65)' }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, padding: 24, width: 380, maxWidth: '90vw' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 4 }}>Confirm Your Identity</div>
+        <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>
+          Enter your password to continue. This is required for security-sensitive actions.
+        </div>
+        <input
+          type="password"
+          value={pw}
+          onChange={e => { setPw(e.target.value); setErr(''); }}
+          onKeyDown={e => { if (e.key === 'Enter') handleVerify(); }}
+          placeholder="Your password"
+          autoFocus
+          autoComplete="current-password"
+          style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${err ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }}
+        />
+        {err && <div style={{ fontSize: 11, color: T.err, marginBottom: 8 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} className="pill-btn" style={{ background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, padding: '8px 16px', fontSize: 12, fontWeight: 600 }}>Cancel</button>
+          <button onClick={handleVerify} disabled={loading} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 16px', fontSize: 12, fontWeight: 700 }}>{loading ? 'Verifying...' : 'Continue'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────
 
 interface DeviceSelectorProps {
@@ -307,6 +362,18 @@ function AudioToggle({ label, storageKey, defaultVal, desc, onChange }: AudioTog
 function RotateEncryptionKey() {
   const [showModal, setShowModal] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [showReauth, setShowReauth] = useState(false);
+  const [reauthToken, setReauthToken] = useState<string | null>(null);
+
+  const startRotate = () => {
+    if (reauthToken) { setShowModal(true); } else { setShowReauth(true); }
+  };
+
+  const handleReauth = (token: string) => {
+    setReauthToken(token);
+    setShowReauth(false);
+    setShowModal(true);
+  };
 
   const handleRotate = async () => {
     setRotating(true);
@@ -350,10 +417,11 @@ function RotateEncryptionKey() {
         <div style={{ fontSize: 12, color: T.mt, marginBottom: 8, lineHeight: 1.6 }}>
           Generate a new encryption identity. <strong style={{ color: T.err }}>All previous messages will become permanently unreadable</strong> — the server stores only ciphertext encrypted with your current key, and rotating destroys the old key material.
         </div>
-        <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={startRotate} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
           Rotate Encryption Key
         </button>
       </div>
+      {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
       {showModal && (
         <DangerConfirmModal
           title="Rotate Encryption Key"
@@ -363,7 +431,7 @@ function RotateEncryptionKey() {
           loadingLabel="Rotating..."
           loading={rotating}
           onConfirm={handleRotate}
-          onCancel={() => setShowModal(false)}
+          onCancel={() => { setShowModal(false); setReauthToken(null); }}
         />
       )}
     </>
@@ -413,30 +481,35 @@ function ClearLocalCache() {
 }
 
 function DeleteAccount() {
+  const [showReauth, setShowReauth] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [confirmPw, setConfirmPw] = useState('');
+  const [reauthToken, setReauthToken] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [pwError, setPwError] = useState('');
+
+  const startDelete = () => { setShowReauth(true); };
+
+  const handleReauth = (token: string) => {
+    setReauthToken(token);
+    setShowReauth(false);
+    setShowModal(true);
+  };
 
   const handleDelete = async () => {
-    if (!confirmPw.trim()) { setPwError('Please enter your password.'); return; }
     setDeleting(true);
-    setPwError('');
     try {
-      const check = await api.login(api.username, confirmPw);
-      if (!check.ok) { setPwError('Incorrect password. Account NOT deleted.'); setDeleting(false); return; }
-      await api.deleteAccount();
+      await api.deleteAccount(reauthToken || undefined);
       localStorage.clear();
       window.location.reload();
     } catch (e: any) {
-      setPwError('Account deletion failed: ' + (e.message || 'error'));
+      alert('Account deletion failed: ' + (e.message || 'error'));
       setDeleting(false);
     }
   };
 
   return (
     <>
-      <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+      <button onClick={startDelete} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+      {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
       {showModal && (
         <DangerConfirmModal
           title="Delete Account"
@@ -446,20 +519,8 @@ function DeleteAccount() {
           loadingLabel="Deleting..."
           loading={deleting}
           onConfirm={handleDelete}
-          onCancel={() => { setShowModal(false); setConfirmPw(''); setPwError(''); }}
-        >
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, color: T.err, fontWeight: 600, marginBottom: 6 }}>Enter your password:</div>
-            <input
-              type="password"
-              value={confirmPw}
-              onChange={e => { setConfirmPw(e.target.value); setPwError(''); }}
-              placeholder="Your password"
-              style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${pwError ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
-            />
-            {pwError && <div style={{ fontSize: 11, color: T.err, marginTop: 4 }}>{pwError}</div>}
-          </div>
-        </DangerConfirmModal>
+          onCancel={() => { setShowModal(false); setReauthToken(null); }}
+        />
       )}
     </>
   );
@@ -887,10 +948,23 @@ function ChangeEmail() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  const [showReauth, setShowReauth] = useState(false);
+  const [reauthToken, setReauthToken] = useState<string | null>(null);
 
   useEffect(() => {
     api.getMe().then((u: any) => { if (u?.email) setCurrentEmail(u.email); });
   }, []);
+
+  const startEdit = () => {
+    if (reauthToken) { setEditing(true); setMsg(''); setErr(''); }
+    else { setShowReauth(true); }
+  };
+
+  const handleReauth = (token: string) => {
+    setReauthToken(token);
+    setShowReauth(false);
+    setEditing(true); setMsg(''); setErr('');
+  };
 
   const handleSubmit = async () => {
     setErr(''); setMsg('');
@@ -898,10 +972,10 @@ function ChangeEmail() {
     if (!password) { setErr('Password is required'); return; }
     setSaving(true);
     try {
-      const res = await api.changeEmail(newEmail, password);
-      setMsg(res.message || 'Email updated. Check your new email for a verification link.');
+      const res = await api.changeEmail(newEmail, password, reauthToken || undefined);
+      setMsg(res.message || 'Email updated. Your email is now unverified until you confirm the new address.');
       setCurrentEmail(newEmail);
-      setNewEmail(''); setPassword(''); setEditing(false);
+      setNewEmail(''); setPassword(''); setEditing(false); setReauthToken(null);
     } catch (e: any) {
       setErr(e.message || 'Failed to change email');
     } finally { setSaving(false); }
@@ -915,9 +989,10 @@ function ChangeEmail() {
           <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>{currentEmail || 'No email set'}</div>
         </div>
         {!editing && (
-          <button onClick={() => { setEditing(true); setMsg(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
+          <button onClick={startEdit} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
         )}
       </div>
+      {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
       {editing && (
         <div style={{ marginTop: 10 }}>
           <input
@@ -933,7 +1008,7 @@ function ChangeEmail() {
           />
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleSubmit} disabled={saving} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>{saving ? 'Saving...' : 'Update Email'}</button>
-            <button onClick={() => { setEditing(false); setNewEmail(''); setPassword(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
+            <button onClick={() => { setEditing(false); setNewEmail(''); setPassword(''); setErr(''); setReauthToken(null); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
           </div>
         </div>
       )}
@@ -952,21 +1027,34 @@ function ChangePassword() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  const [showReauth, setShowReauth] = useState(false);
+  const [reauthToken, setReauthToken] = useState<string | null>(null);
+
+  const startEdit = () => {
+    if (reauthToken) { setEditing(true); setMsg(''); setErr(''); }
+    else { setShowReauth(true); }
+  };
+
+  const handleReauth = (token: string) => {
+    setReauthToken(token);
+    setShowReauth(false);
+    setEditing(true); setMsg(''); setErr('');
+  };
 
   const handleSubmit = async () => {
     setErr(''); setMsg('');
     if (!currentPw) { setErr('Current password is required'); return; }
-    if (newPw.length < 8) { setErr('New password must be at least 8 characters'); return; }
+    if (newPw.length < 12) { setErr('New password must be at least 12 characters'); return; }
     setSaving(true);
     try {
-      const res = await api.changePassword(currentPw, newPw);
+      const res = await api.changePassword(currentPw, newPw, reauthToken || undefined);
       // Store new tokens if returned
       if (res.access_token) {
         (api as any).token = res.access_token;
         if (res.refresh_token) (api as any).refreshToken = res.refresh_token;
       }
       setMsg('Password updated successfully. All other sessions have been revoked.');
-      setCurrentPw(''); setNewPw(''); setEditing(false);
+      setCurrentPw(''); setNewPw(''); setEditing(false); setReauthToken(null);
     } catch (e: any) {
       setErr(e.message || 'Failed to change password');
     } finally { setSaving(false); }
@@ -980,9 +1068,10 @@ function ChangePassword() {
           <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Update your password regularly for better security</div>
         </div>
         {!editing && (
-          <button onClick={() => { setEditing(true); setMsg(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
+          <button onClick={startEdit} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Change</button>
         )}
       </div>
+      {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
       {editing && (
         <div style={{ marginTop: 10 }}>
           <input
@@ -991,14 +1080,14 @@ function ChangePassword() {
             style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 6, outline: 'none', boxSizing: 'border-box' }}
             autoFocus autoComplete="current-password" />
           <input
-            type="password" placeholder="New password (min 8 characters)" value={newPw}
+            type="password" placeholder="New password (min 12 characters)" value={newPw}
             onChange={e => setNewPw(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
             style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 8, outline: 'none', boxSizing: 'border-box' }}
             autoComplete="new-password" />
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleSubmit} disabled={saving} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>{saving ? 'Saving...' : 'Update Password'}</button>
-            <button onClick={() => { setEditing(false); setCurrentPw(''); setNewPw(''); setErr(''); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
+            <button onClick={() => { setEditing(false); setCurrentPw(''); setNewPw(''); setErr(''); setReauthToken(null); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>
           </div>
         </div>
       )}
@@ -1014,6 +1103,8 @@ function ActiveSessions() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokingAll, setRevokingAll] = useState(false);
+  const [showReauth, setShowReauth] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -1033,30 +1124,63 @@ function ActiveSessions() {
     setRevoking(null);
   };
 
+  const startRevokeAll = () => { setShowReauth(true); };
+
+  const revokeAllOthers = async (reauthToken: string) => {
+    setShowReauth(false);
+    setRevokingAll(true);
+    try {
+      await api.revokeAllOtherSessions(reauthToken);
+      setSessions(prev => prev.filter(s => s.current));
+    } catch { /* ignore */ }
+    setRevokingAll(false);
+  };
+
+  const formatActive = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 60_000) return 'Active now';
+    if (diff < 3_600_000) return `Active ${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `Active ${Math.floor(diff / 3_600_000)}h ago`;
+    return `Active ${d.toLocaleDateString()}`;
+  };
+
+  const otherCount = sessions.filter(s => !s.current).length;
+
   return (
     <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Active Sessions</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Active Devices</div>
+        {otherCount > 0 && (
+          <button onClick={startRevokeAll} disabled={revokingAll} className="pill-btn"
+            style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
+            {revokingAll ? '...' : 'Sign Out All Others'}
+          </button>
+        )}
+      </div>
+      {showReauth && <ReauthModal onSuccess={revokeAllOthers} onCancel={() => setShowReauth(false)} />}
       {loading ? (
-        <div style={{ fontSize: 11, color: T.mt }}>Loading sessions...</div>
+        <div style={{ fontSize: 11, color: T.mt }}>Loading devices...</div>
       ) : sessions.length === 0 ? (
         <div style={{ fontSize: 11, color: T.mt }}>No active sessions</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sessions.map((s: any) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}` }}>
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${s.current ? T.ac + '44' : T.bd}` }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {s.device_name || 'Unknown device'}
                   {s.current && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(0,212,170,0.15)', color: T.ac, fontWeight: 700 }}>THIS DEVICE</span>}
                 </div>
                 <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>
-                  {s.ip_address || 'Unknown IP'} · Created {new Date(s.created_at).toLocaleDateString()}
+                  {s.ip_address || 'Unknown IP'} · {formatActive(s.last_active_at || s.created_at)} · Since {new Date(s.created_at).toLocaleDateString()}
                 </div>
               </div>
               {!s.current && (
                 <button onClick={() => revoke(s.id)} disabled={revoking === s.id} className="pill-btn"
                   style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                  {revoking === s.id ? '...' : 'Revoke'}
+                  {revoking === s.id ? '...' : 'Sign Out'}
                 </button>
               )}
             </div>
@@ -1689,8 +1813,8 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
           </div>
 
-          {/* ─ Sessions ─ */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Sessions</div>
+          {/* ─ Active Devices ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
           <ActiveSessions />
 
           {/* ─ Danger Zone ─ */}

@@ -3,12 +3,12 @@
  * Orchestrates all extracted components into a complete chat application.
  */
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { api } from './api/CitadelAPI';
+import { api, _storage } from './api/CitadelAPI';
 import { T, getInp, btn, setTheme } from './theme';
 import { I } from './icons';
 import { initCrypto, isMlsAvailable, encryptMessage, decryptMessage } from './crypto/mls';
 import { sframeService } from './services/SFrameService';
-import { AuthScreen } from './components/AuthScreen';
+import { AuthScreen, VerifyEmailBanner } from './components/AuthScreen';
 import { BugReportButton } from './components/BugReportButton';
 import { Av } from './components/Av';
 import { Modal } from './components/Modal';
@@ -552,6 +552,7 @@ export default function App() {
   const [msgInput, setMsgInput] = useState('');
   const [slashTool, setSlashTool] = useState<'calc' | 'convert' | 'color' | null>(null);
   const [modal, setModal] = useState<string | null>(null);
+  const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(() => _storage.getItem('d_verify_dismissed') === '1');
   const [selectedBot, setSelectedBot] = useState<any>(null);
   const [createName, setCreateName] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -1527,6 +1528,13 @@ export default function App() {
   return (
     <div className="chat-root" style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: T.bg }}>
       <GlobalStyles />
+      {/* Verify email banner — shown when user skipped verification */}
+      {me && !me.email_verified && me.email && !verifyBannerDismissed && _storage.getItem('d_verify_skipped') === '1' && (
+        <VerifyEmailBanner
+          onVerify={() => setModal('settings')}
+          onDismiss={() => { setVerifyBannerDismissed(true); _storage.setItem('d_verify_dismissed', '1'); }}
+        />
+      )}
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
       {/* ═══ Server Rail ═══ */}

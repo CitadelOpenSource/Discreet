@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, device_name, ip_address, created_at, expires_at\n         FROM sessions\n         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()\n         ORDER BY created_at DESC",
+  "query": "SELECT id, device_name, ip_address, created_at, last_active_at, expires_at\n         FROM sessions\n         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()\n         ORDER BY last_active_at DESC",
   "describe": {
     "columns": [
       {
@@ -25,6 +25,11 @@
       },
       {
         "ordinal": 4,
+        "name": "last_active_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
         "name": "expires_at",
         "type_info": "Timestamptz"
       }
@@ -39,8 +44,9 @@
       true,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "da72f351fe6ed225ffb78ffe57d6aced1713bffbddea873861f7a6433f0b21d8"
+  "hash": "2407db9fa38f8822251ea955a7c76abd540172b6cf4eda3662d2ae9ce9dc1a9a"
 }
