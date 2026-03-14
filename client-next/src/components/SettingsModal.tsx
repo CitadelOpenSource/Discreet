@@ -1152,6 +1152,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { tab: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
     { tab: 'keybinds',   keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
     { tab: 'advanced',   keywords: 'advanced developer mode performance overlay cache clear data danger zone delete account', label: 'Advanced' },
+    { tab: 'network',    keywords: 'network proxy socks5 http vpn connection privacy tor', label: 'Network & Proxy' },
   ], []);
 
   useEffect(() => {
@@ -1202,7 +1203,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { id: 'profile', label: 'My Profile' }, { id: 'privacy', label: 'Privacy' },
     { id: 'account', label: 'Account' }, { id: 'notifications', label: 'Notifications' },
     { id: 'accessibility', label: 'Accessibility' }, { id: 'keybinds', label: 'Keybinds' },
-    { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
+    { id: 'network', label: 'Network' }, { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
     ...(isStaff ? [{ id: 'admin', label: '⚙ Admin' }] : []),
     ...(isStaff ? [{ id: 'dev-tools', label: '🔧 Dev Tools' }] : []),
   ];
@@ -2132,6 +2133,89 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         </>)}
 
         {/* ── Advanced ── */}
+        {tab === 'network' && (() => {
+          const proxyType = localStorage.getItem('d_proxy_type') || 'none';
+          const proxyHost = localStorage.getItem('d_proxy_host') || '';
+          const proxyPort = localStorage.getItem('d_proxy_port') || '';
+          const isTauri = !!(window as any).__TAURI_INTERNALS__;
+          const syncTauri = (type: string, host: string, port: string) => {
+            if (!isTauri) return;
+            const { invoke } = (window as any).__TAURI_INTERNALS__;
+            invoke('set_proxy_config', { proxyType: type, host, port }).catch(() => {});
+          };
+          const setProxy = (id: string) => {
+            localStorage.setItem('d_proxy_type', id);
+            syncTauri(id, proxyHost, proxyPort);
+          };
+          return (<>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Proxy Configuration</div>
+            <div style={{ fontSize: 11, color: T.mt, marginBottom: 12 }}>
+              Route your connection through a proxy. This is client-side only — the server never knows your proxy settings.
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Proxy Type</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { id: 'none', label: 'None', desc: 'Direct connection' },
+                  { id: 'socks5', label: 'SOCKS5', desc: 'SOCKS5 proxy' },
+                  { id: 'http', label: 'HTTP', desc: 'HTTP/HTTPS proxy' },
+                ].map(p => (
+                  <div key={p.id} onClick={() => setProxy(p.id)}
+                    style={{ flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: `2px solid ${proxyType === p.id ? T.ac : T.bd}`, background: proxyType === p.id ? 'rgba(0,212,170,0.06)' : 'transparent', textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: proxyType === p.id ? T.ac : T.tx }}>{p.label}</div>
+                    <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>{p.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {proxyType !== 'none' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Host</label>
+                  <input defaultValue={proxyHost} onBlur={e => { const v = e.target.value.trim(); localStorage.setItem('d_proxy_host', v); syncTauri(proxyType, v, proxyPort); }} placeholder={proxyType === 'socks5' ? '127.0.0.1' : 'proxy.example.com'} style={{ ...getInp(), width: '100%', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Port</label>
+                  <input defaultValue={proxyPort} onBlur={e => { const v = e.target.value.trim(); localStorage.setItem('d_proxy_port', v); syncTauri(proxyType, proxyHost, v); }} placeholder={proxyType === 'socks5' ? '1080' : '8080'} style={{ ...getInp(), width: '100%', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+            )}
+            {proxyType !== 'none' && proxyHost && proxyPort && (
+              <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.08)', borderRadius: 8, border: `1px solid ${T.ac}22`, marginBottom: 12, fontSize: 11, color: T.ac, fontWeight: 600 }}>
+                Proxy configured: {proxyType.toUpperCase()}://{proxyHost}:{proxyPort}
+              </div>
+            )}
+            {isTauri && proxyType !== 'none' && (
+              <div style={{ padding: '8px 12px', background: 'rgba(250,166,26,0.08)', borderRadius: 8, border: '1px solid rgba(250,166,26,0.15)', marginBottom: 12, fontSize: 11, color: T.warn, fontWeight: 600 }}>
+                Restart the desktop app to apply proxy changes to the system webview.
+              </div>
+            )}
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>VPN & Privacy</div>
+            <div style={{ padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 11, color: T.mt, lineHeight: 1.6 }}>
+              Discreet works with any VPN. For maximum privacy, we recommend using a VPN that doesn't log traffic.
+              <div style={{ marginTop: 8, fontSize: 10, color: T.mt }}>
+                Your messages are end-to-end encrypted regardless of whether you use a VPN or proxy. These settings only affect the transport layer — the server cannot read your message content either way.
+              </div>
+            </div>
+            {isTauri && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Desktop Proxy</div>
+                <div style={{ padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 11, color: T.mt, lineHeight: 1.6 }}>
+                  Proxy settings are applied to the WebView2 browser engine via <code style={{ color: T.ac }}>--proxy-server</code>. All HTTP, WebSocket, and media traffic routes through your configured proxy. Changes require an app restart.
+                </div>
+              </>
+            )}
+            {!isTauri && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Desktop App (Tauri)</div>
+                <div style={{ padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 11, color: T.mt, lineHeight: 1.6 }}>
+                  In the Discreet desktop app, proxy settings are passed to the system webview. SOCKS5 proxies are applied at the OS network level via Tauri's proxy configuration. Restart the app after changing proxy settings.
+                </div>
+              </>
+            )}
+          </>);
+        })()}
+
         {tab === 'advanced' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Advanced Settings</div>
           <div style={{ fontSize: 11, color: T.warn, marginBottom: 12, padding: '8px 12px', background: 'rgba(250,166,26,0.08)', borderRadius: 8, border: '1px solid rgba(250,166,26,0.15)' }}>⚠️ Power user settings. Incorrect changes may affect performance.</div>

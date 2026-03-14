@@ -16,7 +16,8 @@ export type VoiceEventType =
   | 'video_started' | 'video_stopped'
   | 'screen_started' | 'screen_stopped'
   | 'peer_stream' | 'peer_video' | 'peer_left' | 'ice_candidate'
-  | 'sframe_key_update';
+  | 'sframe_key_update'
+  | 'latency' | 'server_muted';
 
 export interface VoiceEvent {
   type: VoiceEventType;
@@ -30,6 +31,8 @@ export interface VoiceEvent {
   peerId?: string;
   candidate?: RTCIceCandidate;
   message?: string;
+  latencyMs?: number;
+  serverMuted?: boolean;
 }
 
 export interface VoiceState {
@@ -41,6 +44,8 @@ export interface VoiceState {
   screenSharing: boolean;
   sframeActive: boolean;
   audioLevel: number;
+  latencyMs: number;
+  serverMuted: boolean;
   streams: Map<string, MediaStream>;
   peerKeyIds: Map<string, number>;
 }
@@ -74,6 +79,10 @@ export class VoiceEngine {
   peerKeyIds: Map<string, number>;
   pttKey: string;
   pttDown: boolean;
+  serverMuted: boolean;
+  latencyMs: number;
+  private bandpassNode: BiquadFilterNode | null;
+  private _latencyInterval: ReturnType<typeof setInterval> | null;
   private listeners: Set<(e: VoiceEvent) => void>;
   private _vadLoop: number | null;
   private _onKeyDown: (e: KeyboardEvent) => void;
@@ -106,6 +115,10 @@ export class VoiceEngine {
     this.peerKeyIds = new Map();
     this.pttKey = localStorage.getItem('d_pttkey') || '`';
     this.pttDown = false;
+    this.serverMuted = false;
+    this.latencyMs = 0;
+    this.bandpassNode = null;
+    this._latencyInterval = null;
     this.listeners = new Set();
     this._vadLoop = null;
     this._onKeyDown = (e) => {
@@ -161,10 +174,28 @@ export class VoiceEngine {
         this.eqNodes[f] = eq;
         lastNode = eq;
       });
-      lastNode.connect(this.gainNode);
+      // Bandpass noise suppression: cuts below 80 Hz (rumble) and above 14 kHz (hiss)
+      if (this.noiseSuppression) {
+        const hp = this.audioCtx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 80;
+        hp.Q.value = 0.7;
+        lastNode.connect(hp);
+        const lp = this.audioCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 14000;
+        lp.Q.value = 0.7;
+        hp.connect(lp);
+        this.bandpassNode = lp;
+        lp.connect(this.gainNode);
+      } else {
+        this.bandpassNode = null;
+        lastNode.connect(this.gainNode);
+      }
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 512;
       this.gainNode.connect(this.analyser);
+      this._startLatencyPolling();
       this._startVAD();
       if (this.mode === 'ptt') this._setMicEnabled(false);
       document.addEventListener('keydown', this._onKeyDown);
@@ -190,10 +221,14 @@ export class VoiceEngine {
     if (this.screenStream) { this.screenStream.getTracks().forEach(t => t.stop()); this.screenStream = null; this.screenSharing = false; }
     if (this.audioCtx) { this.audioCtx.close(); this.audioCtx = null; }
     if (this._vadLoop) { cancelAnimationFrame(this._vadLoop); this._vadLoop = null; }
+    if (this._latencyInterval) { clearInterval(this._latencyInterval); this._latencyInterval = null; }
+    this.bandpassNode = null;
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
     this.channelId = null;
     this.speaking = false;
+    this.serverMuted = false;
+    this.latencyMs = 0;
     this.emit('left', {});
   }
 
@@ -284,6 +319,37 @@ export class VoiceEngine {
     if (this.screenStream) { this.screenStream.getTracks().forEach(t => t.stop()); this.screenStream = null; }
     this.screenSharing = false;
     this.emit('screen_stopped', {});
+  }
+
+  /** Poll RTCPeerConnection stats for round-trip latency every 3s. */
+  private _startLatencyPolling(): void {
+    this._latencyInterval = setInterval(async () => {
+      let totalRtt = 0;
+      let count = 0;
+      for (const pc of this.peers.values()) {
+        try {
+          const stats = await pc.getStats();
+          stats.forEach(report => {
+            if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime) {
+              totalRtt += report.currentRoundTripTime * 1000; // seconds -> ms
+              count++;
+            }
+          });
+        } catch { /* peer may be closing */ }
+      }
+      this.latencyMs = count > 0 ? Math.round(totalRtt / count) : 0;
+      this.emit('latency', { latencyMs: this.latencyMs });
+    }, 3000);
+  }
+
+  /** Admin server-mute: called when server sends admin_mute targeting this user. */
+  applyServerMute(): void {
+    this.serverMuted = true;
+    if (!this.muted) {
+      this.muted = true;
+      this._setMicEnabled(false);
+    }
+    this.emit('server_muted', { serverMuted: true, muted: true });
   }
 
   private _startVAD(): void {
@@ -418,6 +484,8 @@ export function useVoice() {
     screenSharing: false,
     sframeActive: false,
     audioLevel: 0,
+    latencyMs: 0,
+    serverMuted: false,
     streams: new Map(),
     peerKeyIds: new Map(),
   });
@@ -432,7 +500,7 @@ export function useVoice() {
           setState(s => ({ ...s, channelId: e.channelId ?? voice.channelId }));
           break;
         case 'left':
-          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, streams: new Map(), peerKeyIds: new Map() }));
+          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, latencyMs: 0, serverMuted: false, streams: new Map(), peerKeyIds: new Map() }));
           break;
         case 'mute_changed':
           setState(s => ({ ...s, muted: e.muted ?? voice.muted }));
@@ -465,6 +533,12 @@ export function useVoice() {
           break;
         case 'sframe_key_update':
           setState(s => ({ ...s, peerKeyIds: new Map(voice.peerKeyIds) }));
+          break;
+        case 'latency':
+          setState(s => ({ ...s, latencyMs: e.latencyMs ?? 0 }));
+          break;
+        case 'server_muted':
+          setState(s => ({ ...s, serverMuted: true, muted: true }));
           break;
       }
     });

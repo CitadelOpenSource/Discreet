@@ -18,6 +18,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { T } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
+import { Markdown } from './Markdown';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -214,7 +215,7 @@ export function ThreadView({ parentMessage, channelId, onClose, getName }: Threa
               overflow: 'hidden', display: '-webkit-box',
               WebkitLineClamp: 4, WebkitBoxOrient: 'vertical',
             }}>
-              {parentMessage.text || '(encrypted message)'}
+              <Markdown text={parentMessage.text || '(encrypted message)'} />
             </div>
           </div>
         </div>
@@ -283,7 +284,7 @@ export function ThreadView({ parentMessage, channelId, onClose, getName }: Threa
                       </div>
                     )}
                     <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word' }}>
-                      {text}
+                      <Markdown text={text} />
                     </div>
                   </div>
                 </div>

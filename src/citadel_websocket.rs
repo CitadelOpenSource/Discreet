@@ -184,8 +184,33 @@ async fn handle_ws(
 ) {
     tracing::info!(user_id = %user_id, server_id = %server_id, "WebSocket connected");
 
-    // Set user online and broadcast presence to all peers.
-    state.set_presence(user_id, PresenceStatus::Online, server_id).await;
+    // Load persisted status from DB (invisible users reconnect as invisible).
+    let status_row = sqlx::query!(
+        "SELECT presence_mode, custom_status, status_emoji FROM users WHERE id = $1",
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let persisted_mode = status_row.as_ref()
+        .map(|r| r.presence_mode.as_str())
+        .unwrap_or("online");
+    let initial_status = match persisted_mode {
+        "idle" => PresenceStatus::Idle,
+        "dnd" => PresenceStatus::Dnd,
+        "invisible" => PresenceStatus::Invisible,
+        _ => PresenceStatus::Online,
+    };
+    state.set_presence(user_id, initial_status, server_id).await;
+
+    // Load persisted custom status text and emoji into presence.
+    let cs = status_row.as_ref().map(|r| r.custom_status.clone()).unwrap_or_default();
+    let se = status_row.as_ref().map(|r| r.status_emoji.clone()).unwrap_or_default();
+    if !cs.is_empty() || !se.is_empty() {
+        state.set_custom_status(user_id, cs, se).await;
+    }
 
     let mut rx = state.subscribe_server(server_id).await;
 
@@ -239,12 +264,25 @@ async fn handle_ws(
                 match result {
                     Ok(msg) => {
                         // Check _exclude list — skip if this user is excluded.
-                        let skip = serde_json::from_str::<serde_json::Value>(&msg)
-                            .ok()
+                        let parsed = serde_json::from_str::<serde_json::Value>(&msg).ok();
+                        let skip = parsed.as_ref()
                             .and_then(|v| v.get("_exclude")?.as_array().cloned())
                             .map(|arr| arr.iter().any(|id| id.as_str() == Some(&user_id.to_string())))
                             .unwrap_or(false);
                         if skip { continue; }
+
+                        // DND: suppress notification events for users in Do Not Disturb mode.
+                        if let Some(ref v) = parsed {
+                            let evt_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            if evt_type == "mention_notification" {
+                                let map = state.presence.read().await;
+                                let is_dnd = map.get(&user_id)
+                                    .map(|p| p.status == PresenceStatus::Dnd)
+                                    .unwrap_or(false);
+                                drop(map);
+                                if is_dnd { continue; }
+                            }
+                        }
                         // Strip _exclude before forwarding to client.
                         let forwarded = if msg.contains("\"_exclude\"") {
                             if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&msg) {
@@ -300,8 +338,15 @@ async fn handle_ws(
                         }
 
                         if let Ok(msg) = serde_json::from_str::<IncomingMessage>(&text) {
+                            // ws_ping — respond immediately from the main loop
+                            // where `socket` is in scope (handle_client_message
+                            // cannot access the WebSocket sender).
+                            if msg.msg_type == "ws_ping" {
+                                let _ = socket.send(Message::Text(
+                                    serde_json::json!({ "type": "ws_pong" }).to_string()
+                                )).await;
                             // Block guests from voice channels.
-                            if is_guest && (msg.msg_type == "voice_join" || msg.msg_type == "force_voice_join") {
+                            } else if is_guest && (msg.msg_type == "voice_join" || msg.msg_type == "force_voice_join") {
                                 let err = serde_json::json!({
                                     "type": "error",
                                     "message": "Guests cannot join voice channels. Register an account first (Settings \u{2192} Profile \u{2192} Upgrade).",
@@ -561,9 +606,33 @@ async fn handle_client_message(
             }
         }
 
+        // Admin server-mute — requires MUTE_MEMBERS permission.
+        // Broadcasts admin_mute event so the target client mutes itself.
+        "admin_mute" => {
+            if let Some(target_uid) = msg.target {
+                let has_perm = crate::citadel_permissions::check_permission(
+                    &state, server_id, user_id,
+                    crate::citadel_permissions::Permission::MUTE_MEMBERS,
+                ).await.unwrap_or(false);
+                if has_perm {
+                    state.ws_broadcast(server_id, serde_json::json!({
+                        "type": "admin_mute",
+                        "user_id": target_uid,
+                        "muted_by": user_id,
+                    })).await;
+                    tracing::info!(
+                        admin = %user_id, target = %target_uid,
+                        server_id = %server_id, "Admin muted user in voice"
+                    );
+                }
+            }
+        }
+
         // =================================================================
         // PRESENCE — heartbeat and status changes
         // =================================================================
+        // NOTE: "ws_ping" is handled in the main WebSocket loop (not here)
+        // because it needs direct access to the socket sender.
 
         // Client heartbeat — keeps presence alive, optionally changes status.
         "heartbeat" => {

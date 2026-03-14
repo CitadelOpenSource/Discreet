@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT presence_mode, custom_status, status_emoji FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "presence_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "custom_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d9818e14e99093b12d303f840644ba218dec71a41f0a626aab2791e1b14993e9"
+}
