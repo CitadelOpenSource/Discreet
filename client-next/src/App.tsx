@@ -22,6 +22,7 @@ import { UpgradeModal } from './components/UpgradeModal';
 import { MaintenancePage } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { LinkPreview } from './components/LinkPreview';
+import { Markdown } from './components/Markdown';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { NotificationCenter, type AppNotification, makeNotification, loadNotifications, saveNotifications } from './components/NotificationCenter';
 // ── Lazy-loaded heavy modals (reduce initial bundle) ──────
@@ -469,6 +470,7 @@ export default function App() {
   const [curGroupDm, setCurGroupDm] = useState<any | null>(null);
   const [dmMsgs, setDmMsgs] = useState<any[]>([]);
   const [userMap, setUserMap] = useState<Record<string, string>>({});
+  const [rawUsernameMap, setRawUsernameMap] = useState<Record<string, string>>({});
   const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null }>>({});
   const [platformUser, setPlatformUser] = useState<any>(null);
   const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
@@ -478,6 +480,11 @@ export default function App() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [mentionCounts, setMentionCounts] = useState<Record<string, number>>({});
   const [agentDisclosures, setAgentDisclosures] = useState<Record<string, { agent_id: string; display_name: string; disclosure_text: string }>>({});
+  const [wsLatency, setWsLatency] = useState(0);
+  const [showConnInfo, setShowConnInfo] = useState(false);
+  const [connDiag, setConnDiag] = useState<{ api: string; ws: string; dns: string } | null>(null);
+  const sessionStartRef = useRef(Date.now());
+  const pingRef = useRef(0);
   // Server organization: favorites, folders, custom order
   const [serverFavorites, setServerFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('d_srv_favs') || '[]'));
   const [serverFolders, setServerFolders] = useState<Record<string, string[]>>(() => JSON.parse(localStorage.getItem('d_srv_folders') || '{}'));
@@ -770,6 +777,16 @@ export default function App() {
       if (evt.type === 'user_profile_update' && evt.user_id && evt.avatar_url) {
         setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, avatar_url: evt.avatar_url } : m));
       }
+      if (evt.type === 'member_update' && evt.user_id) {
+        if (evt.nickname !== undefined) {
+          setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, nickname: evt.nickname } : m));
+          setUserMap(p => {
+            const m = members.find((mb: any) => mb.user_id === evt.user_id);
+            const name = evt.nickname || m?.display_name || m?.username || p[evt.user_id];
+            return { ...p, [evt.user_id]: name };
+          });
+        }
+      }
       if (evt.type === 'account_suspended') {
         api.clearAuth();
         setAuthed(false);
@@ -794,6 +811,17 @@ export default function App() {
       // SFrame key updates from server
       if (evt.type === 'voice_sframe_key_update' && evt.user_id && evt.channel_id) {
         vc.engine.handleSFrameKeyUpdate(evt.user_id, evt.key_id ?? 0, evt.epoch ?? 0);
+      }
+      // Admin server-mute: server tells client to mute
+      if (evt.type === 'admin_mute' && evt.user_id === api.userId) {
+        vc.engine.applyServerMute();
+        setToast('You have been muted by an admin');
+        setTimeout(() => setToast(''), 3000);
+      }
+      // Latency pong response — measure round-trip time
+      if (evt.type === 'ws_pong' && pingRef.current > 0) {
+        setWsLatency(Date.now() - pingRef.current);
+        pingRef.current = 0;
       }
       // DM unread tracking: dm_message event (dm_id) or message_create whose channel_id matches a DM
       if (evt.author_id !== api.userId) {
@@ -874,7 +902,14 @@ export default function App() {
       }
     };
     const unsub = api.onWsEvent(handler);
-    return () => { unsub(); api.disconnectWs(); };
+    // Latency ping every 10 seconds
+    const pingInterval = setInterval(() => {
+      if (api.ws?.readyState === 1) {
+        pingRef.current = Date.now();
+        api.ws.send(JSON.stringify({ type: 'ws_ping' }));
+      }
+    }, 10000);
+    return () => { unsub(); clearInterval(pingInterval); api.disconnectWs(); };
   }, [curServer?.id]);
 
   useEffect(() => { msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, dmMsgs]);
@@ -961,7 +996,7 @@ export default function App() {
   const loadCategories = async (sid: string) => { try { const c = await api.listCategories(sid); if (Array.isArray(c)) setCategories(c); } catch {} };
   const loadMembers = async (sid: string) => {
     setLoadingMembers(true);
-    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.display_name || u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setBadgeMap(prev => ({ ...prev, ...bm })); } } catch {} finally { setLoadingMembers(false); }
+    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); } } catch {} finally { setLoadingMembers(false); }
   };
   const loadRoles = async (sid: string) => {
     try { const r = await api.listRoles(sid); if (Array.isArray(r)) setRoles(r); } catch {}
@@ -1671,7 +1706,7 @@ export default function App() {
         {voiceChannel && (
           <div style={{ padding: '8px 10px', borderTop: `1px solid ${T.bd}`, background: T.bg }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: T.ac, animation: vc.speaking ? 'none' : undefined, boxShadow: vc.speaking ? `0 0 6px ${T.ac}` : 'none' }} />
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: vc.speaking ? '#43b581' : T.ac, boxShadow: vc.speaking ? '0 0 0 2px #43b581, 0 0 8px rgba(67,181,129,0.6)' : 'none', transition: 'box-shadow .2s, background .2s' }} />
               <span style={{ fontSize: 11, color: T.ac, fontWeight: 600 }}>Voice Connected</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: T.mt, marginBottom: 6 }}>
@@ -1683,6 +1718,16 @@ export default function App() {
               ) : (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#faa61a', fontWeight: 700 }}>
                   <I.ShieldAlert s={9} /> Encrypted
+                </span>
+              )}
+              {vc.latencyMs > 0 && (
+                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: vc.latencyMs > 150 ? 'rgba(255,71,87,0.15)' : vc.latencyMs > 80 ? 'rgba(250,166,26,0.15)' : 'rgba(67,181,129,0.15)', color: vc.latencyMs > 150 ? '#ff4757' : vc.latencyMs > 80 ? '#faa61a' : '#43b581', fontWeight: 700 }}>
+                  {vc.latencyMs}ms
+                </span>
+              )}
+              {vc.serverMuted && (
+                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,71,87,0.15)', color: '#ff4757', fontWeight: 700 }}>
+                  Server Muted
                 </span>
               )}
             </div>
@@ -1733,6 +1778,79 @@ export default function App() {
               {isDev && <span title="Developer account" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(255,59,48,0.15)', color: '#ff3b30', border: '1px solid rgba(255,59,48,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>DEV</span>}
             </div>
             <div onClick={e => { e.stopPropagation(); setModal('status-picker'); }} style={{ fontSize: 10, color: userStatus === 'online' ? T.ac : userStatus === 'idle' ? '#faa61a' : T.mt, cursor: 'pointer' }}>{userStatus === 'online' ? '● Online' : userStatus === 'idle' ? '🌙 Idle' : userStatus === 'dnd' ? '⛔ DND' : '👻 Invisible'} ▾</div>
+          </div>
+          {/* Latency indicator */}
+          <div onClick={() => setShowConnInfo(p => !p)} title={`Latency: ${wsLatency}ms`} style={{ position: 'relative', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, background: T.sf2, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: wsLatency > 300 ? '#ff4757' : wsLatency > 100 ? '#faa61a' : '#43b581', flexShrink: 0 }}>
+            <div style={{ width: 6, height: 6, borderRadius: 3, background: wsLatency > 300 ? '#ff4757' : wsLatency > 100 ? '#faa61a' : '#43b581' }} />
+            {wsLatency > 0 ? `${wsLatency}ms` : '--'}
+            {showConnInfo && (
+              <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, width: 260, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', padding: 12, zIndex: 200, fontSize: 11, color: T.tx }}>
+                <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12 }}>Connection Info</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: T.mt }}>Latency</span>
+                    <span style={{ fontWeight: 600, color: wsLatency > 300 ? '#ff4757' : wsLatency > 100 ? '#faa61a' : '#43b581' }}>{wsLatency > 0 ? `${wsLatency}ms` : 'Measuring...'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: T.mt }}>Connection</span>
+                    <span style={{ fontWeight: 600 }}>WebSocket</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: T.mt }}>Server</span>
+                    <span style={{ fontWeight: 600 }}>{(() => { try { return new URL(location.origin).hostname; } catch { return 'local'; } })()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: T.mt }}>Session Uptime</span>
+                    <span style={{ fontWeight: 600 }}>{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const m = Math.floor(s / 60); const h = Math.floor(m / 60); return h > 0 ? `${h}h ${m % 60}m` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`; })()}</span>
+                  </div>
+                  {localStorage.getItem('d_proxy_type') && localStorage.getItem('d_proxy_type') !== 'none' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: T.mt }}>Proxy</span>
+                      <span style={{ fontWeight: 600, color: T.ac }}>Connected via {(localStorage.getItem('d_proxy_type') || '').toUpperCase()}</span>
+                    </div>
+                  )}
+                </div>
+                <div onClick={async () => {
+                  setConnDiag(null);
+                  const results: any = { api: 'checking', ws: 'checking', dns: 'checking' };
+                  setConnDiag({ ...results });
+                  // Check API
+                  try {
+                    const t0 = Date.now();
+                    const r = await fetch((location.origin) + '/health', { signal: AbortSignal.timeout(5000) });
+                    const dt = Date.now() - t0;
+                    results.api = r.ok ? `OK (${dt}ms)` : 'Error';
+                  } catch { results.api = 'Failed'; }
+                  // Check WebSocket
+                  results.ws = api.ws?.readyState === 1 ? 'Connected' : api.ws?.readyState === 0 ? 'Connecting' : 'Disconnected';
+                  // DNS estimate (time to fetch /health minus typical API processing)
+                  try {
+                    const t0 = Date.now();
+                    await fetch((location.origin) + '/health', { signal: AbortSignal.timeout(3000), cache: 'no-store' });
+                    const dt = Date.now() - t0;
+                    results.dns = `~${dt}ms round-trip`;
+                  } catch { results.dns = 'Failed'; }
+                  setConnDiag({ ...results });
+                }} style={{ padding: '6px 0', textAlign: 'center', borderRadius: 6, cursor: 'pointer', background: T.sf2, border: `1px solid ${T.bd}`, fontWeight: 600, fontSize: 11, color: T.ac, marginBottom: connDiag ? 8 : 0 }}>
+                  Troubleshoot
+                </div>
+                {connDiag && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {Object.entries(connDiag).map(([key, val]) => {
+                      const ok = typeof val === 'string' && (val.startsWith('OK') || val === 'Connected');
+                      const fail = typeof val === 'string' && (val === 'Failed' || val === 'Disconnected');
+                      return (
+                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: 4, background: ok ? '#43b581' : fail ? '#ff4757' : '#faa61a', flexShrink: 0 }} />
+                          <span style={{ color: T.mt, textTransform: 'capitalize' }}>{key === 'api' ? 'API Health' : key === 'ws' ? 'WebSocket' : 'DNS Resolve'}</span>
+                          <span style={{ marginLeft: 'auto', fontWeight: 600, fontSize: 10, color: ok ? '#43b581' : fail ? '#ff4757' : '#faa61a' }}>{val}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div onClick={() => setModal('settings')} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Settings"><I.Settings /></div>
         </div>
@@ -2159,7 +2277,7 @@ export default function App() {
                     {renderPlatformBadge(m.author_id)}
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{m.text || m.content || m.content_ciphertext}</div>
+                  <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
                 </div>
               </div>
             ))}
@@ -2199,7 +2317,7 @@ export default function App() {
                     <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{m.author_id === api.userId ? api.username : curDm.other_username}</span>
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{m.text || m.content || m.content_ciphertext}</div>
+                  <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
                 </div>
               </div>
             ))}
@@ -2290,31 +2408,15 @@ export default function App() {
               const profanityLevel = curServer ? getProfanityLevel(curServer.id) : 'off';
               const msgText = filterMessage(m.text || m.content_ciphertext, profanityLevel);
 
-              // Render message text with basic markdown
-              const renderText = (text: string) => {
-                if (!text) return text;
-                // Split on patterns: **bold**, *italic*, `code`, @mentions, URLs
-                const parts: React.ReactNode[] = [];
-                const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|@[\w.-]+|https?:\/\/[^\s]+)/g;
-                let last = 0;
-                let match;
-                while ((match = regex.exec(text)) !== null) {
-                  if (match.index > last) parts.push(text.slice(last, match.index));
-                  const m = match[0];
-                  if (m.startsWith('**') && m.endsWith('**')) parts.push(<strong key={match.index}>{m.slice(2, -2)}</strong>);
-                  else if (m.startsWith('*') && m.endsWith('*')) parts.push(<em key={match.index}>{m.slice(1, -1)}</em>);
-                  else if (m.startsWith('`') && m.endsWith('`')) parts.push(<code key={match.index} style={{ background: T.bg, padding: '1px 4px', borderRadius: 3, fontSize: 13 }}>{m.slice(1, -1)}</code>);
-                  else if (m.startsWith('@')) {
-                    const mentioned = members.find(u => u.username === m.slice(1) || u.display_name === m.slice(1));
-                    const isSelf = mentioned?.user_id === api.userId;
-                    parts.push(<span key={match.index} onClick={e => { if (mentioned) setProfileCard({ userId: mentioned.user_id, pos: { x: e.clientX, y: e.clientY } }); }} style={{ background: isSelf ? 'rgba(0,212,170,0.2)' : 'rgba(88,101,242,0.2)', color: isSelf ? T.ac : '#5865F2', padding: '0 3px', borderRadius: 3, cursor: 'pointer', fontWeight: 600 }}>{m}</span>);
-                  }
-                  else if (m.startsWith('http')) parts.push(<a key={match.index} href={m} target="_blank" rel="noopener" style={{ color: T.ac, textDecoration: 'underline' }}>{m.length > 50 ? m.slice(0, 50) + '...' : m}</a>);
-                  else parts.push(m);
-                  last = match.index + m.length;
-                }
-                if (last < text.length) parts.push(text.slice(last));
-                return parts.length > 0 ? parts : text;
+              // Mention handlers for Markdown component
+              const onMention = (username: string, e: React.MouseEvent) => {
+                const mentioned = members.find(u => u.username === username || u.display_name === username);
+                if (mentioned) setProfileCard({ userId: mentioned.user_id, pos: { x: e.clientX, y: e.clientY } });
+              };
+              const mentionStyle = (username: string): React.CSSProperties => {
+                const mentioned = members.find(u => u.username === username || u.display_name === username);
+                const isSelf = mentioned?.user_id === api.userId;
+                return { background: isSelf ? 'rgba(0,212,170,0.2)' : 'rgba(88,101,242,0.2)', color: isSelf ? T.ac : '#5865F2', padding: '0 3px', borderRadius: 3, cursor: 'pointer', fontWeight: 600 };
               };
 
               return (
@@ -2336,11 +2438,11 @@ export default function App() {
                   {/* Reply reference */}
                   {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingLeft: 12, borderLeft: `2px solid ${T.bd}` }}>↩ replying to a message</div>}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
+                    <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} title={rawUsernameMap[m.author_id] || ''} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
                     {renderPlatformBadge(m.author_id)}
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <div className="msg-text" style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{renderText(msgText)}</div>
+                  <div className="msg-text" style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} /></div>
                   {/* Attachments */}
                   {(m as any).attachments?.map((a: any) => (
                     <div key={a.id || a.url} style={{ marginTop: 4 }}>
@@ -2493,17 +2595,18 @@ export default function App() {
               const atMatch = msgInput.match(/@(\w*)$/);
               if (!atMatch) return null;
               const query = atMatch[1].toLowerCase();
-              const matches = members.filter(m => (m.username?.toLowerCase().includes(query) || m.display_name?.toLowerCase().includes(query))).slice(0, 6);
+              const matches = members.filter(m => (m.username?.toLowerCase().includes(query) || m.display_name?.toLowerCase().includes(query) || m.nickname?.toLowerCase().includes(query))).slice(0, 6);
               if (matches.length === 0) return null;
               return (
                 <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, padding: 4, marginBottom: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.3)', maxHeight: 200, overflowY: 'auto', zIndex: 100 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, padding: '4px 8px', textTransform: 'uppercase' }}>Members</div>
                   {matches.map(m => (
-                    <div key={m.user_id} onClick={() => setMsgInput(prev => prev.replace(/@\w*$/, `@${m.display_name || m.username} `))} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4, cursor: 'pointer' }}
+                    <div key={m.user_id} onClick={() => setMsgInput(prev => prev.replace(/@\w*$/, `@${m.nickname || m.display_name || m.username} `))} title={m.username} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4, cursor: 'pointer' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,170,0.08)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <Av name={m.display_name || m.username} size={24} />
-                      <span style={{ fontSize: 13 }}>{m.display_name || m.username}</span>
+                      <Av name={m.nickname || m.display_name || m.username} size={24} />
+                      <span style={{ fontSize: 13 }}>{m.nickname || m.display_name || m.username}</span>
+                      {m.nickname && <span style={{ fontSize: 10, color: T.mt }}>({m.username})</span>}
                       {m.user_id === curServer?.owner_id && <span style={{ fontSize: 9, color: '#faa61a' }}>👑</span>}
                     </div>
                   ))}
@@ -2647,11 +2750,11 @@ export default function App() {
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <div style={{ position: 'relative' }}>
-                      <Av name={m.display_name || m.username} size={28} color={m.user_id === curServer?.owner_id ? '#faa61a' : undefined} />
+                      <Av name={m.nickname || m.display_name || m.username} size={28} color={m.user_id === curServer?.owner_id ? '#faa61a' : undefined} />
                       <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, background: (() => { const s = m.user_id === api.userId ? userStatus : (presenceMap[m.user_id] || 'online'); return s === 'offline' ? '#747f8d' : s === 'idle' ? '#faa61a' : s === 'dnd' ? '#ed4245' : s === 'invisible' ? '#747f8d' : '#3ba55d'; })(), border: `2px solid ${T.sf}` }} />
                     </div>
-                    <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: m.user_id === curServer?.owner_id ? '#faa61a' : T.tx }}>
-                      {m.display_name || m.username}
+                    <div title={m.username} style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: m.user_id === curServer?.owner_id ? '#faa61a' : T.tx }}>
+                      {m.nickname || m.display_name || m.username}
                       {m.user_id === curServer?.owner_id && ' 👑'}
                       {renderPlatformBadge(m.user_id)}
                       {m.user_id === api.userId && <span style={{ color: T.ac, fontSize: 10 }}> (you)</span>}
@@ -3444,7 +3547,7 @@ export default function App() {
                   </div>
                   <button onClick={async () => { if (curServer && curChannel) { await api.unpinMessage(curServer.id, curChannel.id, m.id); setPinnedMsgs(p => p.filter(x => x.id !== m.id)); } }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Unpin" onMouseEnter={e => { e.currentTarget.style.color = T.err; }} onMouseLeave={e => { e.currentTarget.style.color = T.mt; }}>Unpin</button>
                 </div>
-                <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingLeft: 28 }}>{m.text || m.content || m.content_ciphertext}</div>
+                <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingLeft: 28 }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
               </div>
             ))}
           </div>

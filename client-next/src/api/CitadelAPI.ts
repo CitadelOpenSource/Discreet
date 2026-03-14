@@ -210,6 +210,7 @@ export class CitadelAPI {
   async revokeInvite(sid: string, code: string) { return this.fetch(`/servers/${sid}/invites/${code}`, { method: 'DELETE' }); }
   async joinServer(sid: string, code: string) { return this.fetch(`/servers/${sid}/join`, { method: 'POST', body: JSON.stringify({ invite_code: code }) }); }
   async listMembers(sid: string) { return (await this.fetch(`/servers/${sid}/members`)).json(); }
+  async setNickname(sid: string, uid: string, nickname: string | null) { return this.fetch(`/servers/${sid}/members/${uid}/nickname`, { method: 'PUT', body: JSON.stringify({ nickname }) }); }
   async updateServer(sid: string, data: any) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async deleteServer(sid: string) { return this.fetch(`/servers/${sid}`, { method: 'DELETE' }); }
   async leaveServer(sid: string) { return this.fetch(`/servers/${sid}/leave`, { method: 'POST' }); }

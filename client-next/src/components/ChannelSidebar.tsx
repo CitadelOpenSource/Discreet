@@ -153,11 +153,16 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
           onMouseLeave={e => { e.currentTarget.style.background = p.speaking ? 'rgba(67,181,129,0.08)' : 'transparent'; }}
         >
           <div style={{
-            width: 6, height: 6, borderRadius: 3,
+            width: 20, height: 20, borderRadius: 10,
             background: p.speaking ? '#43b581' : p.self ? T.ac : p.isBot ? '#5865f2' : '#666',
             flexShrink: 0,
-            boxShadow: p.speaking ? '0 0 4px #43b581' : 'none',
-          }} />
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9, fontWeight: 700, color: '#fff',
+            boxShadow: p.speaking ? '0 0 0 2px #43b581, 0 0 8px rgba(67,181,129,0.5)' : 'none',
+            transition: 'box-shadow .2s',
+          }}>
+            {p.name?.[0]?.toUpperCase() || '?'}
+          </div>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: p.speaking ? 600 : 400, flex: 1 }}>
             {p.name}{p.self ? ' (You)' : ''}
           </span>

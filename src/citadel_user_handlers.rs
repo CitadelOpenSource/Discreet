@@ -1026,6 +1026,94 @@ pub async fn change_email(
     })))
 }
 
+// ─── PUT /users/@me/status ─────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateStatusRequest {
+    pub status: Option<String>,
+    pub emoji: Option<String>,
+    pub presence: Option<String>,
+}
+
+/// Update the user's custom status, status emoji, and/or presence mode.
+///
+/// Presence modes: online, idle, dnd, invisible.
+/// - **dnd**: suppresses all WebSocket notification events to this user.
+/// - **invisible**: user appears offline to others (gray dot, not in online
+///   member list) but can still send messages normally.
+pub async fn update_status(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<UpdateStatusRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate presence mode.
+    let valid_modes = ["online", "idle", "dnd", "invisible"];
+    if let Some(ref p) = req.presence {
+        if !valid_modes.contains(&p.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid presence mode '{}'. Must be one of: online, idle, dnd, invisible", p
+            )));
+        }
+    }
+
+    // Validate lengths.
+    if let Some(ref s) = req.status {
+        if s.len() > 128 {
+            return Err(AppError::BadRequest("Custom status must be 128 characters or less".into()));
+        }
+    }
+    if let Some(ref e) = req.emoji {
+        if e.len() > 32 {
+            return Err(AppError::BadRequest("Status emoji must be 32 characters or less".into()));
+        }
+    }
+
+    // Persist to database.
+    let custom_status = req.status.unwrap_or_default();
+    let status_emoji = req.emoji.unwrap_or_default();
+    let presence_mode = req.presence.clone().unwrap_or_else(|| "online".into());
+
+    sqlx::query!(
+        "UPDATE users SET custom_status = $1, status_emoji = $2, presence_mode = $3, updated_at = NOW()
+         WHERE id = $4",
+        custom_status,
+        status_emoji,
+        presence_mode,
+        auth.user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Update in-memory presence if user is connected.
+    if let Some(ref p) = req.presence {
+        use crate::citadel_state::PresenceStatus;
+        let ps = match p.as_str() {
+            "idle" => PresenceStatus::Idle,
+            "dnd" => PresenceStatus::Dnd,
+            "invisible" => PresenceStatus::Invisible,
+            _ => PresenceStatus::Online,
+        };
+        // Find any server this user is in to trigger set_presence broadcast.
+        let map = state.presence.read().await;
+        let servers: Vec<Uuid> = map.get(&auth.user_id)
+            .map(|e| e.server_ids.clone())
+            .unwrap_or_default();
+        drop(map);
+        for sid in servers {
+            state.set_presence(auth.user_id, ps.clone(), sid).await;
+        }
+    }
+
+    // Update custom status text/emoji in presence and broadcast.
+    state.set_custom_status(auth.user_id, custom_status.clone(), status_emoji.clone()).await;
+
+    Ok(Json(serde_json::json!({
+        "custom_status": custom_status,
+        "status_emoji": status_emoji,
+        "presence_mode": presence_mode,
+    })))
+}
+
 // ─── Route Registration ────────────────────────────────────────────────
 
 pub fn user_routes() -> axum::Router<Arc<AppState>> {
@@ -1034,6 +1122,7 @@ pub fn user_routes() -> axum::Router<Arc<AppState>> {
         .route("/users/@me", get(get_me).patch(update_me).delete(delete_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/@me/email", put(change_email))
+        .route("/users/@me/status", put(update_status))
         .route("/users/@me/settings", get(get_user_settings).put(update_user_settings))
         .route("/users/@me/servers", get(list_my_servers))
         .route("/users/:id", get(get_user))

@@ -484,6 +484,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Roles ──
         .route("/servers/:server_id/roles", axum::routing::post(citadel_role_handlers::create_role).get(citadel_role_handlers::list_roles))
         .route("/roles/:role_id", axum::routing::patch(citadel_role_handlers::update_role).delete(citadel_role_handlers::delete_role))
+        .route("/servers/:server_id/members/:user_id/nickname", axum::routing::put(citadel_server_handlers::set_nickname))
         .route("/servers/:server_id/members/:user_id/roles/:role_id", axum::routing::put(citadel_role_handlers::assign_role).delete(citadel_role_handlers::unassign_role))
         .route("/servers/:server_id/members/:user_id/roles", axum::routing::get(citadel_role_handlers::list_member_roles))
         // ── Bans ──
@@ -501,6 +502,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/users/@me", axum::routing::get(citadel_user_handlers::get_me).patch(citadel_user_handlers::update_me).delete(citadel_user_handlers::delete_account))
         .route("/users/@me/servers", axum::routing::get(citadel_user_handlers::list_my_servers))
         .route("/users/@me/export", axum::routing::get(citadel_user_handlers::export_my_data))
+        .route("/users/@me/status", axum::routing::put(citadel_user_handlers::update_status))
         .route("/users/@me/settings", axum::routing::get(citadel_settings_handlers::get_my_settings).patch(citadel_settings_handlers::patch_my_settings))
         .route("/servers/:server_id/notification-settings", axum::routing::get(citadel_settings_handlers::get_server_notification_settings).patch(citadel_settings_handlers::patch_server_notification_settings))
         .route("/users/search", axum::routing::get(citadel_friend_handlers::search_users))

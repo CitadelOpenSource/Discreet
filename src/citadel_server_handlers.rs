@@ -1118,6 +1118,73 @@ fn generate_invite_code() -> String {
         .collect()
 }
 
+// ─── PUT /servers/:id/members/:user_id/nickname ────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SetNicknameRequest {
+    pub nickname: Option<String>,
+}
+
+/// Set or clear a member's server nickname.
+///
+/// - Own nickname: requires CHANGE_NICKNAME permission.
+/// - Other's nickname: requires MANAGE_NICKNAMES permission.
+/// - Setting nickname to `null` or empty string clears it.
+pub async fn set_nickname(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((server_id, target_user_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<SetNicknameRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Check permissions: own nick vs others' nicks.
+    if target_user_id == auth.user_id {
+        crate::citadel_permissions::require_permission(
+            &state, server_id, auth.user_id, Permission::CHANGE_NICKNAME,
+        ).await?;
+    } else {
+        crate::citadel_permissions::require_permission(
+            &state, server_id, auth.user_id, Permission::MANAGE_NICKNAMES,
+        ).await?;
+    }
+
+    // Validate nickname length.
+    let nickname = req.nickname
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+    if let Some(ref n) = nickname {
+        if n.len() > 64 {
+            return Err(AppError::BadRequest("Nickname must be 64 characters or less".into()));
+        }
+    }
+
+    // Update server_members row.
+    let result = sqlx::query!(
+        "UPDATE server_members SET nickname = $1 WHERE server_id = $2 AND user_id = $3",
+        nickname.as_deref(),
+        server_id,
+        target_user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Member not found".into()));
+    }
+
+    // Broadcast nickname change to server members.
+    state.ws_broadcast(server_id, serde_json::json!({
+        "type": "member_update",
+        "server_id": server_id,
+        "user_id": target_user_id,
+        "nickname": nickname,
+    })).await;
+
+    Ok(Json(serde_json::json!({
+        "user_id": target_user_id,
+        "nickname": nickname,
+    })))
+}
+
 // ─── GET /servers/:id/members/search?q=... ─────────────────────────────
 
 /// Search server members by username, display name, or nickname.

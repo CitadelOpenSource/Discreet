@@ -1,11 +1,76 @@
 // Prevents an additional console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::fs;
+use std::path::PathBuf;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+
+// ── Proxy configuration ─────────────────────────────────────────────────
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+struct ProxyConfig {
+    proxy_type: String, // "none", "socks5", "http"
+    host: String,
+    port: String,
+}
+
+fn proxy_config_path() -> PathBuf {
+    let mut p = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    p.push("discreet");
+    p.push("proxy.json");
+    p
+}
+
+fn load_proxy_config() -> ProxyConfig {
+    let path = proxy_config_path();
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Apply proxy to WebView2 via environment variable (must be called before
+/// tauri::Builder::default()). On Windows, WebView2 reads
+/// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS for Chromium flags.
+fn apply_proxy_env() {
+    let cfg = load_proxy_config();
+    let url = match cfg.proxy_type.as_str() {
+        "socks5" if !cfg.host.is_empty() => {
+            let port = if cfg.port.is_empty() { "1080" } else { &cfg.port };
+            format!("socks5://{}:{}", cfg.host, port)
+        }
+        "http" if !cfg.host.is_empty() => {
+            let port = if cfg.port.is_empty() { "8080" } else { &cfg.port };
+            format!("http://{}:{}", cfg.host, port)
+        }
+        _ => return,
+    };
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        format!("--proxy-server={}", url),
+    );
+}
+
+#[tauri::command]
+fn set_proxy_config(proxy_type: String, host: String, port: String) -> Result<(), String> {
+    let cfg = ProxyConfig { proxy_type, host, port };
+    let path = proxy_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_proxy_config() -> ProxyConfig {
+    load_proxy_config()
+}
 
 // ── Tauri command: native OS notification ──────────────────────────────
 
@@ -33,10 +98,13 @@ fn show_window(app: &tauri::AppHandle) {
 // ── Entry point ─────────────────────────────────────────────────────────
 
 fn main() {
+    // Apply proxy before webview creation — requires restart to change
+    apply_proxy_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![send_notification])
+        .invoke_handler(tauri::generate_handler![send_notification, set_proxy_config, get_proxy_config])
         .setup(|app| {
             // Build tray menu
             let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;

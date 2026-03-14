@@ -43,6 +43,8 @@ impl std::fmt::Display for PresenceStatus {
 #[derive(Debug, Clone)]
 pub struct UserPresence {
     pub status: PresenceStatus,
+    pub custom_status: String,
+    pub status_emoji: String,
     pub server_ids: Vec<Uuid>,
     pub last_heartbeat: std::time::Instant,
 }
@@ -139,6 +141,8 @@ impl AppState {
         let mut map = self.presence.write().await;
         let entry = map.entry(user_id).or_insert_with(|| UserPresence {
             status: PresenceStatus::Online,
+            custom_status: String::new(),
+            status_emoji: String::new(),
             server_ids: vec![],
             last_heartbeat: std::time::Instant::now(),
         });
@@ -148,6 +152,8 @@ impl AppState {
             entry.server_ids.push(server_id);
         }
         let servers = entry.server_ids.clone();
+        let custom_status = entry.custom_status.clone();
+        let status_emoji = entry.status_emoji.clone();
         drop(map);
 
         // Broadcast to all servers this user is in.
@@ -155,6 +161,8 @@ impl AppState {
             "type": "presence_update",
             "user_id": user_id,
             "status": status.to_string(),
+            "custom_status": custom_status,
+            "status_emoji": status_emoji,
         });
         for sid in servers {
             self.ws_broadcast(sid, event.clone()).await;
@@ -191,5 +199,30 @@ impl AppState {
             .filter(|(_, p)| p.server_ids.contains(&server_id) && p.status != PresenceStatus::Invisible)
             .map(|(uid, p)| (*uid, p.status.to_string()))
             .collect()
+    }
+
+    /// Update custom status text and emoji for a user, then broadcast.
+    pub async fn set_custom_status(&self, user_id: Uuid, custom_status: String, status_emoji: String) {
+        let mut map = self.presence.write().await;
+        let servers = if let Some(entry) = map.get_mut(&user_id) {
+            entry.custom_status = custom_status.clone();
+            entry.status_emoji = status_emoji.clone();
+            entry.server_ids.clone()
+        } else {
+            return; // User not connected — DB update is sufficient
+        };
+        let status = map.get(&user_id).map(|e| e.status.to_string()).unwrap_or_default();
+        drop(map);
+
+        let event = serde_json::json!({
+            "type": "presence_update",
+            "user_id": user_id,
+            "status": status,
+            "custom_status": custom_status,
+            "status_emoji": status_emoji,
+        });
+        for sid in servers {
+            self.ws_broadcast(sid, event.clone()).await;
+        }
     }
 }
