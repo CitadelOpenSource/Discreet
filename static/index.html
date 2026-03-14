@@ -4,88 +4,224 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Discreet — End-to-End Encrypted Communities</title>
-<meta name="description" content="Like Discord but private. Like Signal but with communities. Open source, self-hostable, zero-knowledge E2EE messaging." />
+<meta name="description" content="End-to-end encrypted messaging for communities, organizations, and operations. Self-hostable. No government ID required." />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d1117;--sf:#161b22;--sf2:#1c2129;--bd:#30363d;--tx:#e6edf3;--mt:#8b949e;--ac:#00d4aa;--ac2:#00b894}
-body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
-a{color:var(--ac);text-decoration:none}
-a:hover{text-decoration:underline}
+:root{
+  --bg:#0a0e17;
+  --surface:#12161f;
+  --border:rgba(255,255,255,0.06);
+  --text:#e6edf3;
+  --text-secondary:#8b949e;
+  --accent:#00D4AA;
+}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  overflow-x:hidden;
+}
+a{color:var(--accent);text-decoration:none}
 
-.hero{text-align:center;padding:100px 24px 60px;max-width:720px;margin:0 auto}
-.hero-shield{font-size:64px;margin-bottom:16px}
-.hero h1{font-size:clamp(32px,5vw,48px);font-weight:800;letter-spacing:-1px;margin-bottom:8px}
-.hero h1 span{background:linear-gradient(135deg,var(--ac),var(--ac2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero .sub{font-size:clamp(16px,2.5vw,20px);color:var(--mt);margin-bottom:12px}
-.hero .tagline{font-size:14px;color:var(--mt);margin-bottom:36px;max-width:520px;margin-left:auto;margin-right:auto}
-.hero .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:36px}
-.hero .badges img{height:20px}
+/* ── Hero ─────────────────────────────────────────────── */
+.hero{
+  position:relative;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:80px 24px;
+  overflow:hidden;
+}
 
-.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
-.cta a{padding:14px 36px;border-radius:10px;font-weight:700;font-size:16px;transition:transform .15s,box-shadow .15s}
-.cta a:hover{text-decoration:none;transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,212,170,.25)}
-.cta .primary{background:linear-gradient(135deg,var(--ac),var(--ac2));color:#000}
-.cta .secondary{background:var(--sf);color:var(--tx);border:1px solid var(--bd)}
-.note{font-size:12px;color:var(--mt)}
+/* Animated gradient mesh background */
+.hero::before,
+.hero::after{
+  content:'';
+  position:absolute;
+  border-radius:50%;
+  filter:blur(120px);
+  opacity:0.15;
+  pointer-events:none;
+  will-change:transform;
+}
+.hero::before{
+  width:800px;
+  height:800px;
+  background:radial-gradient(circle,#00D4AA 0%,transparent 70%);
+  top:-200px;
+  right:-200px;
+  animation:meshDrift1 20s ease-in-out infinite alternate;
+}
+.hero::after{
+  width:600px;
+  height:600px;
+  background:radial-gradient(circle,#0066ff 0%,transparent 70%);
+  bottom:-150px;
+  left:-150px;
+  animation:meshDrift2 25s ease-in-out infinite alternate;
+}
+@keyframes meshDrift1{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(-80px,60px) scale(1.1)}
+  100%{transform:translate(-40px,120px) scale(0.95)}
+}
+@keyframes meshDrift2{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(60px,-40px) scale(1.15)}
+  100%{transform:translate(100px,-80px) scale(0.9)}
+}
 
+.hero-content{
+  position:relative;
+  z-index:1;
+}
+
+.hero h1{
+  font-size:clamp(2.5rem, 5vw, 4rem);
+  font-weight:700;
+  color:#fff;
+  letter-spacing:-0.02em;
+  line-height:1.1;
+  margin-bottom:24px;
+}
+
+.hero .subtext{
+  font-size:clamp(1rem, 2vw, 1.25rem);
+  color:var(--text-secondary);
+  max-width:600px;
+  margin:0 auto 40px;
+  line-height:1.7;
+}
+
+.cta-row{
+  display:flex;
+  gap:16px;
+  justify-content:center;
+  margin-bottom:32px;
+}
+.cta-row a{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:48px;
+  width:180px;
+  border-radius:8px;
+  font-weight:600;
+  font-size:15px;
+  transition:transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cta-row a:hover{
+  transform:translateY(-1px);
+  text-decoration:none;
+}
+.cta-primary{
+  background:var(--accent);
+  color:#0a0e17;
+}
+.cta-primary:hover{
+  box-shadow:0 8px 32px rgba(0,212,170,0.3);
+}
+.cta-secondary{
+  background:transparent;
+  border:1px solid var(--accent);
+  color:var(--accent);
+}
+.cta-secondary:hover{
+  box-shadow:0 8px 32px rgba(0,212,170,0.15);
+}
+
+.trust-row{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-size:13px;
+  color:var(--text-secondary);
+}
+.trust-row .dot{
+  width:3px;
+  height:3px;
+  border-radius:50%;
+  background:var(--text-secondary);
+  opacity:0.5;
+}
+
+/* ── Features ─────────────────────────────────────────── */
 .features{max-width:960px;margin:0 auto;padding:40px 24px 60px}
 .features h2{text-align:center;font-size:24px;font-weight:700;margin-bottom:32px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
-.card{padding:24px;background:var(--sf);border:1px solid var(--bd);border-radius:12px}
+.card{padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
 .card .icon{font-size:28px;margin-bottom:10px}
 .card h3{font-size:15px;font-weight:700;margin-bottom:6px}
-.card p{font-size:13px;color:var(--mt);line-height:1.5}
+.card p{font-size:13px;color:var(--text-secondary);line-height:1.5}
 
+/* ── Comparison ───────────────────────────────────────── */
 .compare{max-width:800px;margin:0 auto;padding:20px 24px 60px}
 .compare h2{text-align:center;font-size:24px;font-weight:700;margin-bottom:24px}
 .compare table{width:100%;border-collapse:collapse;font-size:14px}
-.compare th,.compare td{padding:10px 14px;text-align:center;border-bottom:1px solid var(--bd)}
-.compare th{font-size:12px;color:var(--mt);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.compare th,.compare td{padding:10px 14px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)}
+.compare th{font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
 .compare td:first-child,.compare th:first-child{text-align:left}
 .compare tr:last-child td{border-bottom:none}
-.compare .yes{color:var(--ac);font-weight:700}
+.compare .yes{color:var(--accent);font-weight:700}
 .compare .no{color:#ff4757}
 .compare .partial{color:#faa61a}
 .compare .highlight td{background:rgba(0,212,170,.04)}
-.compare .highlight td:first-child{font-weight:700;color:var(--ac)}
-.compare sup{font-size:10px;color:var(--mt)}
-.compare .notes{font-size:11px;color:var(--mt);margin-top:12px;line-height:1.6}
+.compare .highlight td:first-child{font-weight:700;color:var(--accent)}
+.compare sup{font-size:10px;color:var(--text-secondary)}
+.compare .notes{font-size:11px;color:var(--text-secondary);margin-top:12px;line-height:1.6}
 
+/* ── Protocols ────────────────────────────────────────── */
 .protocols{max-width:800px;margin:0 auto;padding:0 24px 60px}
 .protocols h2{text-align:center;font-size:24px;font-weight:700;margin-bottom:24px}
 .protocols table{width:100%;border-collapse:collapse;font-size:14px}
-.protocols th,.protocols td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--bd)}
-.protocols th{font-size:12px;color:var(--mt);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.protocols th,.protocols td{padding:10px 14px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06)}
+.protocols th{font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
 .protocols tr:last-child td{border-bottom:none}
-.protocols a{color:var(--ac)}
 
-footer{text-align:center;padding:40px 24px;border-top:1px solid var(--bd);color:var(--mt);font-size:13px}
+/* ── Footer ───────────────────────────────────────────── */
+footer{text-align:center;padding:40px 24px;border-top:1px solid rgba(255,255,255,0.06);color:var(--text-secondary);font-size:13px}
 footer .links{display:flex;gap:20px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
-footer .links a{color:var(--mt);font-weight:500}
-footer .links a:hover{color:var(--ac)}
+footer .links a{color:var(--text-secondary);font-weight:500}
+footer .links a:hover{color:var(--accent)}
 footer .copy{font-size:11px}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media(max-width:540px){
+  .cta-row{flex-direction:column;align-items:center}
+  .trust-row{flex-wrap:wrap;justify-content:center}
+}
 </style>
 </head>
 <body>
 
-<div class="hero">
-  <div class="hero-shield">🛡️</div>
-  <h1><span>Discreet</span></h1>
-  <div class="sub">End-to-end encrypted communities</div>
-  <div class="tagline">Like Discord but private. Like Signal but with communities.<br/>Open source. Self-hostable. Zero-knowledge server.</div>
-  <div class="badges">
-    <img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0" />
-    <img src="https://img.shields.io/badge/MLS-RFC_9420-green.svg" alt="MLS" />
-    <img src="https://img.shields.io/badge/SFrame-RFC_9605-green.svg" alt="SFrame" />
-    <img src="https://img.shields.io/badge/Patent-Pending-purple.svg" alt="Patent Pending" />
+<section class="hero">
+  <div class="hero-content">
+    <h1>Communication Without Compromise</h1>
+    <p class="subtext">End-to-end encrypted messaging for communities, organizations, and operations. Self-hostable. No government ID required.</p>
+    <div class="cta-row">
+      <a href="/app?register=true" class="cta-primary">Get Started</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet" class="cta-secondary">View Source</a>
+    </div>
+    <div class="trust-row">
+      <span>AGPL-3.0 Licensed</span>
+      <span class="dot"></span>
+      <span>Patent Pending</span>
+      <span class="dot"></span>
+      <span>OWASP 2026 Compliant</span>
+    </div>
   </div>
-  <div class="cta">
-    <a href="/app" class="primary">Log In</a>
-    <a href="/app?register=true" class="secondary">Create Account</a>
-  </div>
-  <div class="note">No download required. Runs in your browser.</div>
-</div>
+</section>
 
 <div class="features">
   <h2>What you get</h2>
