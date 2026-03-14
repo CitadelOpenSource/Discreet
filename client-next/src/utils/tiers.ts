@@ -466,3 +466,61 @@ export interface TierPrompt {
   feature: string;
   needed:  Tier;
 }
+
+// ── usePremiumGate — server-aware tier gate ─────────────────────────────────
+//
+// Wraps an async action. If the server returns 402 PREMIUM_REQUIRED,
+// sets a TierPrompt so the caller can render <TierGate>.
+// Otherwise re-throws.
+
+export function usePremiumGate() {
+  const [tierPrompt, setTierPrompt] = React.useState<TierPrompt | null>(null);
+
+  const gate = React.useCallback(async <T,>(
+    action: () => Promise<T>,
+    feature: string,
+  ): Promise<T | null> => {
+    try {
+      return await action();
+    } catch (err: any) {
+      if (err?.status === 402 || err?.response?.status === 402) {
+        const body = err?.response?.data || err?.data || {};
+        const needed = (body?.error?.needed_tier || 'pro') as Tier;
+        setTierPrompt({ feature, needed });
+        return null;
+      }
+      throw err;
+    }
+  }, []);
+
+  const dismiss = React.useCallback(() => setTierPrompt(null), []);
+
+  return { tierPrompt, gate, dismiss };
+}
+
+// ── Subscription API helpers ───────────────────────────────────────────────
+
+export interface Subscription {
+  tier: Tier;
+  status: 'active' | 'cancelled' | 'past_due' | 'trialing';
+  payment_provider: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
+export async function fetchSubscription(token: string): Promise<Subscription | null> {
+  const res = await fetch('/api/v1/subscription', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.subscription ?? null;
+}
+
+export async function cancelSubscription(token: string): Promise<boolean> {
+  const res = await fetch('/api/v1/subscription', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.ok;
+}

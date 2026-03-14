@@ -44,6 +44,7 @@ pub async fn server_info(
             "rate_limiting": true,
             "reactions": true,
             "typing_indicators": true,
+            "premium_tiers": true,
         },
         "connectivity": {
             "database": db_ok,

@@ -73,6 +73,7 @@ use citadel_server::citadel_typing;
 use citadel_server::citadel_user_handlers;
 use citadel_server::citadel_dev_token_handlers;
 use citadel_server::citadel_platform_admin_handlers;
+use citadel_server::citadel_premium;
 use citadel_server::citadel_platform_settings;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
@@ -553,6 +554,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/identity-keys", axum::routing::post(citadel_mls_handlers::upload_identity_key))
         // ── Info ──
         .route("/info", axum::routing::get(citadel_health::server_info))
+        // ── Premium / Subscription ──
+        .route("/subscription", axum::routing::get(citadel_premium::get_subscription)
+            .post(citadel_premium::create_subscription)
+            .delete(citadel_premium::cancel_subscription))
         // ── Waitlist ──
         .route("/waitlist", axum::routing::post(citadel_waitlist::join_waitlist))
         // ── Developer API Tokens ──

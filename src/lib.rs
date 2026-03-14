@@ -1,3 +1,5 @@
+// Discreet — Copyright (C) 2026 Citadel Open Source LLC. AGPL-3.0-or-later.
+
 // lib.rs — Discreet server library root.
 //
 // Each module is a self-contained file with a unique name.
@@ -42,6 +44,7 @@ pub mod citadel_platform_permissions;
 pub mod citadel_platform_settings;
 pub mod citadel_pin_handlers;
 pub mod citadel_poll_handlers;
+pub mod citadel_premium;
 pub mod citadel_post_quantum;
 pub mod citadel_rate_limit;
 pub mod citadel_reaction_handlers;
