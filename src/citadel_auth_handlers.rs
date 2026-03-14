@@ -57,6 +57,8 @@ pub struct RegisterRequest {
     pub device_name: Option<String>,
     /// Optional date of birth (YYYY-MM-DD). Must be 13+ if provided (COPPA).
     pub date_of_birth: Option<String>,
+    /// ISO 8601 timestamp when user accepted Terms of Service + Privacy Policy.
+    pub accepted_terms_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -306,6 +308,14 @@ pub async fn register(
         }
     }
 
+    // Parse terms acceptance timestamp (required for legal compliance).
+    let terms_accepted_at: Option<chrono::DateTime<chrono::Utc>> =
+        req.accepted_terms_at.as_deref().and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+        });
+
     // Hash password with Argon2id.
     let password_hash = hash_password(&req.password)?;
 
@@ -330,14 +340,15 @@ pub async fn register(
     }
 
     sqlx::query!(
-        "INSERT INTO users (id, username, display_name, email, password_hash, date_of_birth)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO users (id, username, display_name, email, password_hash, date_of_birth, terms_accepted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
         user_id,
         req.username,
         display_name,
         req.email,
         password_hash,
         dob_date,
+        terms_accepted_at,
     )
     .execute(&state.db)
     .await?;
