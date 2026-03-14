@@ -296,13 +296,15 @@ const vc = StyleSheet.create({
 // ── UserRow ───────────────────────────────────────────────────────────────────
 
 function UserRow({
-  user, onPress, onJoinVoice, joiningVoice, voiceCallActive,
+  user, onPress, onJoinVoice, joiningVoice, voiceCallActive, onExchangeContact, exchangingContact,
 }: {
-  user:            NearbyUser;
-  onPress:         () => void;
-  onJoinVoice:     () => void;
-  joiningVoice:    boolean;
-  voiceCallActive: boolean;
+  user:               NearbyUser;
+  onPress:            () => void;
+  onJoinVoice:        () => void;
+  joiningVoice:       boolean;
+  voiceCallActive:    boolean;
+  onExchangeContact:  () => void;
+  exchangingContact:  boolean;
 }) {
   const name  = pseudoName(user.pseudoId);
   const color = pseudoColor(user.pseudoId);
@@ -324,6 +326,20 @@ function UserRow({
         <SignalBars rssi={user.rssi} />
         <Text style={[s.signalLabel, { color: signalColor(user.rssi) }]}>{label}</Text>
       </View>
+
+      {/* Exchange contact button */}
+      <TouchableOpacity
+        style={[s.voiceBtn, { marginRight: 4 }]}
+        onPress={onExchangeContact}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        activeOpacity={0.7}
+        disabled={exchangingContact}
+      >
+        {exchangingContact
+          ? <ActivityIndicator size="small" color={C.ac} />
+          : <Text style={s.voiceBtnIcon}>🤝</Text>
+        }
+      </TouchableOpacity>
 
       {/* Call button — hidden while in a voice call */}
       {!voiceCallActive && (
@@ -538,6 +554,7 @@ export default function NearbyScreen({ onSetProximityActive, proxVoiceCall, onVo
   const [voiceError, setVoiceError]               = useState('');
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const [joiningUserId, setJoiningUserId]         = useState<string | null>(null);
+  const [exchangingContactId, setExchangingContactId] = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const serviceRef        = useRef<ProximityService | null>(null);
@@ -657,6 +674,19 @@ export default function NearbyScreen({ onSetProximityActive, proxVoiceCall, onVo
       setJoiningUserId(null);
     }
   }, [setupVoiceEvents, onVoiceCallChange]);
+
+  // ── Exchange contact over BLE ────────────────────────────────────────────
+  const handleExchangeContact = useCallback(async (user: NearbyUser) => {
+    if (!serviceRef.current) return;
+    setExchangingContactId(user.pseudoId);
+    try {
+      await serviceRef.current.exchangeContact(user.deviceId);
+    } catch (e: any) {
+      // Silently fail — contact exchange is best-effort
+    } finally {
+      setExchangingContactId(null);
+    }
+  }, []);
 
   // ── Toggle proximity mode ─────────────────────────────────────────────────
   const handleToggle = async (on: boolean) => {
@@ -827,6 +857,8 @@ export default function NearbyScreen({ onSetProximityActive, proxVoiceCall, onVo
               onJoinVoice={() => handleJoinVoice(item)}
               joiningVoice={joiningUserId === item.pseudoId}
               voiceCallActive={proxVoiceCall !== null}
+              onExchangeContact={() => handleExchangeContact(item)}
+              exchangingContact={exchangingContactId === item.pseudoId}
             />
           )}
           ListFooterComponent={

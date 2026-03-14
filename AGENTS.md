@@ -2,8 +2,8 @@
 
 ## Project Overview
 
-Discreet is an open-source, end-to-end encrypted Discord alternative built in Rust.
-It combines Discord's user experience with Signal-level encryption.
+Discreet is an open-source, end-to-end encrypted community platform built in Rust.
+It combines a rich community experience with Signal-level encryption.
 
 - **Backend**: Rust + Axum 0.7 web framework
 - **Database**: PostgreSQL (via sqlx with compile-time checked queries)

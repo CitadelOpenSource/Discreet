@@ -1049,7 +1049,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
         {/* Master toggle */}
         {[
           { key: 'enabled',       label: 'Enable AutoMod',       desc: 'Activate server-side automatic moderation',               value: automod.enabled,       toggle: () => setAutomod(a => ({ ...a, enabled: !a.enabled })) },
-          { key: 'block_invites', label: 'Block Invite Links',   desc: 'Block Discord, Slack, Telegram invite links',              value: automod.block_invites, toggle: () => setAutomod(a => ({ ...a, block_invites: !a.block_invites })) },
+          { key: 'block_invites', label: 'Block External Invite Links',   desc: 'Block invite links from other platforms and other Discreet instances', value: automod.block_invites, toggle: () => setAutomod(a => ({ ...a, block_invites: !a.block_invites })) },
           { key: 'block_links',   label: 'Block External Links', desc: 'Block all http:// and https:// URLs',                      value: automod.block_links,   toggle: () => setAutomod(a => ({ ...a, block_links: !a.block_links })) },
         ].map(rule => (
           <div key={rule.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>

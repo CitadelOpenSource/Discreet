@@ -219,7 +219,7 @@ function CreateEventForm({ onSubmit, onCancel }: CreateEventFormProps) {
       />
 
       <label style={lbl}>Location</label>
-      <input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Voice channel, Discord, IRL address" style={inp} />
+      <input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Voice channel, online, IRL address" style={inp} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
         <div>

@@ -76,7 +76,7 @@ export function sanitizeInput(text: string): string {
 
 /**
  * Returns true when `text` does not exceed `maxLength` characters.
- * Default limit matches Discord's 4000-char message cap.
+ * Default limit matches the industry standard 4000-char message cap.
  */
 export function validateMessageLength(text: string, maxLength = 4000): boolean {
   return text.length <= maxLength;

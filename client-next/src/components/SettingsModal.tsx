@@ -10,6 +10,7 @@ import { api } from '../api/CitadelAPI';
 import { setLanguage } from '../i18n/i18n';
 import { voice } from '../hooks/useVoice';
 import { TIER_META } from '../utils/tiers';
+import { OfflineContacts } from './OfflineContacts';
 import type { Tier } from '../utils/tiers';
 import { Av } from './Av';
 import { Modal } from './Modal';
@@ -1755,6 +1756,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 6, fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 8 }}>
             <I.Shield /> Discreet respects your privacy. Shared server info is never publicly exposed.
           </div>
+          <OfflineContacts />
         </>)}
 
         {/* ── Account ── */}

@@ -23,6 +23,9 @@ import { MaintenancePage } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
+import { InvitePreview } from './components/InvitePreview';
+import { QrCode, encodeInviteQr, decodeInviteQr } from './components/QrCode';
+import { QrScanner } from './components/QrScanner';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { NotificationCenter, type AppNotification, makeNotification, loadNotifications, saveNotifications } from './components/NotificationCenter';
 // ── Lazy-loaded heavy modals (reduce initial bundle) ──────
@@ -132,7 +135,7 @@ function GlobalStyles() {
       .msg-actions:hover { display:flex !important; }
       div:hover > .msg-actions { display:flex !important; }
 
-      /* ── Server icon pill indicator (Discord-style) ──── */
+      /* ── Server icon pill indicator ──── */
       .srv-icon { position:relative; }
       .srv-icon::before {
         content:''; position:absolute; left:-10px; top:50%; transform:translateY(-50%);
@@ -556,6 +559,7 @@ export default function App() {
   const [selectedBot, setSelectedBot] = useState<any>(null);
   const [createName, setCreateName] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [invitePreview, setInvitePreview] = useState<{ code: string; server_name: string; member_count: number; icon_url?: string; foreign?: boolean; url?: string } | null>(null);
   const [showNewDmModal, setShowNewDmModal] = useState(false);
   const [newDmQuery, setNewDmQuery] = useState('');
   const [newDmFriends, setNewDmFriends] = useState<any[]>([]);
@@ -570,6 +574,8 @@ export default function App() {
   const [inviteMaxUses, setInviteMaxUses] = useState<number | null>(null);
   const [inviteTemporary, setInviteTemporary] = useState(false);
   const [inviteGenerating, setInviteGenerating] = useState(false);
+  const [showInviteQr, setShowInviteQr] = useState(false);
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const [createChannelName, setCreateChannelName] = useState('');
   const [createChannelType, setCreateChannelType] = useState('text');
   const [editChannel, setEditChannel] = useState<Channel | null>(null);
@@ -720,6 +726,22 @@ export default function App() {
       if (s?.theme) handleThemeChange(s.theme);
     }).catch(() => {});
     return () => { unsubVoice(); window.removeEventListener('keydown', onKey); };
+  }, [authed]);
+
+  // ── Handle /invite/:code deep links ─────────────────────
+  useEffect(() => {
+    if (!authed) return;
+    const m = window.location.pathname.match(/^\/invite\/([A-Za-z0-9]+)\/?$/);
+    if (m) {
+      const code = m[1];
+      api.resolveInvite(code).then((info: any) => {
+        setInvitePreview({ code, server_name: info.server_name, member_count: info.member_count, icon_url: info.icon_url });
+      }).catch(() => {
+        setToast('Invalid or expired invite link'); setTimeout(() => setToast(''), 3000);
+      });
+      // Clean up URL without reload
+      window.history.replaceState({}, '', '/app');
+    }
   }, [authed]);
 
   // ── WebSocket ───────────────────────────────────────────
@@ -1225,6 +1247,16 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
   const openInviteModal = () => { setInviteResult(''); setModal('invite-config'); };
+
+  /** Extract invite code from a full URL or bare code. Returns the code or null. */
+  const extractInviteCode = (input: string): string | null => {
+    // Full URL: https://host/invite/CODE
+    const m = input.match(/\/invite\/([A-Za-z0-9]+)\/?$/);
+    if (m) return m[1];
+    // Bare code (alphanumeric, 4-12 chars)
+    if (/^[A-Za-z0-9]{4,12}$/.test(input)) return input;
+    return input; // fallback — let the server validate
+  };
 
   const startDm = async (uid: string) => {
     if (!checkRateLimit('d_dm_count', 'd_dm_window', 24 * 60 * 60_000, tierLimits.maxDmsPerDay)) {
@@ -2486,6 +2518,10 @@ export default function App() {
                     <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div className="msg-text" style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} /></div>
+                  {/* Invite previews */}
+                  {(msgText.match(/https?:\/\/[^\s<>]*\/invite\/[A-Za-z0-9]+\/?/g) || []).map((invUrl: string, i: number) => (
+                    <InvitePreview key={`inv-${m.id}-${i}`} url={invUrl} joinedServerIds={servers.map(s => s.id)} onJoined={loadServers} />
+                  ))}
                   {/* Attachments */}
                   {(m as any).attachments?.map((a: any) => (
                     <div key={a.id || a.url} style={{ marginTop: 4 }}>
@@ -3002,11 +3038,68 @@ export default function App() {
       )}
 
       {modal === 'join-server' && (
-        <Modal title="Join Server" onClose={() => setModal(null)}>
+        <Modal title="Join Server" onClose={() => { setModal(null); setShowQrScanner(false); }}>
           <div style={{ padding: 20 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Invite Code</label>
-            <input style={{ ...getInp(), marginBottom: 16 }} value={joinCode} onChange={e => setJoinCode(e.target.value)} placeholder="abc123" autoFocus onKeyDown={async e => { if (e.key === 'Enter' && joinCode.trim()) { if (!checkRateLimit('d_join_count', 'd_join_window', 60 * 60_000, tierLimits.maxServersJoinedPerHour)) { setToast('You\'re joining servers too quickly. Try again later.'); setTimeout(() => setToast(''), 4000); return; } await api.joinServer('', joinCode.trim()); await loadServers(); setJoinCode(''); setModal(null); } }} />
-            <button onClick={async () => { if (joinCode.trim()) { if (!checkRateLimit('d_join_count', 'd_join_window', 60 * 60_000, tierLimits.maxServersJoinedPerHour)) { setToast('You\'re joining servers too quickly. Try again later.'); setTimeout(() => setToast(''), 4000); return; } await api.joinServer('', joinCode.trim()); await loadServers(); setJoinCode(''); setModal(null); } }} style={btn(true)}>Join</button>
+            {showQrScanner ? (
+              <QrScanner
+                onScan={(data) => {
+                  setShowQrScanner(false);
+                  const invite = decodeInviteQr(data);
+                  if (invite) {
+                    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+                      setToast('This invite has expired'); setTimeout(() => setToast(''), 3000);
+                      return;
+                    }
+                    if (invite.instance_url === window.location.origin) {
+                      setJoinCode(invite.invite_code);
+                      setToast(`Found invite to "${invite.server_name}"`); setTimeout(() => setToast(''), 2000);
+                    } else {
+                      setInvitePreview({ code: invite.invite_code, server_name: invite.server_name, member_count: 0, foreign: true, url: `${invite.instance_url}/invite/${invite.invite_code}` });
+                      setModal(null);
+                    }
+                  } else {
+                    // Try as raw invite code or URL
+                    const code = extractInviteCode(data);
+                    if (code) setJoinCode(code);
+                    else { setToast('Invalid QR code'); setTimeout(() => setToast(''), 3000); }
+                  }
+                }}
+                onClose={() => setShowQrScanner(false)}
+              />
+            ) : (
+              <>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Invite Code or Link</label>
+                <input style={{ ...getInp(), marginBottom: 12 }} value={joinCode} onChange={e => setJoinCode(e.target.value)} placeholder={`abc123 or ${window.location.origin}/invite/abc123`} autoFocus onKeyDown={async e => { if (e.key === 'Enter' && joinCode.trim()) { const code = extractInviteCode(joinCode.trim()); if (!code) return; if (!checkRateLimit('d_join_count', 'd_join_window', 60 * 60_000, tierLimits.maxServersJoinedPerHour)) { setToast('You\'re joining servers too quickly. Try again later.'); setTimeout(() => setToast(''), 4000); return; } await api.joinServer('', code); await loadServers(); setJoinCode(''); setModal(null); } }} />
+                <div style={{ display: 'flex', gap: 8, marginBottom: 0 }}>
+                  <button onClick={async () => { if (joinCode.trim()) { const code = extractInviteCode(joinCode.trim()); if (!code) return; if (!checkRateLimit('d_join_count', 'd_join_window', 60 * 60_000, tierLimits.maxServersJoinedPerHour)) { setToast('You\'re joining servers too quickly. Try again later.'); setTimeout(() => setToast(''), 4000); return; } await api.joinServer('', code); await loadServers(); setJoinCode(''); setModal(null); } }} style={{ ...btn(true), flex: 1 }}>Join</button>
+                  <button onClick={() => setShowQrScanner(true)} style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: T.sf2, color: T.tx, border: `1px solid ${T.bd}`, whiteSpace: 'nowrap' }}>
+                    Scan QR
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
+      {invitePreview && !invitePreview.foreign && (
+        <Modal title="You've been invited to join a server" onClose={() => setInvitePreview(null)}>
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: invitePreview.icon_url ? 'transparent' : `linear-gradient(135deg,${T.ac}33,${T.ac2}33)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700, color: T.ac, overflow: 'hidden', margin: '0 auto 12px' }}>
+              {invitePreview.icon_url ? <img src={invitePreview.icon_url} alt="" style={{ width: 64, height: 64, objectFit: 'cover' }} /> : invitePreview.server_name[0]?.toUpperCase()}
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx, marginBottom: 4 }}>{invitePreview.server_name}</div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 20 }}>{invitePreview.member_count} member{invitePreview.member_count !== 1 ? 's' : ''}</div>
+            <button onClick={async () => { if (!checkRateLimit('d_join_count', 'd_join_window', 60 * 60_000, tierLimits.maxServersJoinedPerHour)) { setToast('You\'re joining servers too quickly. Try again later.'); setTimeout(() => setToast(''), 4000); return; } try { await api.joinServer('', invitePreview.code); await loadServers(); setToast('Joined server!'); setTimeout(() => setToast(''), 2000); } catch { setToast('Failed to join server'); setTimeout(() => setToast(''), 3000); } setInvitePreview(null); }} style={{ ...btn(true), width: '100%', fontSize: 14, padding: '10px 0' }}>Join {invitePreview.server_name}</button>
+          </div>
+        </Modal>
+      )}
+      {invitePreview && invitePreview.foreign && (
+        <Modal title="Different Instance" onClose={() => setInvitePreview(null)}>
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🌐</div>
+            <div style={{ fontSize: 14, color: T.tx, fontWeight: 600, marginBottom: 8 }}>This invite is for a different Discreet instance</div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 20, lineHeight: 1.5 }}>This invite link points to a different server at <span style={{ color: T.ac, fontWeight: 600 }}>{(() => { try { return new URL(invitePreview.url || '').host; } catch { return 'unknown'; } })()}</span>. You'll need to open it in your browser to join.</div>
+            <button onClick={() => { window.open(invitePreview.url, '_blank', 'noopener'); setInvitePreview(null); }} style={{ ...btn(true), width: '100%', fontSize: 14, padding: '10px 0' }}>Open in Browser</button>
           </div>
         </Modal>
       )}
@@ -3100,9 +3193,9 @@ export default function App() {
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Invite Link</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <div style={{ flex: 1, padding: '10px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: T.ac, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    discreet.chat/invite/{inviteResult}
+                    {window.location.host}/invite/{inviteResult}
                   </div>
-                  <button onClick={() => { navigator.clipboard?.writeText(`https://discreet.chat/invite/${inviteResult}`); setToast('Link copied!'); setTimeout(() => setToast(''), 2000); }} style={{ ...btn(true), padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13 }}>Copy Link</button>
+                  <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/invite/${inviteResult}`); setToast('Link copied!'); setTimeout(() => setToast(''), 2000); }} style={{ ...btn(true), padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13 }}>Copy Link</button>
                 </div>
                 <div style={{ fontSize: 10, color: T.mt, marginTop: 6 }}>
                   {inviteExpiry === 'never' ? 'Never expires' : `Expires in ${inviteExpiry === '30m' ? '30 minutes' : inviteExpiry === '1h' ? '1 hour' : inviteExpiry === '6h' ? '6 hours' : inviteExpiry === '12h' ? '12 hours' : inviteExpiry === '1d' ? '1 day' : '7 days'}`}
@@ -3113,6 +3206,36 @@ export default function App() {
             <button onClick={generateInvite} disabled={inviteGenerating} style={{ ...btn(true), width: '100%' }}>
               {inviteGenerating ? 'Generating…' : inviteResult ? 'Regenerate' : 'Generate Invite'}
             </button>
+            {/* Share Offline — QR Code */}
+            {inviteResult && !showInviteQr && (
+              <button onClick={() => setShowInviteQr(true)} style={{ width: '100%', marginTop: 10, padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>
+                Share Offline (QR Code)
+              </button>
+            )}
+            {inviteResult && showInviteQr && curServer && (
+              <div style={{ marginTop: 14, textAlign: 'center', padding: '16px 0', background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+                <QrCode
+                  data={encodeInviteQr({
+                    instance_url: window.location.origin,
+                    invite_code: inviteResult,
+                    server_name: curServer.name,
+                    expires_at: inviteExpiry === 'never' ? null : (() => {
+                      const mins: Record<string, number> = { '30m': 30, '1h': 60, '6h': 360, '12h': 720, '1d': 1440, '7d': 10080 };
+                      const d = new Date(); d.setMinutes(d.getMinutes() + (mins[inviteExpiry] ?? 10080));
+                      return d.toISOString();
+                    })(),
+                  })}
+                  size={220}
+                  label="Scan to join server"
+                />
+                <div style={{ fontSize: 10, color: T.mt, marginTop: 8 }}>
+                  Click QR code for fullscreen · Works offline
+                </div>
+                <button onClick={() => setShowInviteQr(false)} style={{ marginTop: 8, padding: '4px 12px', fontSize: 11, borderRadius: 6, cursor: 'pointer', background: T.sf2, color: T.mt, border: `1px solid ${T.bd}` }}>
+                  Hide QR
+                </button>
+              </div>
+            )}
           </div>
         </Modal>
       )}

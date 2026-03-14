@@ -224,6 +224,7 @@ export class CitadelAPI {
   async listInvites(sid: string) { try { const r = await this.fetch(`/servers/${sid}/invites`); return r.ok ? r.json() : []; } catch { return []; } }
   async revokeInvite(sid: string, code: string) { return this.fetch(`/servers/${sid}/invites/${code}`, { method: 'DELETE' }); }
   async joinServer(sid: string, code: string) { return this.fetch(`/servers/${sid}/join`, { method: 'POST', body: JSON.stringify({ invite_code: code }) }); }
+  async resolveInvite(code: string) { const r = await this.fetch(`/invites/${code}`); if (!r.ok) throw new Error('Invalid invite'); return r.json(); }
   async listMembers(sid: string) { return (await this.fetch(`/servers/${sid}/members`)).json(); }
   async setNickname(sid: string, uid: string, nickname: string | null) { return this.fetch(`/servers/${sid}/members/${uid}/nickname`, { method: 'PUT', body: JSON.stringify({ nickname }) }); }
   async updateServer(sid: string, data: any) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
