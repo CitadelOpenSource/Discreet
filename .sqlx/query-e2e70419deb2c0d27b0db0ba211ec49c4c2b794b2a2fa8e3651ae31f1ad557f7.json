@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE subscriptions\n         SET cancel_at_period_end = TRUE, updated_at = NOW()\n         WHERE user_id = $1 AND status = 'active'\n         RETURNING tier",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tier",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e2e70419deb2c0d27b0db0ba211ec49c4c2b794b2a2fa8e3651ae31f1ad557f7"
+}

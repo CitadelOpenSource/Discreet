@@ -63,6 +63,9 @@ pub enum AppError {
 
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
+
+    #[error("Premium required: {needed} tier needed (current: {current})")]
+    PremiumRequired { current: String, needed: String },
 }
 
 impl IntoResponse for AppError {
@@ -99,6 +102,17 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error — our team has been notified".into())
             }
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", if msg.is_empty() { "Service temporarily unavailable".into() } else { msg.clone() }),
+            AppError::PremiumRequired { current, needed } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PREMIUM_REQUIRED",
+                        "message": format!("This feature requires the {} tier", needed),
+                        "current_tier": current,
+                        "needed_tier": needed,
+                    }
+                });
+                return (StatusCode::PAYMENT_REQUIRED, Json(body)).into_response();
+            }
         };
 
         (status, Json(json!({

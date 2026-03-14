@@ -418,8 +418,8 @@ function RotateEncryptionKey() {
         <div style={{ fontSize: 12, color: T.mt, marginBottom: 8, lineHeight: 1.6 }}>
           Generate a new encryption identity. <strong style={{ color: T.err }}>All previous messages will become permanently unreadable</strong> — the server stores only ciphertext encrypted with your current key, and rotating destroys the old key material.
         </div>
-        <button onClick={startRotate} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-          Rotate Encryption Key
+        <button onClick={startRotate} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <I.Lock s={10} /> Rotate Encryption Key
         </button>
       </div>
       {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
@@ -509,7 +509,7 @@ function DeleteAccount() {
 
   return (
     <>
-      <button onClick={startDelete} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Delete My Account</button>
+      <button onClick={startDelete} className="pill-btn" style={{ background: 'rgba(255,71,87,0.12)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', padding: '10px 22px', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><I.Lock s={10} /> Delete My Account</button>
       {showReauth && <ReauthModal onSuccess={handleReauth} onCancel={() => setShowReauth(false)} />}
       {showModal && (
         <DangerConfirmModal
@@ -986,7 +986,7 @@ function ChangeEmail() {
     <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Email Address</div>
+          <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Email Address <I.Lock s={10} /></div>
           <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>{currentEmail || 'No email set'}</div>
         </div>
         {!editing && (
@@ -1065,7 +1065,7 @@ function ChangePassword() {
     <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Password</div>
+          <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Password <I.Lock s={10} /></div>
           <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Update your password regularly for better security</div>
         </div>
         {!editing && (
@@ -1156,7 +1156,7 @@ function ActiveSessions() {
         {otherCount > 0 && (
           <button onClick={startRevokeAll} disabled={revokingAll} className="pill-btn"
             style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
-            {revokingAll ? '...' : 'Sign Out All Others'}
+            {revokingAll ? '...' : <><I.Lock s={9} /> Sign Out All Others</>}
           </button>
         )}
       </div>
@@ -1203,6 +1203,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   const [errMsg, setErrMsg] = useState('');
   const [showAvatarCreator, setShowAvatarCreator] = useState(false);
   const [settingsSearch, setSettingsSearch] = useState('');
+  const [highlightSection, setHighlightSection] = useState('');
 
   // ── Notification settings state ──────────────────────────
   const [ns, setNs] = useState(() => ({
@@ -1266,28 +1267,48 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   };
 
   const SETTINGS_INDEX = useMemo(() => [
-    { tab: 'appearance', keywords: 'theme dark light accent color font size compact mode show embeds gifs images videos url preview display density spacing', label: 'Theme & Appearance' },
-    { tab: 'appearance', keywords: 'recently used emojis emoji history recent emoji toggle', label: 'Recently Used Emojis' },
-    { tab: 'voice',      keywords: 'voice audio microphone speaker input output volume noise gate compressor echo cancellation noise suppression push to talk voice activation sensitivity', label: 'Voice & Audio' },
-    { tab: 'video',      keywords: 'video camera resolution fps webcam screen share streaming quality', label: 'Video & Streaming' },
-    { tab: 'profile',    keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
-    { tab: 'profile',    keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
-    { tab: 'privacy',    keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
-    { tab: 'account',    keywords: 'account security password change email two factor 2fa totp authentication sessions devices logout username delete security status score recovery key upgrade guest verified', label: 'Account' },
-    { tab: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
-    { tab: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
-    { tab: 'keybinds',   keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
-    { tab: 'advanced',   keywords: 'advanced developer mode performance overlay cache clear data danger zone delete account', label: 'Advanced' },
-    { tab: 'network',    keywords: 'network proxy socks5 http vpn connection privacy tor', label: 'Network & Proxy' },
+    { tab: 'appearance', section: 'theme',          keywords: 'theme dark light accent color font size compact mode show embeds gifs images videos url preview display density spacing', label: 'Theme & Appearance' },
+    { tab: 'appearance', section: 'display-options', keywords: 'recently used emojis emoji history recent emoji toggle', label: 'Recently Used Emojis' },
+    { tab: 'voice',      section: 'voice',          keywords: 'voice audio microphone speaker input output volume noise gate compressor echo cancellation noise suppression push to talk voice activation sensitivity', label: 'Voice & Audio' },
+    { tab: 'video',      section: 'video',          keywords: 'video camera resolution fps webcam screen share streaming quality', label: 'Video & Streaming' },
+    { tab: 'profile',    section: 'profile',        keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
+    { tab: 'profile',    section: 'avatar-creator',  keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
+    { tab: 'privacy',    section: 'privacy',        keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
+    { tab: 'privacy',    section: 'interaction',    keywords: 'hide online status activity block stranger dms require mutual friends', label: 'Interaction Controls' },
+    { tab: 'account',    section: 'security-status', keywords: 'security status score recovery key upgrade guest verified', label: 'Security Status' },
+    { tab: 'account',    section: 'change-email',   keywords: 'email change verify', label: 'Email Address' },
+    { tab: 'account',    section: 'security',       keywords: 'password change two factor 2fa totp authentication', label: 'Security' },
+    { tab: 'account',    section: 'active-devices', keywords: 'sessions devices logout active sign out', label: 'Active Devices' },
+    { tab: 'notifications', section: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
+    { tab: 'accessibility', section: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
+    { tab: 'keybinds',   section: 'keybinds',      keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
+    { tab: 'advanced',   section: 'advanced',       keywords: 'advanced developer mode performance overlay cache clear data danger zone delete account', label: 'Advanced' },
+    { tab: 'network',    section: 'network',        keywords: 'network proxy socks5 http vpn connection privacy tor', label: 'Network & Proxy' },
   ], []);
+
+  // Scroll + highlight when search jumps to a section
+  useEffect(() => {
+    if (!highlightSection) return;
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-section="${highlightSection}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s';
+        el.style.boxShadow = `0 0 0 2px ${T.ac}, 0 0 12px ${T.ac}44`;
+        setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+      }
+      setHighlightSection('');
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [highlightSection]);
 
   useEffect(() => {
     api.getSettings().then((d: any) => {
       if (d && typeof d === 'object' && d.user_id) {
         setS(d);
         if (d.locale && d.locale !== 'en') setLanguage(d.locale).catch(() => {});
-      } else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' });
-    }).catch(() => setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'everyone', friend_request_privacy: 'everyone', notification_level: 'all' }));
+      } else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'friends', friend_request_privacy: 'friends_of_friends', notification_level: 'all', hide_online_status: true, hide_activity: true, block_stranger_dms: true });
+    }).catch(() => setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'friends', friend_request_privacy: 'friends_of_friends', notification_level: 'all', hide_online_status: true, hide_activity: true, block_stranger_dms: true }));
     api.getMe().then((u: any) => { if (u?.display_name) setDisplayName(u.display_name); else if (u?.username) setDisplayName(u.username); }).catch(() => {});
   }, []);
 
@@ -1347,7 +1368,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 const q = settingsSearch.toLowerCase();
                 return si.keywords.includes(q) || si.label.toLowerCase().includes(q);
               }).map((result, i) => (
-                <div key={i} onClick={() => { setTab(result.tab); setSettingsSearch(''); }}
+                <div key={i} onClick={() => { setTab(result.tab); setHighlightSection(result.section); setSettingsSearch(''); }}
                   style={{ padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.tx, display: 'flex', justifyContent: 'space-between' }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -1372,7 +1393,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
         {/* ── Appearance ── */}
         {tab === 'appearance' && (<>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme & Colors</div>
+          <div data-section="theme" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme & Colors</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Theme</label>
               <select style={sel} value={s.theme || 'dark'} onChange={e => save('theme', e.target.value)}>
@@ -1426,7 +1447,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               </select>
             </div>
           </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
+          <div data-section="display-options" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
           {[
             { key: 'compact_mode',       label: 'Compact Mode',                    desc: 'Reduce padding and margins throughout the UI',                          setting: true  },
             { key: 'd_show_embeds',      label: 'Show Link Previews',              desc: 'Preview links with title, description, and images',                     local: true,   def: true },
@@ -1714,7 +1735,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
         {/* ── Privacy ── */}
         {tab === 'privacy' && (<>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Privacy</div>
+          <div data-section="privacy" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Privacy</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Who can DM me</label>
               <select style={sel} value={s.dm_privacy || 'everyone'} onChange={e => save('dm_privacy', e.target.value)}>
@@ -1736,18 +1757,18 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.show_shared_servers === true ? 18 : 2, transition: 'left 0.2s' }} />
             </div>
           </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Interaction Controls</div>
+          <div data-section="interaction" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Interaction Controls</div>
           {[
-            { key: 'hide_online_status',      label: 'Hide Online Status from Non-Friends',        desc: 'Only friends can see when you\'re online, idle, or DND.', def: false },
-            { key: 'hide_activity',            label: 'Hide Activity from Non-Friends',             desc: "Don't show what server you're in or what you're doing to non-friends.", def: false },
-            { key: 'block_stranger_dms',       label: 'Block DMs from Server Strangers',            desc: 'People you share a server with but aren\'t friends with cannot DM you.', def: false },
+            { key: 'hide_online_status',      label: 'Hide Online Status from Non-Friends',        desc: 'Only friends can see when you\'re online, idle, or DND.', def: true },
+            { key: 'hide_activity',            label: 'Hide Activity from Non-Friends',             desc: "Don't show what server you're in or what you're doing to non-friends.", def: true },
+            { key: 'block_stranger_dms',       label: 'Block DMs from Server Strangers',            desc: 'People you share a server with but aren\'t friends with cannot DM you.', def: true },
             { key: 'require_mutual_friends',   label: 'Require Mutual Friends for Friend Requests', desc: 'Only allow friend requests from people who share a mutual friend with you.', def: false },
           ].map(opt => {
-            const val = localStorage.getItem('d_' + opt.key) === 'true';
+            const val = s[opt.key] !== undefined ? !!s[opt.key] : opt.def;
             return (
               <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
                 <div><div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div><div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>{opt.desc}</div></div>
-                <div onClick={() => localStorage.setItem('d_' + opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+                <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left 0.2s' }} />
                 </div>
               </div>
@@ -1762,7 +1783,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         {/* ── Account ── */}
         {tab === 'account' && (<>
           {/* ─ Security Status ─ */}
-          <SecurityStatus
+          <div data-section="security-status"><SecurityStatus
             platformUser={platformUser}
             onSetupStep={(step) => {
               if (step === 'verify-email') {
@@ -1780,7 +1801,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }
             }}
-          />
+          /></div>
 
           {/* ─ Identity ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
@@ -1804,19 +1825,19 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           </div>
 
           {/* ─ Security ─ */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
+          <div data-section="security" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
           <ChangePassword />
           <div data-section="2fa" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Two-Factor Authentication (2FA)</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
-            <button onClick={() => {}} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
+            <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Two-Factor Authentication (2FA) <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
+            <button onClick={() => { alert('2FA setup will be available in a future update. Your account is still protected by password-based authentication and session management.'); }} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
           </div>
           <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-            <div><div style={{ fontSize: 13, fontWeight: 600 }}>Encryption Key Fingerprint</div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
+            <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Encryption Key Fingerprint <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
             <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
           </div>
 
           {/* ─ Active Devices ─ */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
+          <div data-section="active-devices" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
           <ActiveSessions />
 
           {/* ─ Danger Zone ─ */}
@@ -2043,7 +2064,6 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Show Media Automatically</div>
             {[
               { key: 'd_show_images', label: 'Auto-show images in chat' },
-              { key: 'd_show_gifs',   label: 'Auto-show GIFs in chat'   },
               { key: 'd_show_videos', label: 'Auto-play videos in chat'  },
             ].map(opt => {
               const val = localStorage.getItem(opt.key) !== 'false';
