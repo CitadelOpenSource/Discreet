@@ -412,9 +412,9 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                   style={{ accentColor: T.ac, width: 15, height: 15, flexShrink: 0, marginTop: 1, cursor: 'pointer' }} />
                 <span style={{ fontSize: 12, color: T.mt, lineHeight: 1.5 }}>
                   I agree to the{' '}
-                  <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: T.ac, textDecoration: 'none', fontWeight: 600 }}>Terms of Service</a>
+                  <a href="/app/terms" target="_blank" rel="noopener noreferrer" style={{ color: T.ac, textDecoration: 'none', fontWeight: 600 }}>Terms of Service</a>
                   {' '}and{' '}
-                  <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: T.ac, textDecoration: 'none', fontWeight: 600 }}>Privacy Policy</a>
+                  <a href="/app/privacy" target="_blank" rel="noopener noreferrer" style={{ color: T.ac, textDecoration: 'none', fontWeight: 600 }}>Privacy Policy</a>
                 </span>
               </label>
             </>

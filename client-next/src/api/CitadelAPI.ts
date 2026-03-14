@@ -156,7 +156,7 @@ export class CitadelAPI {
   async register(u: string, p: string, e?: string, dob?: string) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p, email: e || undefined, date_of_birth: dob || undefined, device_name: 'web' }),
+      body: JSON.stringify({ username: u, password: p, email: e || undefined, date_of_birth: dob || undefined, device_name: 'web', accepted_terms_at: new Date().toISOString() }),
     });
     const d = await res.json();
     if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
