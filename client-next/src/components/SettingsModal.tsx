@@ -2044,6 +2044,28 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                       <Toggle on={mentionOnly} onToggle={() => toggleMentionServer(sv.id)} />
                     </div>
                   )}
+                  {!muted && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: T.tx }}>Event reminders</span>
+                      <Toggle on={localStorage.getItem(`d_event_reminders_${sv.id}`) !== 'false'} onToggle={() => {
+                        const key = `d_event_reminders_${sv.id}`;
+                        const cur = localStorage.getItem(key) !== 'false';
+                        localStorage.setItem(key, cur ? 'false' : 'true');
+                        api.fetch(`/servers/${sv.id}/notification-settings`, { method: 'PATCH', body: JSON.stringify({ event_reminders: !cur }) }).catch(() => {});
+                      }} />
+                    </div>
+                  )}
+                  {!muted && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: T.tx }}>Email reminders</span>
+                      <Toggle on={localStorage.getItem(`d_email_reminders_${sv.id}`) === 'true'} onToggle={() => {
+                        const key = `d_email_reminders_${sv.id}`;
+                        const cur = localStorage.getItem(key) === 'true';
+                        localStorage.setItem(key, cur ? 'false' : 'true');
+                        api.fetch(`/servers/${sv.id}/notification-settings`, { method: 'PATCH', body: JSON.stringify({ email_reminders: !cur }) }).catch(() => {});
+                      }} />
+                    </div>
+                  )}
                 </div>
               </div>
             );

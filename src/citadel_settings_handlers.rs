@@ -41,6 +41,8 @@ pub struct ServerNotificationSettingsResponse {
     pub mute_until: Option<String>,
     pub level: String,
     pub suppress_everyone: bool,
+    pub event_reminders: bool,
+    pub email_reminders: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +51,8 @@ pub struct UpdateServerNotificationSettingsRequest {
     pub mute_until: Option<chrono::DateTime<chrono::Utc>>,
     pub level: Option<String>,
     pub suppress_everyone: Option<bool>,
+    pub event_reminders: Option<bool>,
+    pub email_reminders: Option<bool>,
 }
 
 pub async fn get_my_settings(
@@ -153,7 +157,7 @@ pub async fn get_server_notification_settings(
     .await?;
 
     let row = sqlx::query!(
-        "SELECT user_id, server_id, muted, mute_until, level, suppress_everyone
+        "SELECT user_id, server_id, muted, mute_until, level, suppress_everyone, event_reminders, email_reminders
          FROM server_notification_settings
          WHERE user_id = $1 AND server_id = $2",
         auth.user_id,
@@ -169,6 +173,8 @@ pub async fn get_server_notification_settings(
         mute_until: row.mute_until.map(|ts: chrono::DateTime<chrono::Utc>| ts.to_rfc3339()),
         level: row.level,
         suppress_everyone: row.suppress_everyone,
+        event_reminders: row.event_reminders,
+        email_reminders: row.email_reminders,
     }))
 }
 
@@ -194,13 +200,17 @@ pub async fn patch_server_notification_settings(
          SET muted = COALESCE($1, muted),
              mute_until = COALESCE($2, mute_until),
              level = COALESCE($3, level),
-             suppress_everyone = COALESCE($4, suppress_everyone)
-         WHERE user_id = $5 AND server_id = $6
-         RETURNING user_id, server_id, muted, mute_until, level, suppress_everyone",
+             suppress_everyone = COALESCE($4, suppress_everyone),
+             event_reminders = COALESCE($5, event_reminders),
+             email_reminders = COALESCE($6, email_reminders)
+         WHERE user_id = $7 AND server_id = $8
+         RETURNING user_id, server_id, muted, mute_until, level, suppress_everyone, event_reminders, email_reminders",
         req.muted,
         req.mute_until,
         req.level,
         req.suppress_everyone,
+        req.event_reminders,
+        req.email_reminders,
         auth.user_id,
         server_id,
     )
@@ -214,6 +224,8 @@ pub async fn patch_server_notification_settings(
         mute_until: row.mute_until.map(|ts: chrono::DateTime<chrono::Utc>| ts.to_rfc3339()),
         level: row.level,
         suppress_everyone: row.suppress_everyone,
+        event_reminders: row.event_reminders,
+        email_reminders: row.email_reminders,
     }))
 }
 

@@ -28,6 +28,7 @@ import { QrCode, encodeInviteQr, decodeInviteQr } from './components/QrCode';
 import { QrScanner } from './components/QrScanner';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { NotificationCenter, type AppNotification, makeNotification, loadNotifications, saveNotifications } from './components/NotificationCenter';
+import { NotificationInbox } from './components/NotificationInbox';
 // ── Lazy-loaded heavy modals (reduce initial bundle) ──────
 const SettingsModal      = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const UpgradeFlow        = lazy(() => import('./components/UpgradeFlow').then(m => ({ default: m.UpgradeFlow })));
@@ -613,6 +614,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [notifications, setNotifications] = useState<AppNotification[]>(() => loadNotifications());
   const [showNotifCenter, setShowNotifCenter] = useState(false);
+  const [wsLastEvent, setWsLastEvent] = useState<any>(null);
   const [showWatchParty, setShowWatchParty] = useState(false);
   const [showMeeting,    setShowMeeting]    = useState(false);
   const [meetingCode,    setMeetingCode]    = useState<string | undefined>(undefined);
@@ -760,6 +762,7 @@ export default function App() {
     if (!authed || !curServer) return;
     api.connectWs(curServer.id);
     const handler = (evt: any) => {
+      setWsLastEvent(evt);
       const ch = curChannelRef.current;
       if ((evt.type === 'message_create' || evt.type === 'MESSAGE_CREATE') && evt.channel_id === ch?.id) {
         if (evt.author_id !== api.userId) playSound('receive');
@@ -1976,31 +1979,36 @@ export default function App() {
                 </div>
               );
             })}
-            {/* Bell icon with unread badge */}
-            {(() => {
-              const unreadCount = notifications.filter(n => !n.read).length;
-              return (
-                <div
-                  className="touch-target"
-                  onClick={() => setShowNotifCenter(p => !p)}
-                  style={{ position: 'relative', cursor: 'pointer', color: showNotifCenter ? T.ac : T.mt, padding: 4 }}
-                  title="Notifications"
-                >
-                  <I.Bell />
-                  {unreadCount > 0 && (
-                    <div style={{
-                      position: 'absolute', top: 0, right: 0,
-                      background: '#ed4245', borderRadius: '50%',
-                      minWidth: 14, height: 14, fontSize: 9, fontWeight: 700,
-                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '0 3px', pointerEvents: 'none',
-                    }}>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Bell icon with server-backed notification inbox */}
+            <NotificationInbox wsLastEvent={wsLastEvent} onNavigate={async (action) => {
+              // Settings navigation
+              if (action.url?.startsWith('/settings')) { setModal('settings'); return; }
+              // Smart event join: if event has voice channel, navigate to server and auto-join voice
+              if (action.type === 'event_reminder' && action.server_id) {
+                // If user isn't a member and invite code is present, join server first
+                if (action.invite_code) {
+                  try { await api.joinServer(action.server_id, action.invite_code); await loadServers(); } catch {}
+                }
+                // Navigate to the server (selectServer loads channels)
+                const srv = servers.find((s: any) => s.id === action.server_id);
+                if (srv) {
+                  await selectServer(srv);
+                  // After selectServer, channels are loaded — now auto-join voice if linked
+                  if (action.voice_channel_id) {
+                    // Small delay to ensure channels state is flushed
+                    setTimeout(() => {
+                      const vch = channelsRef.current.find((c: any) => c.id === action.voice_channel_id);
+                      if (vch) joinVoice(vch);
+                    }, 200);
+                  }
+                }
+                return;
+              }
+              // Generic action_url navigation
+              if (action.url) {
+                window.location.href = action.url;
+              }
+            }} />
             {view === 'server' && (<>
               <div className="touch-target" onClick={() => setShowWatchParty(p => !p)} style={{ cursor: 'pointer', color: showWatchParty ? T.ac : T.mt, padding: 4, fontSize: 16, lineHeight: 1 }} title="Watch Party">🎬</div>
               <div className="touch-target" onClick={async () => { setShowPinned(p => !p); if (!showPinned && curServer && curChannel) { try { const pins = await api.getPinnedMessages(curServer.id, curChannel.id); setPinnedMsgs(Array.isArray(pins) ? pins : []); } catch { setPinnedMsgs([]); } } }} style={{ cursor: 'pointer', color: showPinned ? T.ac : T.mt, padding: 4, fontSize: 16, lineHeight: 1 }} title="Pinned Messages">📌</div>
@@ -2166,7 +2174,7 @@ export default function App() {
         {/* ─── Events View ─── */}
         {view === 'home' && homeTab === 'events' && curServer && (
           <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-            <EventsPanel serverId={curServer.id} isOwner={hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)} />
+            <EventsPanel serverId={curServer.id} isOwner={hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)} channels={channels} />
           </div>
         )}
         {view === 'home' && homeTab === 'events' && !curServer && (

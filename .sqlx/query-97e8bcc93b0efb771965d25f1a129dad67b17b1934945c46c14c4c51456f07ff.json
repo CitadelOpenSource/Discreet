@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT e.id, e.server_id, e.channel_id, e.creator_id, u.username as creator_username,\n           e.title, e.description, e.location, e.start_time, e.end_time, e.created_at,\n           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.status = 'going') as \"going_count!\",\n           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.status = 'interested') as \"interested_count!\"\n           FROM server_events e JOIN users u ON u.id = e.creator_id\n           WHERE e.server_id = $1 ORDER BY e.start_time ASC",
+  "query": "SELECT e.id, e.server_id, e.channel_id, e.creator_id, u.username as creator_username,\n           e.title, e.description, e.location, e.start_time, e.end_time, e.created_at,\n           e.reminder_minutes, e.recurring_rule, e.voice_channel_id, e.invite_code, e.max_attendees,\n           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.status = 'accepted') as \"accepted_count!\",\n           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.status = 'tentative') as \"tentative_count!\"\n           FROM server_events e JOIN users u ON u.id = e.creator_id\n           WHERE e.server_id = $1 ORDER BY e.start_time ASC",
   "describe": {
     "columns": [
       {
@@ -60,12 +60,37 @@
       },
       {
         "ordinal": 11,
-        "name": "going_count!",
-        "type_info": "Int8"
+        "name": "reminder_minutes",
+        "type_info": "Int4Array"
       },
       {
         "ordinal": 12,
-        "name": "interested_count!",
+        "name": "recurring_rule",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "voice_channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "invite_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "max_attendees",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "accepted_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 17,
+        "name": "tentative_count!",
         "type_info": "Int8"
       }
     ],
@@ -86,9 +111,14 @@
       false,
       true,
       false,
+      true,
+      true,
+      true,
+      true,
+      true,
       null,
       null
     ]
   },
-  "hash": "516256a60c717cb326d9c482471402aad6a3cfee336eefe85cb423a70328b8ed"
+  "hash": "97e8bcc93b0efb771965d25f1a129dad67b17b1934945c46c14c4c51456f07ff"
 }
