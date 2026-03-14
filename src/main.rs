@@ -365,10 +365,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Insert audit tombstone before deletion.
                     let _ = citadel_audit::log_action(
-                        &db, server.id, server.owner_id, "SERVER_DELETED_SCHEDULED",
-                        Some("server"), Some(server.id),
-                        Some(serde_json::json!({ "name": server.name, "reason": "scheduled_deletion" })),
-                        Some("Automated: 30-day scheduled deletion"),
+                        &db,
+                        citadel_audit::AuditEntry {
+                            server_id: server.id,
+                            actor_id: server.owner_id,
+                            action: "SERVER_DELETED_SCHEDULED",
+                            target_type: Some("server"),
+                            target_id: Some(server.id),
+                            changes: Some(serde_json::json!({ "name": server.name, "reason": "scheduled_deletion" })),
+                            reason: Some("Automated: 30-day scheduled deletion"),
+                        },
                     ).await;
 
                     // CASCADE delete removes messages, channels, roles, members, invites.
@@ -408,6 +414,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/publish", axum::routing::post(citadel_discovery_handlers::publish_server))
         .route("/servers/:server_id/unpublish", axum::routing::post(citadel_discovery_handlers::unpublish_server))
         .route("/auth/refresh", axum::routing::post(citadel_auth_handlers::refresh))
+        .route("/auth/me/refresh", axum::routing::get(citadel_auth_handlers::refresh_claims))
         .route("/auth/logout", axum::routing::post(citadel_auth_handlers::logout))
         .route("/auth/sessions", axum::routing::get(citadel_auth_handlers::list_sessions))
         .route("/auth/sessions/:id", axum::routing::delete(citadel_auth_handlers::revoke_session))

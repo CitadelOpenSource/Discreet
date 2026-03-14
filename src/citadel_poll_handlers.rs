@@ -117,9 +117,11 @@ pub async fn list_polls(
 
     let mut result = Vec::new();
     for p in &polls {
-        let info = build_poll_info(&state, p.id, auth.user_id, p.question.clone(),
-            p.allow_multiple, p.anonymous, p.creator_id,
-            p.expires_at.map(|t| t.to_rfc3339()), p.created_at.to_rfc3339()).await?;
+        let info = build_poll_info(&state, PollBuildParams {
+            poll_id: p.id, user_id: auth.user_id, question: p.question.clone(),
+            allow_multiple: p.allow_multiple, anonymous: p.anonymous, creator_id: p.creator_id,
+            expires_at: p.expires_at.map(|t| t.to_rfc3339()), created_at: p.created_at.to_rfc3339(),
+        }).await?;
         result.push(info);
     }
 
@@ -140,9 +142,11 @@ pub async fn get_poll(
     ).fetch_optional(&state.db).await?
         .ok_or_else(|| AppError::NotFound("Poll not found".into()))?;
 
-    let info = build_poll_info(&state, p.id, auth.user_id, p.question.clone(),
-        p.allow_multiple, p.anonymous, p.creator_id,
-        p.expires_at.map(|t| t.to_rfc3339()), p.created_at.to_rfc3339()).await?;
+    let info = build_poll_info(&state, PollBuildParams {
+        poll_id: p.id, user_id: auth.user_id, question: p.question.clone(),
+        allow_multiple: p.allow_multiple, anonymous: p.anonymous, creator_id: p.creator_id,
+        expires_at: p.expires_at.map(|t| t.to_rfc3339()), created_at: p.created_at.to_rfc3339(),
+    }).await?;
 
     Ok(Json(info))
 }
@@ -220,23 +224,32 @@ pub async fn delete_poll(
 
 // ─── Helper ────────────────────────────────────────────────────────────
 
+struct PollBuildParams {
+    poll_id: Uuid,
+    user_id: Uuid,
+    question: String,
+    allow_multiple: bool,
+    anonymous: bool,
+    creator_id: Uuid,
+    expires_at: Option<String>,
+    created_at: String,
+}
+
 async fn build_poll_info(
-    state: &AppState, poll_id: Uuid, user_id: Uuid, question: String,
-    allow_multiple: bool, anonymous: bool, creator_id: Uuid,
-    expires_at: Option<String>, created_at: String,
+    state: &AppState, params: PollBuildParams,
 ) -> Result<PollInfo, AppError> {
     let opts = sqlx::query!(
         "SELECT o.id, o.label, o.position,
          (SELECT COUNT(*) FROM poll_votes v WHERE v.option_id = o.id) as \"votes!\"
          FROM poll_options o WHERE o.poll_id = $1 ORDER BY o.position",
-        poll_id,
+        params.poll_id,
     ).fetch_all(&state.db).await?;
 
     let total: i64 = opts.iter().map(|o| o.votes).sum();
 
     let my_votes = sqlx::query_scalar!(
         "SELECT option_id FROM poll_votes WHERE poll_id = $1 AND user_id = $2",
-        poll_id, user_id,
+        params.poll_id, params.user_id,
     ).fetch_all(&state.db).await?;
 
     let options: Vec<PollOptionInfo> = opts.iter().map(|o| PollOptionInfo {
@@ -246,8 +259,9 @@ async fn build_poll_info(
     }).collect();
 
     Ok(PollInfo {
-        id: poll_id, question, options, allow_multiple, anonymous,
-        total_votes: total, my_votes, creator_id,
-        expires_at, created_at,
+        id: params.poll_id, question: params.question, options,
+        allow_multiple: params.allow_multiple, anonymous: params.anonymous,
+        total_votes: total, my_votes, creator_id: params.creator_id,
+        expires_at: params.expires_at, created_at: params.created_at,
     })
 }

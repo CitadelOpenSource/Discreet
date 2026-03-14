@@ -164,13 +164,12 @@ fn auth_response_with_cookie(
 ) -> Response {
     let cookie = build_refresh_cookie(refresh_token, max_age_secs);
     let json_body = serde_json::to_string(&body).expect("AuthResponse serializes");
-    let resp = Response::builder()
+    Response::builder()
         .status(status)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::SET_COOKIE, cookie)
         .body(axum::body::Body::from(json_body))
-        .expect("valid response");
-    resp
+        .expect("valid response")
 }
 
 /// Extract refresh token from cookie (preferred) or JSON body (mobile fallback).
@@ -406,6 +405,25 @@ pub async fn register(
 
     tracing::info!(user_id = %user_id, username = %req.username, "User registered");
 
+    // Auto-join official server if configured in platform settings.
+    if let Ok(ps) = crate::citadel_platform_settings::get_platform_settings(&state).await {
+        if !ps.official_server_id.is_empty() {
+            if let Ok(server_uuid) = ps.official_server_id.parse::<uuid::Uuid>() {
+                if let Err(e) = sqlx::query!(
+                    "INSERT INTO server_members (server_id, user_id) VALUES ($1, $2)
+                     ON CONFLICT (server_id, user_id) DO NOTHING",
+                    server_uuid,
+                    user_id,
+                )
+                .execute(&state.db)
+                .await
+                {
+                    tracing::warn!(user_id = %user_id, server_id = %server_uuid, "Failed to auto-join official server: {}", e);
+                }
+            }
+        }
+    }
+
     Ok(auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
@@ -607,8 +625,19 @@ pub async fn upgrade_account(
             username, hash, auth.user_id,
         ).execute(&state.db).await?;
 
+        // Invalidate cached user state so AuthUser picks up new tier immediately.
+        crate::citadel_auth::invalidate_user_cache(&state, auth.user_id).await;
+
+        // Issue a fresh access token so the client gets updated claims.
+        let access_token = issue_access_token(auth.user_id, auth.session_id, &state.config)?;
+
         tracing::info!(user_id = %auth.user_id, "Guest upgraded to unverified: {}", username);
-        return Ok(Json(serde_json::json!({ "tier": "unverified", "username": username })));
+        return Ok(Json(serde_json::json!({
+            "tier": "unverified",
+            "username": username,
+            "access_token": access_token,
+            "expires_in": state.config.jwt_expiry_secs,
+        })));
     }
 
     // Registered → Verified: email confirmation handled by verify-email endpoints
@@ -921,6 +950,31 @@ pub async fn refresh(
         access_token,
         expires_in: state.config.jwt_expiry_secs,
     }))
+}
+
+// ─── GET /auth/me/refresh ────────────────────────────────────────────────
+// Returns a fresh access token with current claims from the database.
+// Client calls this after registration upgrade or email verification
+// to immediately pick up new permissions without a full re-login.
+
+pub async fn refresh_claims(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Invalidate cached user state so next request loads fresh data.
+    crate::citadel_auth::invalidate_user_cache(&state, auth.user_id).await;
+
+    // Issue a new access token with the same session.
+    let access_token = issue_access_token(auth.user_id, auth.session_id, &state.config)?;
+
+    Ok(Json(serde_json::json!({
+        "access_token": access_token,
+        "expires_in": state.config.jwt_expiry_secs,
+        "account_tier": auth.account_tier,
+        "email_verified": auth.email_verified,
+        "phone_verified": auth.phone_verified,
+        "is_guest": auth.is_guest,
+    })))
 }
 
 // ─── POST /auth/logout ──────────────────────────────────────────────────
@@ -1258,6 +1312,11 @@ pub async fn create_session(
     let access_token = issue_access_token(user_id, session_id, &state.config)?;
 
     Ok((access_token, refresh_token, session_id))
+}
+
+/// Public wrapper for issuing access tokens from other modules.
+pub fn issue_access_token_pub(user_id: Uuid, session_id: Uuid, config: &Config) -> Result<String, AppError> {
+    issue_access_token(user_id, session_id, config)
 }
 
 /// Issue a signed JWT access token.

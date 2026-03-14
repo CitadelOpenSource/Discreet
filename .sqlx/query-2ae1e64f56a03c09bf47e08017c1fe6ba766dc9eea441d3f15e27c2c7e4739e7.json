@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET auto_response_message = NULL WHERE id = $1 AND auto_response_message IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ae1e64f56a03c09bf47e08017c1fe6ba766dc9eea441d3f15e27c2c7e4739e7"
+}

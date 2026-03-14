@@ -162,7 +162,7 @@ pub async fn csrf_middleware(request: Request, next: Next) -> Response {
 /// Returns true when `path` should skip CSRF validation.
 fn is_exempt(path: &str) -> bool {
     // Exact matches for /api/v1/auth/* bootstrap endpoints.
-    if EXEMPT_PATHS.iter().any(|p| path == *p) {
+    if EXEMPT_PATHS.contains(&path) {
         return true;
     }
     // Prefix matches for /ws (WebSocket) and /health (monitoring).

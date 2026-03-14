@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::citadel_audit::log_action;
+use crate::citadel_audit::{log_action, AuditEntry};
 use crate::citadel_auth::AuthUser;
 use crate::citadel_error::AppError;
 use crate::citadel_permissions::{
@@ -150,13 +150,15 @@ pub async fn create_channel(
 
     log_action(
         &state.db,
-        server_id,
-        auth.user_id,
-        "CHANNEL_CREATE",
-        Some("channel"),
-        Some(channel_id),
-        None,
-        None,
+        AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "CHANNEL_CREATE",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();
@@ -385,9 +387,18 @@ pub async fn update_channel(
         "disappearing_messages": req.disappearing_messages,
     });
     let _ = log_action(
-        &state.db, channel.server_id, auth.user_id, "UPDATE_CHANNEL",
-        Some("channel"), Some(channel_id), Some(changes), None,
-    ).await;
+        &state.db,
+        AuditEntry {
+            server_id: channel.server_id,
+            actor_id: auth.user_id,
+            action: "UPDATE_CHANNEL",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: Some(changes),
+            reason: None,
+        },
+    )
+    .await;
 
     // Return updated channel.
     let updated = sqlx::query!(
@@ -463,13 +474,15 @@ pub async fn delete_channel(
 
     log_action(
         &state.db,
-        channel.server_id,
-        auth.user_id,
-        "CHANNEL_DELETE",
-        Some("channel"),
-        Some(channel_id),
-        None,
-        None,
+        AuditEntry {
+            server_id: channel.server_id,
+            actor_id: auth.user_id,
+            action: "CHANNEL_DELETE",
+            target_type: Some("channel"),
+            target_id: Some(channel_id),
+            changes: None,
+            reason: None,
+        },
     )
     .await
     .ok();

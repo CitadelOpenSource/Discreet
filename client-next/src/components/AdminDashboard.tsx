@@ -42,6 +42,7 @@ interface PlatformSettings {
   ai_emergency_stop:     boolean;
   default_retention_days: number;
   global_disappearing_default: string;
+  official_server_id: string;
 }
 
 interface ServerInfo {
@@ -461,6 +462,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [maintMsg, setMaintMsg] = useState('');
   const [aiRateLimit, setAiRateLimit] = useState(0);
+  const [officialServerId, setOfficialServerId] = useState('');
 
   // ── Health ──
   const [health, setHealth] = useState<ServerInfo | null>(null);
@@ -501,6 +503,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
       setSettings(s);
       setMaintMsg(s.maintenance_message || '');
       setAiRateLimit(s.ai_rate_limit_per_minute ?? 0);
+      setOfficialServerId(s.official_server_id || '');
     } catch { /* ignore */ }
     finally { setSettingsLoading(false); }
   }, []);
@@ -566,6 +569,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
         setSettings(s);
         setMaintMsg(s.maintenance_message || '');
         setAiRateLimit(s.ai_rate_limit_per_minute ?? 0);
+        setOfficialServerId(s.official_server_id || '');
       }
     } catch { /* ignore */ }
     finally { setSettingsSaving(false); }
@@ -788,6 +792,55 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                         <StatusDot ok={s.ok} />{s.label}{s.text ? `: ${s.text}` : ''}
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Onboarding ── */}
+            {settings && (
+              <div style={cardStyle}>
+                <SectionHeader label="Onboarding" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: T.tx, marginBottom: 4 }}>Official Server ID</div>
+                    <div style={{ fontSize: 11, color: T.mt, marginBottom: 8 }}>New users auto-join this server on registration. Leave blank to disable.</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        value={officialServerId}
+                        onChange={e => setOfficialServerId(e.target.value)}
+                        placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+                        style={{
+                          flex: 1, padding: '8px 10px', background: T.bg,
+                          border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx,
+                          fontSize: 12, fontFamily: 'monospace', outline: 'none',
+                        }}
+                      />
+                      <button
+                        disabled={settingsSaving || officialServerId === (settings.official_server_id || '')}
+                        onClick={() => toggleSetting('official_server_id', officialServerId.trim())}
+                        style={{
+                          padding: '8px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                          border: 'none', cursor: officialServerId === (settings.official_server_id || '') ? 'not-allowed' : 'pointer',
+                          background: officialServerId === (settings.official_server_id || '') ? T.sf2 : T.ac,
+                          color: officialServerId === (settings.official_server_id || '') ? T.mt : '#000',
+                        }}
+                      >
+                        Save
+                      </button>
+                      {settings.official_server_id && (
+                        <button
+                          disabled={settingsSaving}
+                          onClick={() => { setOfficialServerId(''); toggleSetting('official_server_id', ''); }}
+                          style={{
+                            padding: '8px 12px', borderRadius: 6, fontSize: 12,
+                            border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, cursor: 'pointer',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

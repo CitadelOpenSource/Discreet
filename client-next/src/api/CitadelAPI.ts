@@ -342,6 +342,8 @@ export class CitadelAPI {
   async getUser(id: string) { if (this._userCache[id]) return this._userCache[id]; try { const d = await (await this.fetch(`/users/${id}`)).json(); this._userCache[id] = d; return d; } catch { return null; } }
   async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
   async getMe() { try { return (await this.fetch('/users/@me')).json(); } catch { return null; } }
+  /** Fetch a fresh access token with current claims. Call after upgrade/verify. */
+  async refreshClaims() { try { const r = await this.fetch('/auth/me/refresh'); if (r.ok) { const d = await r.json(); if (d.access_token) this.token = d.access_token; return d; } return null; } catch { return null; } }
   async getPlatformMe() { try { const r = await this.fetch('/platform/me'); return r.ok ? r.json() : null; } catch { return null; } }
   async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }

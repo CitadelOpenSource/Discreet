@@ -74,38 +74,52 @@ fn default_limit() -> i64 { 50 }
 /// Genesis hash for the first entry in any server's chain.
 const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// Input fields for computing the SHA-256 chain hash.
+struct ChainHashInput<'a> {
+    pub prev_hash: &'a str,
+    pub server_id: Uuid,
+    pub actor_id: Uuid,
+    pub action: &'a str,
+    pub target_type: Option<&'a str>,
+    pub target_id: Option<Uuid>,
+    pub changes: Option<&'a serde_json::Value>,
+    pub reason: Option<&'a str>,
+    pub created_at: &'a str,
+}
+
 /// Compute SHA-256 chain hash. Covers ALL fields so ANY modification breaks the chain.
-fn compute_chain_hash(
-    prev_hash: &str, server_id: Uuid, actor_id: Uuid, action: &str,
-    target_type: Option<&str>, target_id: Option<Uuid>,
-    changes: Option<&serde_json::Value>, reason: Option<&str>, created_at: &str,
-) -> String {
+fn compute_chain_hash(input: &ChainHashInput) -> String {
     let mut h = Sha256::new();
-    h.update(prev_hash.as_bytes());
-    h.update(server_id.as_bytes());
-    h.update(actor_id.as_bytes());
-    h.update(action.as_bytes());
-    h.update(target_type.unwrap_or("").as_bytes());
-    if let Some(tid) = target_id { h.update(tid.as_bytes()); }
-    if let Some(ch) = changes { h.update(ch.to_string().as_bytes()); }
-    h.update(reason.unwrap_or("").as_bytes());
-    h.update(created_at.as_bytes());
+    h.update(input.prev_hash.as_bytes());
+    h.update(input.server_id.as_bytes());
+    h.update(input.actor_id.as_bytes());
+    h.update(input.action.as_bytes());
+    h.update(input.target_type.unwrap_or("").as_bytes());
+    if let Some(tid) = input.target_id { h.update(tid.as_bytes()); }
+    if let Some(ch) = input.changes { h.update(ch.to_string().as_bytes()); }
+    h.update(input.reason.unwrap_or("").as_bytes());
+    h.update(input.created_at.as_bytes());
     format!("{:x}", h.finalize())
 }
 
 // --- Internal API ---
 
+/// Fields for a new audit log entry (excludes the database pool).
+pub struct AuditEntry<'a> {
+    pub server_id: Uuid,
+    pub actor_id: Uuid,
+    pub action: &'a str,
+    pub target_type: Option<&'a str>,
+    pub target_id: Option<Uuid>,
+    pub changes: Option<serde_json::Value>,
+    pub reason: Option<&'a str>,
+}
+
 /// Append an entry to the hash chain. Called by other handler modules.
 /// Uses transaction + row lock for sequential integrity under concurrency.
 pub async fn log_action(
     db: &sqlx::PgPool,
-    server_id: Uuid,
-    actor_id: Uuid,
-    action: &str,
-    target_type: Option<&str>,
-    target_id: Option<Uuid>,
-    changes: Option<serde_json::Value>,
-    reason: Option<&str>,
+    entry: AuditEntry<'_>,
 ) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
 
@@ -116,7 +130,7 @@ pub async fn log_action(
          ORDER BY sequence_num DESC NULLS LAST, created_at DESC
          LIMIT 1
          FOR UPDATE",
-        server_id,
+        entry.server_id,
     )
     .fetch_optional(&mut *tx)
     .await?;
@@ -132,15 +146,22 @@ pub async fn log_action(
     let now = chrono::Utc::now();
     let ts = now.to_rfc3339();
 
-    let chain_hash = compute_chain_hash(
-        &prev_hash, server_id, actor_id, action,
-        target_type, target_id, changes.as_ref(), reason, &ts,
-    );
+    let chain_hash = compute_chain_hash(&ChainHashInput {
+        prev_hash: &prev_hash,
+        server_id: entry.server_id,
+        actor_id: entry.actor_id,
+        action: entry.action,
+        target_type: entry.target_type,
+        target_id: entry.target_id,
+        changes: entry.changes.as_ref(),
+        reason: entry.reason,
+        created_at: &ts,
+    });
 
     sqlx::query!(
         "INSERT INTO audit_log (server_id, actor_id, action, target_type, target_id, changes, reason, sequence_num, prev_hash, chain_hash)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-        server_id, actor_id, action, target_type, target_id, changes, reason,
+        entry.server_id, entry.actor_id, entry.action, entry.target_type, entry.target_id, entry.changes, entry.reason,
         next_seq, prev_hash, chain_hash,
     )
     .execute(&mut *tx)
@@ -149,7 +170,7 @@ pub async fn log_action(
     tx.commit().await?;
 
     tracing::info!(
-        server_id = %server_id, action = %action, seq = next_seq,
+        server_id = %entry.server_id, action = %entry.action, seq = next_seq,
         "Audit chain entry appended"
     );
 
@@ -290,12 +311,17 @@ pub async fn verify_audit_chain(
         }
 
         // Check 2: recompute hash and compare — detects field tampering
-        let recomputed = compute_chain_hash(
-            sp, row.server_id, row.actor_id, &row.action,
-            row.target_type.as_deref(), row.target_id,
-            row.changes.as_ref(), row.reason.as_deref(),
-            &row.created_at.to_rfc3339(),
-        );
+        let recomputed = compute_chain_hash(&ChainHashInput {
+            prev_hash: sp,
+            server_id: row.server_id,
+            actor_id: row.actor_id,
+            action: &row.action,
+            target_type: row.target_type.as_deref(),
+            target_id: row.target_id,
+            changes: row.changes.as_ref(),
+            reason: row.reason.as_deref(),
+            created_at: &row.created_at.to_rfc3339(),
+        });
 
         if recomputed != sh {
             intact = false;

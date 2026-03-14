@@ -988,6 +988,9 @@ pub async fn change_email(
     .execute(&state.db)
     .await?;
 
+    // Invalidate cached user state so email_verified=false takes effect immediately.
+    crate::citadel_auth::invalidate_user_cache(&state, auth.user_id).await;
+
     // ── 7. Set rate-limit key in Redis (86400s = 24h) ────────────────────
     let _: Result<String, _> = redis::cmd("SET")
         .arg(&rate_key)
@@ -1033,6 +1036,9 @@ pub struct UpdateStatusRequest {
     pub status: Option<String>,
     pub emoji: Option<String>,
     pub presence: Option<String>,
+    /// Auto-response message shown to anyone who @mentions or DMs this user.
+    /// Set to null or empty string to clear.
+    pub auto_response: Option<String>,
 }
 
 /// Update the user's custom status, status emoji, and/or presence mode.
@@ -1068,17 +1074,31 @@ pub async fn update_status(
         }
     }
 
+    // Validate auto_response length.
+    if let Some(ref ar) = req.auto_response {
+        if ar.len() > 256 {
+            return Err(AppError::BadRequest("Auto-response must be 256 characters or less".into()));
+        }
+    }
+
     // Persist to database.
     let custom_status = req.status.unwrap_or_default();
     let status_emoji = req.emoji.unwrap_or_default();
     let presence_mode = req.presence.clone().unwrap_or_else(|| "online".into());
+    let auto_response: Option<String> = req.auto_response
+        .and_then(|s| if s.trim().is_empty() { None } else { Some(s) });
+
+    // Clear auto_response when going back online.
+    let auto_response_val = if presence_mode == "online" { None } else { auto_response.clone() };
 
     sqlx::query!(
-        "UPDATE users SET custom_status = $1, status_emoji = $2, presence_mode = $3, updated_at = NOW()
-         WHERE id = $4",
+        "UPDATE users SET custom_status = $1, status_emoji = $2, presence_mode = $3,
+         auto_response_message = $4, updated_at = NOW()
+         WHERE id = $5",
         custom_status,
         status_emoji,
         presence_mode,
+        auto_response_val,
         auth.user_id,
     )
     .execute(&state.db)
@@ -1111,6 +1131,7 @@ pub async fn update_status(
         "custom_status": custom_status,
         "status_emoji": status_emoji,
         "presence_mode": presence_mode,
+        "auto_response": auto_response_val,
     })))
 }
 

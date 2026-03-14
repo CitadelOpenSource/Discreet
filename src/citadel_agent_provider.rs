@@ -945,7 +945,7 @@ impl LlmProvider for CustomProvider {
 /// 1. Replaces usernames with generic labels ("User 1", "User 2")
 /// 2. Removes any UUID patterns from content
 /// 3. Strips @mentions that might contain real usernames
-pub fn strip_metadata(messages: &mut Vec<AgentMessage>) {
+pub fn strip_metadata(messages: &mut [AgentMessage]) {
     let uuid_pattern = regex_lite::Regex::new(
         r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     );
@@ -958,7 +958,7 @@ pub fn strip_metadata(messages: &mut Vec<AgentMessage>) {
 
         // Strip @mentions (pattern: @username or <@uuid>)
         msg.content = msg.content
-            .replace(|c: char| c == '<' || c == '>', "")
+            .replace(['<', '>'], "")
             .to_string();
     }
 }
@@ -988,10 +988,7 @@ pub fn sanitize_agent_input(input: &str) -> String {
     let cleaned: String = input
         .chars()
         .filter(|c| {
-            if *c == '\0' {
-                modified = true;
-                false
-            } else if c.is_control() && *c != '\n' && *c != '\r' && *c != '\t' {
+            if *c == '\0' || (c.is_control() && *c != '\n' && *c != '\r' && *c != '\t') {
                 modified = true;
                 false
             } else {

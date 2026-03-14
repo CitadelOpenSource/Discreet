@@ -129,7 +129,19 @@ pub async fn confirm_email(
     .execute(&state.db)
     .await?;
 
-    Ok(Json(serde_json::json!({ "message": "Email verified successfully" })))
+    // Invalidate cached user state so AuthUser picks up verified status immediately.
+    crate::citadel_auth::invalidate_user_cache(&state, auth.user_id).await;
+
+    // Issue a fresh access token so the client gets updated claims.
+    let access_token = crate::citadel_auth_handlers::issue_access_token_pub(
+        auth.user_id, auth.session_id, &state.config,
+    )?;
+
+    Ok(Json(serde_json::json!({
+        "message": "Email verified successfully",
+        "access_token": access_token,
+        "expires_in": state.config.jwt_expiry_secs,
+    })))
 }
 
 // ─── POST /auth/forgot-password ────────────────────────────────────────
