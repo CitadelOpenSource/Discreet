@@ -49,6 +49,7 @@ jsonwebtoken = "9"
 
 # ── Crypto (currently used) ───────────────────────────────
 sha2 = "0.10"
+hmac = "0.12"
 rand = "0.8"
 base64 = "0.22"
 totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }

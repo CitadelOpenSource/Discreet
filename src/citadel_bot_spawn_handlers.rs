@@ -449,6 +449,15 @@ pub async fn add_bot_to_server(
     ).fetch_one(&state.db).await?.unwrap_or(false);
     if !is_owner { return Err(AppError::Forbidden("Only server owner can add bots".into())); }
 
+    // Tier limit: max agents per server.
+    let owner_tier = sqlx::query_scalar!(
+        "SELECT account_tier FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    crate::discreet_tier_limits::check_agent_create(&state.db, server_id, &owner_tier).await?;
+
     let persona = built_in_personas().into_iter()
         .find(|p| p.id == req.persona)
         .unwrap_or_else(|| built_in_personas()[0].clone());

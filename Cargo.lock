@@ -510,6 +510,7 @@ dependencies = [
  "envy",
  "hex",
  "hkdf",
+ "hmac",
  "hyper",
  "jsonwebtoken",
  "openmls",

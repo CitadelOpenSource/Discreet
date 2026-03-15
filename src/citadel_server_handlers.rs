@@ -181,6 +181,15 @@ pub async fn create_server(
         ));
     }
 
+    // Tier limit: max servers per user.
+    let user_tier = sqlx::query_scalar!(
+        "SELECT account_tier FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    crate::discreet_tier_limits::check_server_create(&state.db, auth.user_id, &user_tier).await?;
+
     // Validate name.
     let name = req.name.trim().to_string();
     if name.is_empty() || name.len() > 128 {
@@ -806,6 +815,15 @@ pub async fn join_server(
     if already_member.unwrap_or(false) {
         return Err(AppError::Conflict("Already a member of this server".into()));
     }
+
+    // Tier limit: max members per server (based on server owner's tier).
+    let owner_tier = sqlx::query_scalar!(
+        "SELECT u.account_tier FROM servers s JOIN users u ON u.id = s.owner_id WHERE s.id = $1",
+        server_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    crate::discreet_tier_limits::check_member_join(&state.db, server_id, &owner_tier).await?;
 
     // Join.
     sqlx::query!(

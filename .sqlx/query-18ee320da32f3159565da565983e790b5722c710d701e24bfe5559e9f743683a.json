@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO subscriptions (user_id, tier, status, payment_provider, current_period_start, current_period_end)\n         VALUES ($1, $2, 'active', $3, NOW(), NOW() + INTERVAL '30 days')\n         ON CONFLICT (user_id) DO UPDATE SET\n             tier = $2,\n             status = 'active',\n             payment_provider = $3,\n             current_period_start = NOW(),\n             current_period_end = NOW() + INTERVAL '30 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18ee320da32f3159565da565983e790b5722c710d701e24bfe5559e9f743683a"
+}
