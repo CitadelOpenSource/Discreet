@@ -185,22 +185,22 @@ pub async fn list_reports(
     .fetch_all(&state.db)
     .await?;
 
-    let reports: Vec<ReportResponse> = rows.iter().map(|r| ReportResponse {
+    let reports: Vec<ReportResponse> = rows.into_iter().map(|r| ReportResponse {
         id: r.id,
         reporter_id: r.reporter_id,
-        reporter_username: r.reporter_username.clone(),
+        reporter_username: r.reporter_username,
         message_id: r.message_id,
         channel_id: r.channel_id,
         server_id: r.server_id,
-        reason: r.reason.clone(),
-        details: r.details.clone(),
-        status: r.status.clone(),
+        reason: r.reason,
+        details: r.details,
+        status: r.status,
         resolved_by: r.resolved_by,
         resolved_at: r.resolved_at.map(|ts: chrono::DateTime<chrono::Utc>| ts.to_rfc3339()),
         created_at: r.created_at.to_rfc3339(),
         message_content: r.message_content.as_ref().map(|b| String::from_utf8_lossy(b).to_string()),
         message_author_id: r.message_author_id,
-        message_author_username: r.message_author_username.clone(),
+        message_author_username: r.message_author_username,
     }).collect();
 
     Ok(Json(reports))

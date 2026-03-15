@@ -77,6 +77,12 @@ pub struct Config {
     /// Max requests per minute per IP (default: 120)
     #[serde(default = "default_rate_limit")]
     pub rate_limit_per_minute: u32,
+
+    // ── Uploads ───────────────────────────────────────────
+    /// Max upload body size in bytes (default: 25 MB = 26214400).
+    /// Applied as a body limit on file upload endpoints.
+    #[serde(default = "default_max_upload_bytes")]
+    pub max_upload_bytes: usize,
 }
 
 impl Config {
@@ -103,3 +109,4 @@ fn default_agent_key_secret() -> String { "CHANGE_ME_generate_with_openssl_rand_
 fn default_max_agents() -> u32 { 50 }
 fn default_federation_port() -> u16 { 8448 }
 fn default_rate_limit() -> u32 { 120 }
+fn default_max_upload_bytes() -> usize { 25 * 1024 * 1024 } // 25 MB

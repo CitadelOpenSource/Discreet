@@ -23,7 +23,7 @@ post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek", "dep:hkdf"]
 # ── Web framework ─────────────────────────────────────────
 axum = { version = "0.7", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
-tower = "0.4"
+tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "fs"] }
 hyper = { version = "1.0", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
@@ -86,6 +86,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 tokio-test = "0.4"
+proptest = "1"
 
 [profile.release]
 opt-level = 3

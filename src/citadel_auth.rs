@@ -76,12 +76,18 @@ pub async fn load_user_state(
     let cache_key = format!("auth_user:{}", user_id);
     let mut redis_conn = state.redis.clone();
 
-    // 1. Try Redis cache.
-    let cached: Option<String> = redis::cmd("GET")
+    // 1. Try Redis cache — fall through to DB on miss or error (fail-closed).
+    let cached: Option<String> = match redis::cmd("GET")
         .arg(&cache_key)
         .query_async(&mut redis_conn)
         .await
-        .unwrap_or(None);
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("Auth cache Redis miss (falling back to DB): {e}");
+            None
+        }
+    };
 
     if let Some(json_str) = cached {
         if let Ok(us) = serde_json::from_str::<CachedUserState>(&json_str) {

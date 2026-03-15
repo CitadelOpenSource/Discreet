@@ -192,11 +192,7 @@ pub async fn create_server(
 
     // Validate name.
     let name = req.name.trim().to_string();
-    if name.is_empty() || name.len() > 128 {
-        return Err(AppError::BadRequest(
-            "Server name must be 1-128 characters".into(),
-        ));
-    }
+    crate::discreet_input_validation::validate_server_name(&name)?;
 
     // Guard: prevent duplicate server creation (same name, same owner, within 10 seconds)
     let recent_dup = sqlx::query_scalar!(

@@ -138,6 +138,33 @@ pub async fn patch_my_settings(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpdateUserSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Validate string inputs
+    if let Some(ref tz) = req.timezone {
+        if tz.len() > 64 || tz.chars().any(|c| c.is_control()) {
+            return Err(AppError::BadRequest("Invalid timezone value".into()));
+        }
+    }
+    if let Some(ref theme) = req.theme {
+        if !matches!(theme.as_str(), "dark" | "light" | "onyx" | "midnight") {
+            return Err(AppError::BadRequest("Theme must be dark, light, onyx, or midnight".into()));
+        }
+    }
+    if let Some(ref fs) = req.font_size {
+        if !matches!(fs.as_str(), "small" | "medium" | "large" | "xl") {
+            return Err(AppError::BadRequest("Font size must be small, medium, large, or xl".into()));
+        }
+    }
+    if let Some(ref density) = req.message_density {
+        if !matches!(density.as_str(), "comfortable" | "compact" | "cozy") {
+            return Err(AppError::BadRequest("Message density must be comfortable, compact, or cozy".into()));
+        }
+    }
+    if let Some(cfs) = req.chat_font_size {
+        if !(12..=20).contains(&cfs) {
+            return Err(AppError::BadRequest("Chat font size must be 12-20".into()));
+        }
+    }
+
     sqlx::query!(
         "INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
         auth.user_id,
@@ -330,8 +357,8 @@ pub async fn set_timezone(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SetTimezoneRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    if req.timezone.len() > 64 {
-        return Err(AppError::BadRequest("Timezone must be 64 characters or fewer".into()));
+    if req.timezone.len() > 64 || req.timezone.chars().any(|c| c.is_control()) {
+        return Err(AppError::BadRequest("Invalid timezone value".into()));
     }
 
     sqlx::query!(

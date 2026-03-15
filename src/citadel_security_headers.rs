@@ -5,24 +5,23 @@
 // Headers set on ALL responses:
 //   Content-Security-Policy:
 //     default-src 'self'
-//     script-src  'self' 'unsafe-inline'
+//     script-src  'self' https://challenges.cloudflare.com
 //     style-src   'self' 'unsafe-inline'
-//     connect-src 'self' ws: wss:
-//     img-src     'self' data: blob:
-//     media-src   'self' data: blob:
+//     img-src     'self' data: https:
+//     connect-src 'self' wss: https://api.discreetai.net
+//     frame-src   https://challenges.cloudflare.com
 //     font-src    'self'
-//     frame-src   https://www.youtube-nocookie.com
 //     object-src  'none'
-//     frame-ancestors 'none'
 //     base-uri    'self'
-//     form-action 'self'
+//     frame-ancestors 'none'
 //
 //   X-Frame-Options:            DENY
 //   X-Content-Type-Options:     nosniff
-//   X-XSS-Protection:           0  (CSP is authoritative; legacy header disabled)
-//   Strict-Transport-Security:  max-age=31536000; includeSubDomains
+//   Strict-Transport-Security:  max-age=63072000; includeSubDomains; preload
 //   Referrer-Policy:            strict-origin-when-cross-origin
-//   Permissions-Policy:         camera=(self), microphone=(self), geolocation=()
+//   Permissions-Policy:         camera=(), microphone=(), geolocation=()
+//   Cross-Origin-Opener-Policy: same-origin
+//   (X-XSS-Protection intentionally omitted — deprecated)
 //
 // Additional behaviour:
 //   Cache-Control: no-store on /auth/* and /@me responses.
@@ -61,10 +60,8 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     // Redundant with `frame-ancestors 'none'` in CSP, but kept for older UAs.
     h.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
 
-    // ── X-XSS-Protection ────────────────────────────────────────────────────
-    // Explicitly disable the legacy XSS auditor present in some older browsers.
-    // Modern browsers rely on CSP instead.
-    h.insert("X-XSS-Protection", HeaderValue::from_static("0"));
+    // X-XSS-Protection intentionally omitted — deprecated and can cause issues
+    // in modern browsers. CSP is the authoritative XSS defense.
 
     // ── Referrer-Policy ─────────────────────────────────────────────────────
     // Send the full URL as Referer for same-origin requests; send only the
@@ -75,46 +72,39 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     );
 
     // ── Permissions-Policy ──────────────────────────────────────────────────
-    // camera=(self)      — required for in-app video calls
-    // microphone=(self)  — required for voice channels
-    // geolocation=()     — not used; deny entirely
+    // Deny all permissions by default. WebRTC getUserMedia works independently
+    // of the Permissions-Policy header — it uses the browser permission prompt.
     h.insert(
         "Permissions-Policy",
-        HeaderValue::from_static("camera=(self), microphone=(self), geolocation=()"),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
     );
 
     // ── Content-Security-Policy ─────────────────────────────────────────────
-    // Path-conditional CSP:
-    //   /legacy/* → COMPAT: 'unsafe-inline' for in-browser Babel/JSX
-    //   everything else (Vite client at /, API) → STRICT
+    // Strict CSP for all responses. Cloudflare Turnstile requires script-src
+    // and frame-src allowances. connect-src allows the API and WSS.
     let csp = if path.starts_with("/legacy") {
         // Legacy client needs 'unsafe-inline' for in-browser Babel/JSX.
         "default-src 'self'; \
-         script-src 'self' 'unsafe-inline'; \
+         script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; \
          style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws: wss:; \
-         img-src 'self' data: blob:; \
-         media-src 'self' data: blob:; \
+         img-src 'self' data: https:; \
+         connect-src 'self' wss: https://api.discreetai.net; \
+         frame-src https://challenges.cloudflare.com; \
          font-src 'self'; \
-         frame-src https://www.youtube-nocookie.com; \
          object-src 'none'; \
-         frame-ancestors 'none'; \
          base-uri 'self'; \
-         form-action 'self'"
+         frame-ancestors 'none'"
     } else {
-        // Strict CSP for the Vite client (served at /) and all API responses.
         "default-src 'self'; \
-         script-src 'self'; \
+         script-src 'self' https://challenges.cloudflare.com; \
          style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws: wss:; \
-         img-src 'self' data: blob:; \
-         media-src 'self' data: blob:; \
+         img-src 'self' data: https:; \
+         connect-src 'self' wss: https://api.discreetai.net; \
+         frame-src https://challenges.cloudflare.com; \
          font-src 'self'; \
-         frame-src https://www.youtube-nocookie.com https://challenges.cloudflare.com; \
          object-src 'none'; \
-         frame-ancestors 'none'; \
          base-uri 'self'; \
-         form-action 'self'"
+         frame-ancestors 'none'"
     };
     h.insert(
         "Content-Security-Policy",
@@ -122,12 +112,19 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     );
 
     // ── Strict-Transport-Security ────────────────────────────────────────────
-    // Tell browsers to use HTTPS exclusively for the next year and to apply
-    // the policy to all subdomains.  Reverse proxies with TLS termination
-    // (nginx, Caddy, AWS ALB) will forward this header to clients.
+    // 2-year max-age with includeSubDomains and preload.
+    // Eligible for HSTS preload list (https://hstspreload.org).
     h.insert(
         "Strict-Transport-Security",
-        HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
+    );
+
+    // ── Cross-Origin-Opener-Policy ────────────────────────────────────────
+    // Isolate the browsing context to prevent cross-origin attacks
+    // (Spectre-class side-channel mitigations).
+    h.insert(
+        "Cross-Origin-Opener-Policy",
+        HeaderValue::from_static("same-origin"),
     );
 
     // ── Cache-Control on sensitive endpoints ─────────────────────────────────
@@ -141,4 +138,62 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     }
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::get, Router};
+    use tower::util::ServiceExt;
+
+    async fn build_app() -> Router {
+        Router::new()
+            .route("/health", get(|| async { "OK" }))
+            .layer(axum::middleware::from_fn(security_headers))
+    }
+
+    #[tokio::test]
+    async fn test_security_headers_present_on_health() {
+        let app = build_app().await;
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+
+        let h = resp.headers();
+        assert_eq!(h.get("X-Content-Type-Options").unwrap(), "nosniff");
+        assert_eq!(h.get("X-Frame-Options").unwrap(), "DENY");
+        assert_eq!(h.get("Referrer-Policy").unwrap(), "strict-origin-when-cross-origin");
+        assert!(h.get("Strict-Transport-Security").unwrap().to_str().unwrap().contains("63072000"));
+        assert!(h.get("Strict-Transport-Security").unwrap().to_str().unwrap().contains("preload"));
+        assert_eq!(h.get("Cross-Origin-Opener-Policy").unwrap(), "same-origin");
+        assert!(h.get("Content-Security-Policy").is_some());
+        assert!(h.get("Permissions-Policy").is_some());
+        // X-XSS-Protection must NOT be present (deprecated)
+        assert!(h.get("X-XSS-Protection").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_csp_includes_cloudflare() {
+        let app = build_app().await;
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+
+        let csp = resp.headers()
+            .get("Content-Security-Policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        assert!(csp.contains("challenges.cloudflare.com"), "CSP must include Cloudflare Turnstile");
+        assert!(csp.contains("script-src"), "CSP must have script-src directive");
+        assert!(csp.contains("frame-src"), "CSP must have frame-src directive");
+        assert!(csp.contains("object-src 'none'"), "CSP must block object-src");
+        assert!(csp.contains("frame-ancestors 'none'"), "CSP must block frame-ancestors");
+        assert!(csp.contains("wss:"), "CSP must allow WebSocket connections");
+    }
 }

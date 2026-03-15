@@ -794,7 +794,7 @@ pub async fn compliance_export(
     // Rate limit: 1 export per hour
     let rate_key = format!("compliance_export:{}", caller.user_id);
     let mut redis_conn = state.redis.clone();
-    let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
+    let count: i64 = crate::citadel_error::redis_or_503(redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await)?;
     if count == 1 {
         let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(3600i64).query_async(&mut redis_conn).await;
     }

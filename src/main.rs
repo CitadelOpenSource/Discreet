@@ -759,7 +759,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // CSRF (double-submit cookie) sits after Security Headers so that 403
         // CSRF rejection responses also carry all security headers.  Exempt
         // paths: /api/v1/auth/login, /register, /refresh, /ws, /health.
-        .layer(axum::extract::DefaultBodyLimit::max(35 * 1024 * 1024)) // 35 MB — 25 MB file limit + base64 overhead
+        // Body limit: config max_upload_bytes * 1.4 (base64 overhead) + 1 MB for JSON wrapper.
+        // Per-endpoint validators enforce tighter limits. Oversized requests get 413 before full read.
+        .layer(axum::extract::DefaultBodyLimit::max(state.config.max_upload_bytes * 14 / 10 + 1024 * 1024))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(state.clone(), maintenance_middleware))

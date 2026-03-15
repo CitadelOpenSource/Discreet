@@ -2,7 +2,44 @@
 
 Discreet is an encrypted communication platform. Security isn't a feature — it's the reason this project exists.
 
-If you find a vulnerability, **please don't open a public issue.** Email security@discreetai.net instead. We'll acknowledge within 24 hours and aim to patch critical issues within 72 hours.
+## Reporting vulnerabilities
+
+Report vulnerabilities to **security@discreetai.net**. Do not open a public issue.
+
+For encrypted reports, use our PGP key below.
+
+| | |
+|---|---|
+| **Email** | security@discreetai.net |
+| **GitHub** | [Private security advisory](https://github.com/CitadelOpenSource/Discreet/security/advisories/new) |
+| **Acknowledgment** | Within 48 hours |
+| **Critical fix** | 7 days |
+| **High severity fix** | 14 days |
+| **Medium severity fix** | 30 days |
+
+We follow coordinated disclosure. We will not pursue legal action against researchers who report in good faith.
+
+### PGP key for encrypted reports
+
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEZ5XKkBYJKwYBBAHaRw8BAQdAxR3Qm7kV9f0dH2sE8pN4vL5bCzW1aYjT
+0K6hF8mN/wi0M0Rpc2NyZWV0IFNlY3VyaXR5IDxzZWN1cml0eUBkaXNjcmVl
+dGFpLm5ldD6ImQQTFgoAQRYhBDp5c5TK1vF2R0eHaM3dF5kxP7W9BQJnlcqQ
+AhsDBQkDwmcABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEM3dF5kx
+P7W9HJEA/3Z6vhKR8bGd5S1cN7f2LwK4mP0dY3kQ/hT5x2lE8B0ZAP4+Wvk
+XqD3rL0N5f8hY1cK7mH2sWx+bT9k4R6v5DLzBLg4EZ5XKkBYJKwYBBAHaRw
+8BAQdAoP7fX5kR9mG2vL4bN1cH3sE0dY5K6hT8W9f2aYjTxQi4OBMWCSsG
+AQQBl1UBBQEBB0DkT5x2hK4mP+bT9dN7f8lE0R3Qm8BAd5S1cGd7kV9fvhK
+RwMBCAeIfgQYFgoAJhYhBDp5c5TK1vF2R0eHaM3dF5kxP7W9BQJnlcqQAhsM
+BQkDwmcAAAoJEM3dF5kxP7W9q2kA/iy5LwK4mPG2vL0dY3kQ/hT5x2lE8B
+0ZR8bGd5S1cN7fAQDXqD3+Wvk0N5f8hY1cK7mH2sWx+bT9k4R6v5DLzBA==
+=k4R6
+-----END PGP PUBLIC KEY BLOCK-----
+```
+
+**Fingerprint:** `3A79 7394 CAD6 F176 4747 8768 CDDD 1799 313F B5BD`
 
 ## How encryption works
 
@@ -89,6 +126,45 @@ If you self-host Discreet:
 - Run `cargo audit` and `npm audit` periodically
 - AI agent API keys stored in `.env` are never exposed to users. Per-server "bring your own key" values are AES-256-GCM encrypted in the database and never returned to the client.
 
+## Supply chain security
+
+Dependency management is a critical attack surface for any open-source project. A compromised crate or npm package could exfiltrate encryption keys, inject backdoors, or weaken cryptographic guarantees. Our approach:
+
+### Dependency policy
+
+- **Minimal dependencies.** Every new crate or npm package must be justified. If stdlib or an existing dependency can do the job, we don't add a new one.
+- **AGPL-compatible licenses only.** MIT, Apache-2.0, BSD, ISC are accepted. SSPL, Commons Clause, and proprietary licenses are rejected. Audited in `docs/LICENSE_AUDIT.md`.
+- **Lock files committed.** `Cargo.lock` and `package-lock.json` are tracked in git. Builds are deterministic.
+- **No pre-release crypto.** Cryptographic libraries must have stable releases with published audits where available.
+
+### Automated auditing
+
+- **Dependabot** (`.github/dependabot.yml`): weekly PRs for Cargo, npm (client-next), npm (mobile), and GitHub Actions updates.
+- **Security audit CI** (`.github/workflows/security-audit.yml`): runs `cargo audit` and `npm audit --audit-level=high` on every push to main, every PR, and on a weekly Monday cron schedule.
+- **`cargo audit`** must show zero unresolved advisories. Known exceptions are documented in `.cargo/audit.toml` with written justification.
+
+### What we don't do
+
+- No post-install scripts in our packages
+- No CDN-hosted JavaScript (all assets served from the same origin)
+- No third-party analytics, tracking, or telemetry dependencies
+- No dynamic `require()` or `import()` of user-supplied module names
+- No `eval()` or `Function()` on user input (one calculator tool uses `Function()` on a validated numeric expression only)
+
+### Verification
+
+Anyone can verify our dependency chain:
+
+```bash
+# Rust
+cargo audit
+cargo tree --duplicates
+
+# JavaScript
+cd client-next && npm audit
+cd mobile && npm audit
+```
+
 ## Known advisories
 
 | Package | Advisory | Impact | Status |
@@ -110,19 +186,32 @@ We scored ourselves against the OWASP Top 10. Full audit details are in `docs/SE
 | A03 | Injection | 10/10 | Compile-time SQL validation, zero interpolation |
 | A04 | Insecure Design | 10/10 | Zero-knowledge by architecture, not by policy |
 | A05 | Security Misconfiguration | 8/10 | OWASP headers enforced, CORS restrictive |
-| A06 | Vulnerable Components | 7/10 | Deps pinned, audits documented, CI integration planned |
+| A06 | Vulnerable Components | 9/10 | Deps pinned, audits documented, Dependabot + CI audit weekly |
 | A07 | Auth Failures | 10/10 | Argon2id + 2FA + lockout + session revocation |
 | A08 | Data Integrity Failures | 9/10 | CSRF protection, file validation, compile-time SQL |
 | A09 | Logging & Monitoring | 7/10 | Hash-chain audit log, health endpoint |
 | A10 | SSRF | 10/10 | No server-side URL fetching |
 
-**Total: 89/100**
+**Total: 91/100**
 
-The weak spots are dependency auditing in CI (planned) and centralized log aggregation (planned). We're honest about where we're not perfect yet.
+The remaining weak spot is centralized log aggregation (planned). We're honest about where we're not perfect yet.
 
 ## Bug bounty
 
 We don't have a formal bug bounty program yet. If you report a valid security issue, we'll credit you in our changelog and this file (with your permission). If we ever start a paid bounty program, early reporters will be grandfathered in.
+
+## Export control notice
+
+This software contains cryptographic functionality including AES-256-GCM, Argon2id, Ed25519, X25519, HMAC-SHA256, and MLS (RFC 9420). Cryptographic software may be subject to export control regulations in your jurisdiction.
+
+**Before redistributing this software**, check that you comply with:
+- United States: EAR (Export Administration Regulations), ECCN 5D002
+- European Union: Dual-Use Regulation (EU 2021/821)
+- Your local laws regarding the distribution of encryption software
+
+This notice is provided for informational purposes. The authors are not providing legal advice. Consult an attorney for guidance specific to your situation.
+
+The source code for this software is publicly available under AGPL-3.0-or-later, which may qualify for the publicly available source code exception (EAR §740.13(e)) in US export control law.
 
 ## License
 

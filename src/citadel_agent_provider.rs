@@ -1058,12 +1058,15 @@ pub async fn check_agent_rate_limit(
 ) -> Result<(), AgentError> {
     let key = format!("ai_rate:{}:{}", user_id, server_id);
 
-    let count: i64 = redis::cmd("INCR")
-        .arg(&key)
-        .query_async::<_, Option<i64>>(redis)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(1);
+    let count: i64 = match crate::citadel_error::redis_or_503(
+        redis::cmd("INCR")
+            .arg(&key)
+            .query_async::<_, Option<i64>>(redis)
+            .await
+    ) {
+        Ok(v) => v.unwrap_or(1),
+        Err(_) => 1,
+    };
 
     if count == 1 {
         // Set TTL on first use

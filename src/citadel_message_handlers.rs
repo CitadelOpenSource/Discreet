@@ -279,7 +279,7 @@ pub async fn send_message(
     let has_everyone = mentions.contains(&everyone_uuid);
 
     // Cap individual mentions at 20.
-    let raw_individual_mentions: Vec<Uuid> = mentions.iter().filter(|&&id| id != everyone_uuid).cloned().collect();
+    let raw_individual_mentions: Vec<Uuid> = mentions.iter().filter(|&&id| id != everyone_uuid).copied().collect();
     if raw_individual_mentions.len() > 20 {
         return Err(AppError::BadRequest("Too many mentions — max 20 per message".into()));
     }
@@ -333,7 +333,7 @@ pub async fn send_message(
                 // Rate limit: once per 5 min per channel
                 let rate_key = format!("mention_everyone:{}:{}:{}", auth.user_id, channel_id, channel.server_id);
                 let mut redis_conn = state.redis.clone();
-                let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
+                let count: i64 = crate::citadel_error::redis_or_503(redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await)?;
                 if count == 1 {
                     let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(300i64).query_async(&mut redis_conn).await;
                 }
@@ -359,12 +359,12 @@ pub async fn send_message(
     // Build final mention list: strip unauthorized @everyone/@here pings
     let effective_mentions: Vec<Uuid> = mentions.iter()
         .filter(|&&id| !(strip_everyone && id == everyone_uuid || strip_here && id == here_uuid))
-        .cloned()
+        .copied()
         .collect();
     // Recompute individual mentions from the effective list
     let individual_mentions: Vec<Uuid> = effective_mentions.iter()
         .filter(|&&id| id != everyone_uuid && id != here_uuid)
-        .cloned()
+        .copied()
         .collect();
 
     let mentions_json = serde_json::json!(effective_mentions);

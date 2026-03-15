@@ -133,3 +133,13 @@ impl IntoResponse for AppError {
         }))).into_response()
     }
 }
+
+/// Convert a Redis error into a 503 Service Unavailable.
+/// Use this for rate limit checks to ensure fail-closed behavior:
+/// if Redis is down, the request is REJECTED, not allowed through.
+pub fn redis_or_503<T>(result: Result<T, redis::RedisError>) -> Result<T, AppError> {
+    result.map_err(|e| {
+        tracing::error!("Redis unavailable (fail-closed): {e}");
+        AppError::ServiceUnavailable("Service temporarily unavailable — please try again".into())
+    })
+}

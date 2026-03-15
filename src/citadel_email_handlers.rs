@@ -293,12 +293,12 @@ pub async fn resend_verification(
     let rate_key = format!("resend_verify:{}", auth.user_id);
     let mut redis_conn = state.redis.clone();
 
-    let count: i64 = redis::cmd("INCR")
-        .arg(&rate_key)
-        .query_async::<_, Option<i64>>(&mut redis_conn)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(1);
+    let count: i64 = crate::citadel_error::redis_or_503(
+        redis::cmd("INCR")
+            .arg(&rate_key)
+            .query_async::<_, Option<i64>>(&mut redis_conn)
+            .await
+    )?.unwrap_or(1);
 
     if count == 1 {
         // Set a 1-hour sliding window on the first increment.
