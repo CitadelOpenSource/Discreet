@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_bookmarks (user_id, message_id, channel_id, server_id, note)\n         VALUES ($1, $2, $3, $4, $5)\n         ON CONFLICT (user_id, message_id) DO UPDATE SET note = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3094c4363ddf9afd576874f00c14ef1f8577d98d854bf2874578560c90e14c81"
+}

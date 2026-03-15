@@ -332,16 +332,27 @@ pub async fn send_message(
         )
         .await;
 
-    // Push mention_notification for each mentioned user (excluding sender).
-    for &uid in &individual_mentions {
-        if uid != auth.user_id {
-            state.ws_broadcast(channel.server_id, serde_json::json!({
-                "type": "mention_notification",
-                "channel_id": channel_id,
-                "message_id": message_id,
-                "author_id": auth.user_id,
-                "mentioned_user_id": uid,
-            })).await;
+    // Push mention_notification for each mentioned user (excluding sender and
+    // members who set notification_level = 'nothing' for this server).
+    {
+        let muted_uids: Vec<Uuid> = sqlx::query_scalar!(
+            "SELECT user_id FROM server_members WHERE server_id = $1 AND notification_level = 'nothing'",
+            channel.server_id,
+        )
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+        for &uid in &individual_mentions {
+            if uid != auth.user_id && !muted_uids.contains(&uid) {
+                state.ws_broadcast(channel.server_id, serde_json::json!({
+                    "type": "mention_notification",
+                    "channel_id": channel_id,
+                    "message_id": message_id,
+                    "author_id": auth.user_id,
+                    "mentioned_user_id": uid,
+                })).await;
+            }
         }
     }
 

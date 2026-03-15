@@ -78,6 +78,7 @@ use citadel_server::citadel_premium;
 use citadel_server::citadel_platform_settings;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
+use citadel_server::discreet_bookmark_handlers;
 
 /// Middleware: maintenance mode gate.
 /// If maintenance_mode is enabled in platform_settings (cached in Redis),
@@ -464,6 +465,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/notifications/unread-count", axum::routing::get(citadel_notification_handlers::unread_count))
         .route("/notifications/read-all", axum::routing::post(citadel_notification_handlers::mark_all_read))
         .route("/notifications/:notification_id/read", axum::routing::patch(citadel_notification_handlers::mark_read))
+        // Bookmarks
+        .route("/bookmarks", axum::routing::post(discreet_bookmark_handlers::create_bookmark).get(discreet_bookmark_handlers::list_bookmarks))
+        .route("/bookmarks/:message_id", axum::routing::delete(discreet_bookmark_handlers::delete_bookmark))
         // Soundboard
         .route("/servers/:server_id/automod", axum::routing::get(citadel_automod::get_automod_config).put(citadel_automod::update_automod_config))
         .route("/servers/:server_id/soundboard", axum::routing::get(citadel_soundboard_handlers::list_clips).post(citadel_soundboard_handlers::upload_clip))
@@ -532,7 +536,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/users/@me/export", axum::routing::get(citadel_user_handlers::export_my_data))
         .route("/users/@me/status", axum::routing::put(citadel_user_handlers::update_status))
         .route("/users/@me/settings", axum::routing::get(citadel_settings_handlers::get_my_settings).patch(citadel_settings_handlers::patch_my_settings))
+        .route("/settings/timezone", axum::routing::post(citadel_settings_handlers::set_timezone))
         .route("/servers/:server_id/notification-settings", axum::routing::get(citadel_settings_handlers::get_server_notification_settings).patch(citadel_settings_handlers::patch_server_notification_settings))
+        .route("/servers/:server_id/notification-level", axum::routing::patch(citadel_server_handlers::set_notification_level))
+        .route("/servers/:server_id/visibility", axum::routing::patch(citadel_server_handlers::set_visibility_override))
         .route("/users/search", axum::routing::get(citadel_friend_handlers::search_users))
         .route("/users/:id", axum::routing::get(citadel_user_handlers::get_user))
         .route("/users/:id/block", axum::routing::post(citadel_friend_handlers::block_user).delete(citadel_friend_handlers::unblock_user))

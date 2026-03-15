@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n         ORDER BY u.is_bot ASC, m.joined_at\n         LIMIT $2 OFFSET $3",
+  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n         ORDER BY u.is_bot ASC, m.joined_at\n         LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,16 @@
         "ordinal": 5,
         "name": "joined_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "visibility_override",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -47,8 +57,10 @@
       true,
       false,
       true,
-      false
+      false,
+      false,
+      true
     ]
   },
-  "hash": "c863d2d8eb29039d0cbbb3f584c4e7c83414b84c5ef2b5b127b6bf39ed03ac25"
+  "hash": "80fb36c7ae9f51924625b80ff217c4f82f3186b6dff6c0109c49e459bee8dfb0"
 }

@@ -35,6 +35,20 @@ pub async fn broadcast_typing_start(
     channel_id: Uuid,
     expected_server_id: Option<Uuid>,
 ) -> Result<(), AppError> {
+    // Check if the user has typing indicators enabled (privacy preference).
+    let typing_enabled = sqlx::query_scalar!(
+        r#"SELECT show_typing_indicator as "show_typing_indicator!" FROM user_settings WHERE user_id = $1"#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !typing_enabled {
+        // User has opted out of typing indicators — silently succeed.
+        return Ok(());
+    }
+
     // Verify membership and fetch server + username for payload.
     let row = sqlx::query!(
         "SELECT c.server_id, u.username

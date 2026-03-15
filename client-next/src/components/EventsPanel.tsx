@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { T, getInp, btn } from '../theme';
 import { api } from '../api/CitadelAPI';
+import { useTimezone } from '../hooks/TimezoneContext';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -37,8 +38,8 @@ export interface EventsPanelProps {
 
 // ─── Helpers ──────────────────────────────────────────────
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function fmtDate(iso: string, tz?: string): string {
+  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: tz });
 }
 
 function isPast(iso: string): boolean { return new Date(iso) < new Date(); }
@@ -184,6 +185,7 @@ function EventCard({ event, onRsvp, onDelete, isOwner }: {
   onDelete: (eid: string) => Promise<void>;
   isOwner: boolean;
 }) {
+  const { timezone } = useTimezone();
   const [busy, setBusy] = useState(false);
   const past = isPast(event.start_time);
 
@@ -211,8 +213,8 @@ function EventCard({ event, onRsvp, onDelete, isOwner }: {
             {event.title}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.mt, flexWrap: 'wrap', marginTop: 2 }}>
-            <span>{fmtDate(event.start_time)}</span>
-            {event.end_time && <span>→ {fmtDate(event.end_time)}</span>}
+            <span>{fmtDate(event.start_time, timezone)}</span>
+            {event.end_time && <span>→ {fmtDate(event.end_time, timezone)}</span>}
             {!past && <span style={{ color: T.ac, fontWeight: 600 }}>{timeUntil(event.start_time)}</span>}
             {past && <span>Ended</span>}
           </div>

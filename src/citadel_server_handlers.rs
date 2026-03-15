@@ -134,6 +134,8 @@ pub struct MemberInfo {
     pub nickname: Option<String>,
     pub is_bot: bool,
     pub joined_at: String,
+    pub notification_level: String,
+    pub visibility_override: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -870,7 +872,7 @@ pub async fn list_members(
     let offset = params.offset.max(0);
 
     let rows = sqlx::query!(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at
+        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override
          FROM server_members m
          INNER JOIN users u ON u.id = m.user_id
          WHERE m.server_id = $1
@@ -892,10 +894,94 @@ pub async fn list_members(
             nickname: r.nickname,
             is_bot: r.is_bot,
             joined_at: r.joined_at.to_rfc3339(),
+            notification_level: r.notification_level,
+            visibility_override: r.visibility_override,
         })
         .collect();
 
     Ok(Json(members))
+}
+
+// ─── PATCH /servers/:id/notification-level ──────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateNotificationLevelRequest {
+    pub notification_level: String,
+}
+
+/// PATCH /servers/:id/notification-level — set per-server notification preference.
+pub async fn set_notification_level(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<UpdateNotificationLevelRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !matches!(req.notification_level.as_str(), "all" | "mentions" | "nothing") {
+        return Err(AppError::BadRequest("notification_level must be 'all', 'mentions', or 'nothing'".into()));
+    }
+
+    let result = sqlx::query!(
+        "UPDATE server_members SET notification_level = $1 WHERE server_id = $2 AND user_id = $3",
+        req.notification_level,
+        server_id,
+        auth.user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Not a member of this server".into()));
+    }
+
+    Ok(Json(serde_json::json!({ "notification_level": req.notification_level })))
+}
+
+// ─── PATCH /servers/:id/visibility ──────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SetVisibilityRequest {
+    /// null to clear override (use global), or "online"/"idle"/"invisible"
+    pub visibility_override: Option<String>,
+}
+
+/// PATCH /servers/:id/visibility — set per-server online appearance.
+pub async fn set_visibility_override(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<SetVisibilityRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if let Some(ref v) = req.visibility_override {
+        if !matches!(v.as_str(), "online" | "idle" | "invisible") {
+            return Err(AppError::BadRequest("visibility_override must be 'online', 'idle', 'invisible', or null".into()));
+        }
+    }
+
+    let result = sqlx::query!(
+        "UPDATE server_members SET visibility_override = $1 WHERE server_id = $2 AND user_id = $3",
+        req.visibility_override,
+        server_id,
+        auth.user_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Not a member of this server".into()));
+    }
+
+    // Re-broadcast presence so the override takes effect.
+    // Read the user's actual global status from the presence map, then
+    // set_presence will apply per-server overrides from the DB.
+    let actual_status = {
+        let map = state.presence.read().await;
+        map.get(&auth.user_id)
+            .map(|p| p.status.clone())
+            .unwrap_or(crate::citadel_state::PresenceStatus::Online)
+    };
+    state.set_presence(auth.user_id, actual_status, server_id).await;
+
+    Ok(Json(serde_json::json!({ "visibility_override": req.visibility_override })))
 }
 
 // ─── POST /servers/:id/invites ──────────────────────────────────────────
@@ -1220,7 +1306,7 @@ pub async fn search_members(
 
     let pattern = format!("%{}%", q);
     let rows = sqlx::query!(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at
+        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override
          FROM server_members m
          INNER JOIN users u ON u.id = m.user_id
          WHERE m.server_id = $1
@@ -1242,6 +1328,8 @@ pub async fn search_members(
             nickname: r.nickname,
             is_bot: r.is_bot,
             joined_at: r.joined_at.to_rfc3339(),
+            notification_level: r.notification_level,
+            visibility_override: r.visibility_override,
         })
         .collect();
 

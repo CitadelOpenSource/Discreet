@@ -137,6 +137,8 @@ impl AppState {
     }
 
     /// Set a user's presence and broadcast the change to all their servers.
+    /// Per-server visibility_override is checked: if a server has an override,
+    /// that status is broadcast instead of the user's actual status.
     pub async fn set_presence(&self, user_id: Uuid, status: PresenceStatus, server_id: Uuid) {
         let mut map = self.presence.write().await;
         let entry = map.entry(user_id).or_insert_with(|| UserPresence {
@@ -156,16 +158,32 @@ impl AppState {
         let status_emoji = entry.status_emoji.clone();
         drop(map);
 
-        // Broadcast to all servers this user is in.
-        let event = serde_json::json!({
-            "type": "presence_update",
-            "user_id": user_id,
-            "status": status.to_string(),
-            "custom_status": custom_status,
-            "status_emoji": status_emoji,
-        });
+        // Query per-server visibility overrides for this user.
+        let overrides: HashMap<Uuid, String> = sqlx::query!(
+            "SELECT server_id, visibility_override FROM server_members WHERE user_id = $1 AND visibility_override IS NOT NULL",
+            user_id,
+        )
+        .fetch_all(&self.db)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| r.visibility_override.map(|v| (r.server_id, v)))
+        .collect();
+
+        // Broadcast to all servers, using override status when set.
         for sid in servers {
-            self.ws_broadcast(sid, event.clone()).await;
+            let effective_status = overrides.get(&sid).map_or_else(
+                || status.to_string(),
+                |v| v.clone(),
+            );
+            let event = serde_json::json!({
+                "type": "presence_update",
+                "user_id": user_id,
+                "status": effective_status,
+                "custom_status": custom_status,
+                "status_emoji": status_emoji,
+            });
+            self.ws_broadcast(sid, event).await;
         }
     }
 

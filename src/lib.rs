@@ -60,3 +60,4 @@ pub mod citadel_typing;
 pub mod citadel_user_handlers;
 pub mod citadel_waitlist;
 pub mod citadel_websocket;
+pub mod discreet_bookmark_handlers;
