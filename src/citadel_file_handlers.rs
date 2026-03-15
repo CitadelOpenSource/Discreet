@@ -92,6 +92,15 @@ pub async fn upload_file_blob(
     if blob_bytes.is_empty() {
         return Err(AppError::BadRequest("File blob cannot be empty".into()));
     }
+
+    // Tier limit: upload size.
+    let uploader_tier = sqlx::query_scalar!(
+        "SELECT account_tier FROM users WHERE id = $1",
+        auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    crate::discreet_tier_limits::check_upload_size(blob_bytes.len(), &uploader_tier)?;
     let clean_filename = validate_blob_upload(
         &blob_bytes,
         req.filename.as_deref(),

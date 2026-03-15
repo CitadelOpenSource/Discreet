@@ -79,6 +79,7 @@ use citadel_server::citadel_platform_settings;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
 use citadel_server::discreet_ack_handlers;
+use citadel_server::discreet_billing_handlers;
 use citadel_server::discreet_bookmark_handlers;
 use citadel_server::discreet_channel_category_handlers;
 use citadel_server::discreet_playbook_handlers;
@@ -609,6 +610,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/subscription", axum::routing::get(citadel_premium::get_subscription)
             .post(citadel_premium::create_subscription)
             .delete(citadel_premium::cancel_subscription))
+        // ── Billing ──
+        .route("/billing/status", axum::routing::get(discreet_billing_handlers::billing_status))
+        .route("/billing/create-checkout", axum::routing::post(discreet_billing_handlers::create_checkout))
         // ── Waitlist ──
         .route("/waitlist", axum::routing::post(citadel_waitlist::join_waitlist))
         // ── Developer API Tokens ──
@@ -702,6 +706,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         }))
         .route("/ws", axum::routing::get(citadel_websocket::ws_connect))
+        // Payment webhooks (unversioned — called by external services)
+        .route("/webhooks/btcpay", axum::routing::post(discreet_billing_handlers::btcpay_webhook))
+        .route("/webhooks/stripe", axum::routing::post(discreet_billing_handlers::stripe_webhook))
         // Legacy client — emergency fallback only.
         .route(
             "/legacy/",

@@ -488,71 +488,144 @@ function PhoneStep({ me, onDone, onSkip }: { me: any; onDone: () => void; onSkip
 
 const PAID_TIERS: Tier[] = ['pro', 'teams', 'enterprise'];
 
+const PLAN_FEATURES = [
+  { label: 'Servers',             free: '5',    pro: '20',    ent: 'Unlimited' },
+  { label: 'Members per server',  free: '50',   pro: '500',   ent: 'Unlimited' },
+  { label: 'File upload',         free: '25 MB', pro: '100 MB', ent: '500 MB' },
+  { label: 'AI agents',           free: '1',    pro: '5',     ent: 'Unlimited' },
+  { label: 'Custom emoji',        free: '50',   pro: '500',   ent: 'Unlimited' },
+  { label: 'Audit log',           free: '7 days', pro: '90 days', ent: 'Forever' },
+  { label: 'Priority support',    free: '',     pro: 'check', ent: 'check' },
+  { label: 'Custom branding',     free: '',     pro: '',      ent: 'check' },
+  { label: 'SSO / SAML',          free: '',     pro: '',      ent: 'check' },
+  { label: 'SLA guarantee',       free: '',     pro: '',      ent: 'check' },
+];
+
 function PremiumStep({ tier, onClose }: { tier: Tier; onClose: () => void }) {
+  const [showPayment, setShowPayment] = useState<string | null>(null); // 'pro' or 'teams'
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Self-hosted: skip the entire upgrade flow
+  const isSelfHosted = localStorage.getItem('d_self_hosted') === 'true';
+  if (isSelfHosted) {
+    return (
+      <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+        <div style={{ fontSize: 28, marginBottom: 12 }}>🏠</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>All features unlocked</div>
+        <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, marginBottom: 16 }}>Self-hosted instance — enterprise-tier limits apply to all users.</div>
+        <button onClick={onClose} style={{ padding: '8px 24px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 13, cursor: 'pointer' }}>Close</button>
+      </div>
+    );
+  }
+
+  const startCheckout = async (selectedTier: string, method: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.fetch('/billing/create-checkout', {
+        method: 'POST',
+        body: JSON.stringify({ tier: selectedTier, payment_method: method }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || 'Checkout failed');
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to create checkout');
+    }
+    setLoading(false);
+  };
+
+  const check = <span style={{ color: T.ac, fontWeight: 700 }}>✓</span>;
+  const dash = <span style={{ color: T.bd }}>—</span>;
+  const cell = (v: string) => v === 'check' ? check : v === '' ? dash : <span>{v}</span>;
+
   return (
     <div>
-      <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>⚡</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.tx, textAlign: 'center', marginBottom: 6 }}>
-        Upgrade to Premium
+      <div style={{ fontSize: 15, fontWeight: 700, color: T.tx, textAlign: 'center', marginBottom: 4 }}>
+        Choose Your Plan
       </div>
-      <div style={{ fontSize: 12, color: T.mt, textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-        You've got the essentials. Unlock even more with a premium plan.
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {PAID_TIERS.map(t => {
-          const m = TIER_META[t];
-          const isCurrent = t === tier;
-          return (
-            <div key={t} style={{
-              padding: 16, background: isCurrent ? `${m.color}0a` : T.sf2,
-              border: `1px solid ${isCurrent ? m.color + '44' : T.bd}`,
-              borderRadius: 10, position: 'relative',
-            }}>
-              {isCurrent && (
-                <div style={{
-                  position: 'absolute', top: -8, right: 12, background: m.color,
-                  color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 8px',
-                  borderRadius: 8, textTransform: 'uppercase',
-                }}>Current</div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 16 }}>{m.icon}</span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: m.color }}>{m.label}</span>
-                <span style={{ fontSize: 12, color: T.mt, marginLeft: 'auto' }}>{m.price}</span>
-              </div>
-              <div style={{ fontSize: 11, color: T.mt, marginBottom: 8 }}>{m.tagline}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {m.perks.map(p => (
-                  <div key={p} style={{
-                    fontSize: 10, color: T.mt, display: 'flex', alignItems: 'center',
-                    gap: 4, padding: '2px 6px', background: `${m.color}08`, borderRadius: 4,
-                  }}>
-                    <span style={{ color: m.color }}>{'\u2713'}</span> {p}
-                  </div>
-                ))}
-              </div>
-              {!isCurrent && (
-                <button style={{
-                  marginTop: 10, padding: '6px 14px',
-                  background: `${m.color}15`, border: `1px solid ${m.color}44`,
-                  borderRadius: 7, color: m.color, fontSize: 11,
-                  fontWeight: 700, cursor: 'pointer',
-                }}>
-                  {t === 'enterprise' ? 'Contact Us' : 'Coming Soon'}
-                </button>
-              )}
-            </div>
-          );
-        })}
+      <div style={{ fontSize: 12, color: T.mt, textAlign: 'center', marginBottom: 16, lineHeight: 1.5 }}>
+        All plans include E2E encryption, zero-knowledge architecture, and no tracking.
       </div>
 
-      <button onClick={onClose} style={{
-        width: '100%', padding: '10px 0', marginTop: 16,
-        background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8,
-        color: T.mt, fontSize: 12, cursor: 'pointer',
-      }}>
-        Done
+      {/* Plan headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, marginBottom: 2, fontSize: 11 }}>
+        <div />
+        <div style={{ textAlign: 'center', padding: '10px 4px', background: tier === 'verified' ? `${T.ac}10` : 'transparent', borderRadius: '8px 8px 0 0' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>Free</div>
+          <div style={{ fontSize: 11, color: T.mt }}>$0/mo</div>
+          {(tier === 'verified' || tier === 'unverified' || tier === 'guest') && <div style={{ fontSize: 9, color: T.ac, fontWeight: 700, marginTop: 2 }}>CURRENT</div>}
+        </div>
+        <div style={{ textAlign: 'center', padding: '10px 4px', background: tier === 'pro' ? 'rgba(88,101,242,0.1)' : 'transparent', borderRadius: '8px 8px 0 0', border: tier !== 'pro' ? `1px solid #5865F244` : undefined, borderBottom: 'none' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#5865F2' }}>Pro</div>
+          <div style={{ fontSize: 11, color: T.mt }}>$8/mo</div>
+          {tier === 'pro' && <div style={{ fontSize: 9, color: '#5865F2', fontWeight: 700, marginTop: 2 }}>CURRENT</div>}
+        </div>
+        <div style={{ textAlign: 'center', padding: '10px 4px', background: tier === 'enterprise' ? 'rgba(250,166,26,0.1)' : 'transparent', borderRadius: '8px 8px 0 0' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#faa61a' }}>Enterprise</div>
+          <div style={{ fontSize: 11, color: T.mt }}>Contact Us</div>
+          {tier === 'enterprise' && <div style={{ fontSize: 9, color: '#faa61a', fontWeight: 700, marginTop: 2 }}>CURRENT</div>}
+        </div>
+      </div>
+
+      {/* Feature rows */}
+      {PLAN_FEATURES.map((f, i) => (
+        <div key={f.label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, fontSize: 11, background: i % 2 === 0 ? T.sf2 : 'transparent', borderRadius: 4, padding: '5px 0' }}>
+          <div style={{ padding: '0 8px', color: T.mt, fontWeight: 600 }}>{f.label}</div>
+          <div style={{ textAlign: 'center', color: T.tx }}>{cell(f.free)}</div>
+          <div style={{ textAlign: 'center', color: T.tx }}>{cell(f.pro)}</div>
+          <div style={{ textAlign: 'center', color: T.tx }}>{cell(f.ent)}</div>
+        </div>
+      ))}
+
+      {/* Action buttons */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, marginTop: 12, padding: '0 0 4px' }}>
+        <div />
+        <div style={{ textAlign: 'center' }}>
+          {(tier === 'verified' || tier === 'unverified' || tier === 'guest') && (
+            <div style={{ fontSize: 10, color: T.mt, padding: '6px 0' }}>Your plan</div>
+          )}
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          {tier !== 'pro' && tier !== 'enterprise' && (
+            <button onClick={() => setShowPayment('pro')} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: '#5865F2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Upgrade</button>
+          )}
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          {tier !== 'enterprise' && (
+            <button onClick={() => { window.location.href = 'mailto:enterprise@discreetai.net?subject=Enterprise%20Plan%20Inquiry'; }} style={{ padding: '6px 16px', borderRadius: 8, border: `1px solid #faa61a44`, background: 'rgba(250,166,26,0.1)', color: '#faa61a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Contact</button>
+          )}
+        </div>
+      </div>
+
+      {error && <div style={{ padding: '8px 12px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: 8, color: T.err, fontSize: 11, marginTop: 8 }}>{error}</div>}
+
+      {/* Payment method modal */}
+      {showPayment && (
+        <div style={{ marginTop: 12, padding: '16px', background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 10, textAlign: 'center' }}>Choose Payment Method</div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button onClick={() => startCheckout(showPayment, 'crypto')} disabled={loading} style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: `1px solid ${T.bd}`, background: T.sf2, cursor: loading ? 'default' : 'pointer', textAlign: 'center' }}>
+              <div style={{ fontSize: 20, marginBottom: 4 }}>₿</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.tx }}>Pay with Crypto</div>
+              <div style={{ fontSize: 10, color: T.mt }}>Bitcoin, Lightning, Monero</div>
+            </button>
+            <button onClick={() => startCheckout(showPayment, 'stripe')} disabled={loading} style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: `1px solid ${T.bd}`, background: T.sf2, cursor: loading ? 'default' : 'pointer', textAlign: 'center' }}>
+              <div style={{ fontSize: 20, marginBottom: 4 }}>💳</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.tx }}>Pay with Card</div>
+              <div style={{ fontSize: 10, color: T.mt }}>Visa, Mastercard, Amex</div>
+            </button>
+          </div>
+          {loading && <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: T.mt }}>Redirecting to checkout...</div>}
+          <button onClick={() => setShowPayment(null)} style={{ width: '100%', marginTop: 8, padding: '6px 0', background: 'transparent', border: 'none', color: T.mt, fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+        </div>
+      )}
+
+      <button onClick={onClose} style={{ width: '100%', padding: '10px 0', marginTop: 12, background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.mt, fontSize: 12, cursor: 'pointer' }}>
+        {tier === 'pro' || tier === 'enterprise' ? 'Close' : 'Maybe Later'}
       </button>
     </div>
   );

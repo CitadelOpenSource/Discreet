@@ -374,6 +374,7 @@ export class CitadelAPI {
   async refreshClaims() { try { const r = await this.fetch('/auth/me/refresh'); if (r.ok) { const d = await r.json(); if (d.access_token) this.token = d.access_token; return d; } return null; } catch { return null; } }
   async getPlatformMe() { try { const r = await this.fetch('/platform/me'); return r.ok ? r.json() : null; } catch { return null; } }
   async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
+  async getBillingStatus() { try { const r = await this.fetch('/billing/status'); return r.ok ? r.json() : null; } catch { return null; } }
   async complianceExport(serverId: string, startDate: string, endDate: string, format: string) { const r = await this.fetch('/admin/export', { method: 'POST', body: JSON.stringify({ server_id: serverId, start_date: startDate, end_date: endDate, format }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Export failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }

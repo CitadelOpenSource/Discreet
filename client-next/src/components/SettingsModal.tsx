@@ -2170,15 +2170,96 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           <div data-section="change-email"><ChangeEmail /></div>
           </div>
 
-          {/* ─ Plan ─ */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Your Plan</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.icon ?? '✅'} {(TIER_META as any)[platformUser?.account_tier ?? 'verified']?.label ?? 'Free'}</div>
-              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>See what's available on other plans</div>
-            </div>
-            <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>View Plans</button>
-          </div>
+          {/* ─ Subscription ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Subscription</div>
+          {React.createElement(function SubscriptionPanel() {
+            const [billing, setBilling] = useState<any>(null);
+            const [loadingBilling, setLoadingBilling] = useState(true);
+            const [cancelling, setCancelling] = useState(false);
+            const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+            useEffect(() => {
+              api.getBillingStatus().then(d => { setBilling(d); setLoadingBilling(false); }).catch(() => setLoadingBilling(false));
+            }, []);
+
+            if (loadingBilling) return <div style={{ fontSize: 11, color: T.mt, padding: 12 }}>Loading subscription...</div>;
+
+            if (billing?.self_hosted) {
+              return (
+                <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🏠</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>Self-Hosted Instance</div>
+                      <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>All features included — no subscription required.</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            const tierKey = billing?.tier || platformUser?.account_tier || 'verified';
+            const tierMeta = (TIER_META as any)[tierKey] || { icon: '✅', label: 'Free', color: T.ac };
+            const isPaid = billing?.status === 'active' && (tierKey === 'pro' || tierKey === 'teams' || tierKey === 'enterprise');
+            const expiresAt = billing?.expires_at ? new Date(billing.expires_at) : null;
+            const willCancel = billing?.cancel_at_period_end;
+            const paymentMethod = billing?.payment_method;
+
+            return (
+              <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPaid ? 10 : 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{tierMeta.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: tierMeta.color }}>{tierMeta.label}</div>
+                      {isPaid && paymentMethod && (
+                        <div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>
+                          via {paymentMethod === 'stripe' ? 'Card' : paymentMethod === 'btcpay' ? 'Crypto' : paymentMethod}
+                          {expiresAt && !willCancel && <span> · renews {expiresAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                          {expiresAt && willCancel && <span> · expires {expiresAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>
+                    {isPaid ? 'Change Plan' : 'Upgrade'}
+                  </button>
+                </div>
+
+                {willCancel && expiresAt && (
+                  <div style={{ padding: '8px 10px', background: 'rgba(250,166,26,0.08)', borderRadius: 6, border: '1px solid rgba(250,166,26,0.15)', fontSize: 11, color: '#faa61a', marginBottom: 8 }}>
+                    Your {tierMeta.label} features will remain active until {expiresAt.toLocaleDateString()}. After that you'll be on the Free plan.
+                  </div>
+                )}
+
+                {isPaid && !willCancel && !showCancelConfirm && (
+                  <button onClick={() => setShowCancelConfirm(true)} style={{ background: 'none', border: 'none', color: T.mt, fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Cancel subscription</button>
+                )}
+
+                {showCancelConfirm && (
+                  <div style={{ padding: '10px 12px', background: 'rgba(255,71,87,0.06)', borderRadius: 8, border: '1px solid rgba(255,71,87,0.15)', marginTop: 6 }}>
+                    <div style={{ fontSize: 12, color: T.tx, marginBottom: 6 }}>
+                      Your {tierMeta.label} features will remain active until <strong>{expiresAt?.toLocaleDateString() || 'the end of the billing period'}</strong>. After that you'll be on the Free plan.
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={async () => {
+                        setCancelling(true);
+                        try {
+                          await api.fetch('/subscription', { method: 'DELETE' });
+                          setBilling((p: any) => ({ ...p, cancel_at_period_end: true }));
+                          setShowCancelConfirm(false);
+                        } catch {}
+                        setCancelling(false);
+                      }} disabled={cancelling} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: T.err, color: '#fff', fontSize: 11, fontWeight: 700, cursor: cancelling ? 'default' : 'pointer' }}>
+                        {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
+                      </button>
+                      <button onClick={() => setShowCancelConfirm(false)} style={{ padding: '5px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer' }}>Keep Plan</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* ─ Security ─ */}
           <div style={{ display: sectionVisible('security') ? undefined : 'none' }}>

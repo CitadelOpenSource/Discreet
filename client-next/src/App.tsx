@@ -682,6 +682,7 @@ export default function App() {
   const [profileCard, setProfileCard] = useState<{ userId: string; pos: { x: number; y: number } } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [upgradeFeature, setUpgradeFeature] = useState<string | null>(null);
+  const [tierLimitModal, setTierLimitModal] = useState<{ resource: string; limit: number; tier: string } | null>(null);
   const [quickSwitcher, setQuickSwitcher] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedMsg, setHighlightedMsg] = useState<string | null>(null);
@@ -1553,16 +1554,29 @@ export default function App() {
     : (isDev && tierRank(tier) < tierRank('verified') ? 'verified' : tier);
   const tierLimits = TIER_LIMITS[effectiveTier];
 
+  /** Parse a TIER_LIMIT API error and show the limit modal. Returns true if handled. */
+  const handleTierLimitError = (err: any): boolean => {
+    if (localStorage.getItem('d_self_hosted') === 'true') return false;
+    try {
+      const body = typeof err === 'object' ? err : JSON.parse(err?.message || '{}');
+      const code = body?.error?.code || body?.code;
+      if (code === 'TIER_LIMIT') {
+        const e = body?.error || body;
+        setTierLimitModal({ resource: e.message || 'resource', limit: e.limit || 0, tier: e.tier || 'free' });
+        return true;
+      }
+    } catch {}
+    return false;
+  };
+
   const createServer = async () => {
     if (!createName.trim() || serverCreating) return;
-    const ownedServers = servers.filter(s => s.owner_id === api.userId);
-    if (ownedServers.length >= tierLimits.maxServers) {
-      if (me?.is_guest) { setUpgradeFeature('create servers'); return; }
-      setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); return;
-    }
+    if (me?.is_guest) { setUpgradeFeature('create servers'); return; }
     setServerCreating(true);
     try {
       const s = await api.createServer(sanitizeInput(createName.trim()), { enable_automod: enableAutomod });
+      // Check for tier limit error in response body
+      if (s?.error?.code === 'TIER_LIMIT') { handleTierLimitError(s); return; }
     if (s?.id) {
       // Apply preset channels
       if (serverPreset === 'gaming') {
@@ -1607,6 +1621,12 @@ export default function App() {
       await loadServers(); await selectServer(s);
     }
     setCreateName(''); setServerPreset(null); setModal(null);
+    } catch (err: any) {
+      // Try to parse TIER_LIMIT from API response
+      if (!handleTierLimitError(err)) {
+        setToast(err?.message || 'Failed to create server');
+        setTimeout(() => setToast(''), 4000);
+      }
     } finally { setServerCreating(false); }
   };
 
@@ -4325,6 +4345,28 @@ export default function App() {
 
       {/* Confirm Dialog */}
       <ConfirmDialog dialog={confirmDialog} setDialog={setConfirmDialog} />
+
+      {/* Tier Limit Modal */}
+      {tierLimitModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002 }} onClick={() => setTierLimitModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '90vw', background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 28, textAlign: 'center', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: 'rgba(250,166,26,0.12)', marginBottom: 16 }}>
+              <I.Zap s={28} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Plan limit reached</div>
+            <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.6, marginBottom: 20 }}>
+              You've reached the <strong style={{ color: T.tx }}>{tierLimitModal.tier}</strong> plan limit of <strong style={{ color: T.ac }}>{tierLimitModal.limit}</strong>.
+              {tierLimitModal.tier !== 'enterprise' && ' Upgrade to Pro for higher limits.'}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              {tierLimitModal.tier !== 'enterprise' && (
+                <button onClick={() => { setTierLimitModal(null); setModal('upgrade'); }} style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Upgrade</button>
+              )}
+              <button onClick={() => setTierLimitModal(null)} style={{ padding: '10px 28px', borderRadius: 10, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Maybe Later</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Guest Upgrade Modal */}
       {upgradeFeature && (

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO audit_log (server_id, actor_id, action, changes)\n         VALUES ('00000000-0000-0000-0000-000000000000'::uuid, $1, 'SUBSCRIPTION_ACTIVATED', $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51d01b4b145695bd05d0c8c07982f9eeaad21c52bea756f64c41a9c6cbae3518"
+}

@@ -66,6 +66,12 @@ pub enum AppError {
 
     #[error("Premium required: {needed} tier needed (current: {current})")]
     PremiumRequired { current: String, needed: String },
+
+    #[error("Tier limit reached")]
+    TierLimit(serde_json::Value),
+
+    #[error("Not configured: {0}")]
+    NotConfigured(String),
 }
 
 impl IntoResponse for AppError {
@@ -113,6 +119,10 @@ impl IntoResponse for AppError {
                 });
                 return (StatusCode::PAYMENT_REQUIRED, Json(body)).into_response();
             }
+            AppError::TierLimit(body) => {
+                return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": body }))).into_response();
+            }
+            AppError::NotConfigured(msg) => (StatusCode::SERVICE_UNAVAILABLE, "NOT_CONFIGURED", msg.clone()),
         };
 
         (status, Json(json!({
