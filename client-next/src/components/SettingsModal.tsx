@@ -1112,6 +1112,8 @@ function ActiveSessions() {
   const [revoking, setRevoking] = useState<string | null>(null);
   const [revokingAll, setRevokingAll] = useState(false);
   const [showReauth, setShowReauth] = useState(false);
+  const [verifyingSession, setVerifyingSession] = useState<string | null>(null);
+  const [verifyEmoji, setVerifyEmoji] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -1179,19 +1181,70 @@ function ActiveSessions() {
                 <div style={{ fontSize: 12, fontWeight: 500, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {s.device_name || 'Unknown device'}
                   {s.current && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(0,212,170,0.15)', color: T.ac, fontWeight: 700 }}>THIS DEVICE</span>}
+                  {s.device_verified ? (
+                    <span title="Verified device" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(59,165,93,0.15)', color: '#3ba55d', fontWeight: 700 }}>✓ VERIFIED</span>
+                  ) : (
+                    <span title="Unverified device" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#faa61a', fontWeight: 700 }}>UNVERIFIED</span>
+                  )}
                 </div>
                 <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>
                   {s.ip_address || 'Unknown IP'} · {formatActive(s.last_active_at || s.created_at)} · Since {new Date(s.created_at).toLocaleDateString()}
                 </div>
               </div>
-              {!s.current && (
-                <button onClick={() => revoke(s.id)} disabled={revoking === s.id} className="pill-btn"
-                  style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                  {revoking === s.id ? '...' : 'Sign Out'}
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                {!s.device_verified && (
+                  <button onClick={async () => {
+                    setVerifyingSession(s.id);
+                    try {
+                      const res = await api.initiateVerify(s.id);
+                      setVerifyEmoji(res.emoji);
+                    } catch { setVerifyingSession(null); }
+                  }} className="pill-btn"
+                    style={{ background: 'rgba(0,212,170,0.1)', color: T.ac, border: `1px solid ${T.ac}44`, padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
+                    Verify
+                  </button>
+                )}
+                {!s.current && (
+                  <button onClick={() => revoke(s.id)} disabled={revoking === s.id} className="pill-btn"
+                    style={{ background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.25)', padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
+                    {revoking === s.id ? '...' : 'Sign Out'}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+      )}
+      {/* Emoji verification modal */}
+      {verifyingSession && verifyEmoji && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10003 }} onClick={() => { setVerifyingSession(null); setVerifyEmoji(null); }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.sf, borderRadius: 16, border: `1px solid ${T.bd}`, padding: 28, width: 360, maxWidth: '90vw', textAlign: 'center', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Verify Device</div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.5 }}>
+              Compare this emoji sequence on both devices. If they match, the connection is secure.
+            </div>
+            <div style={{ fontSize: 36, letterSpacing: 8, marginBottom: 20, padding: '16px 0', background: T.bg, borderRadius: 12, border: `1px solid ${T.bd}` }}>
+              {verifyEmoji}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={async () => {
+                try {
+                  await api.confirmVerify(verifyingSession);
+                  setSessions(prev => prev.map(s => s.id === verifyingSession ? { ...s, device_verified: true } : s));
+                } catch {}
+                setVerifyingSession(null);
+                setVerifyEmoji(null);
+              }} style={{ padding: '8px 24px', borderRadius: 10, border: 'none', background: '#3ba55d', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                They Match ✓
+              </button>
+              <button onClick={() => { setVerifyingSession(null); setVerifyEmoji(null); }} style={{ padding: '8px 24px', borderRadius: 10, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                They Don't Match
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: T.mt, marginTop: 12 }}>
+              If they don't match, sign out the unrecognized device immediately.
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1209,6 +1262,9 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   const [displayName, setDisplayName] = useState('');
   const [errMsg, setErrMsg] = useState('');
   const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [dismissedCards, setDismissedCards] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('d_discover_dismissed') || '[]')); } catch { return new Set(); }
+  });
   const [settingsSearch, setSettingsSearch] = useState('');
   const [highlightSection, setHighlightSection] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1277,6 +1333,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   };
 
   const SETTINGS_INDEX = useMemo(() => [
+    { tab: 'discover',   section: 'discover',        label: 'Discover Features',    desc: 'Explore features you haven\'t set up yet',                     keywords: ['discover', 'features', 'new', 'setup', 'getting started', 'onboarding', 'tips', 'tour'] },
     { tab: 'appearance', section: 'theme',           label: 'Theme & Colors',       desc: 'Dark mode, light mode, accent color, density, chat font size', keywords: ['theme', 'dark', 'light', 'dark mode', 'accent', 'color', 'font', 'font size', 'compact', 'mode', 'density', 'spacing', 'layout', 'chat width', 'language', 'locale', 'timezone', 'time zone', 'message density', 'comfortable', 'cozy', 'chat font', 'chat font size'] },
     { tab: 'appearance', section: 'display-options',  label: 'Display Options',      desc: 'Embeds, avatars, timestamps, typing indicators, emoji', keywords: ['display', 'embeds', 'embed', 'link preview', 'avatar', 'timestamp', 'typing', 'indicator', 'emoji', 'animate', 'sticker', 'smooth scroll', 'twemoji', 'recently used emojis', 'emoji history', 'slash', 'suggestions'] },
     { tab: 'voice',      section: 'voice',           label: 'Voice & Audio',        desc: 'Microphone, speaker, noise suppression, push to talk',  keywords: ['voice', 'audio', 'microphone', 'mic', 'speaker', 'input', 'output', 'volume', 'noise', 'gate', 'compressor', 'echo', 'cancellation', 'noise suppression', 'push to talk', 'ptt', 'voice activation', 'sensitivity'] },
@@ -1452,7 +1509,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
   const tabs = [
-    { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
+    { id: 'discover', label: '✦ Discover' }, { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
     { id: 'video', label: 'Video' }, { id: 'streaming', label: 'Streaming' },
     { id: 'profile', label: 'My Profile' }, { id: 'privacy', label: 'Privacy' },
     { id: 'account', label: 'Account' }, { id: 'notifications', label: 'Notifications' },
@@ -1506,6 +1563,124 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           })}
           {onLogout && <div onClick={onLogout} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err, marginLeft: 'auto' }}>Log Out</div>}
         </div>
+
+        {/* ── Discover ── */}
+        {tab === 'discover' && (() => {
+          const dismissCard = (id: string) => {
+            setDismissedCards(prev => {
+              const next = new Set(prev);
+              next.add(id);
+              localStorage.setItem('d_discover_dismissed', JSON.stringify([...next]));
+              return next;
+            });
+          };
+
+          const cards: { id: string; icon: string; title: string; desc: string; action: string; targetTab: string; show: boolean }[] = [
+            {
+              id: 'ai_agents',
+              icon: '🤖',
+              title: 'AI Agents',
+              desc: 'Add AI-powered bots to your servers — code helpers, game masters, moderators, and more. Supports OpenAI, Anthropic, and local Ollama models.',
+              action: 'Configure Bots',
+              targetTab: 'about',
+              show: true, // Always show — user can explore
+            },
+            {
+              id: '2fa',
+              icon: '🔐',
+              title: 'Two-Factor Authentication',
+              desc: 'Add TOTP-based 2FA to protect your account. Even if your password is compromised, 2FA blocks unauthorized access.',
+              action: 'Set Up 2FA',
+              targetTab: 'account',
+              show: !platformUser?.badge_type?.includes('2fa'),
+            },
+            {
+              id: 'events',
+              icon: '📅',
+              title: 'Server Events',
+              desc: 'Create scheduled events with RSVP, reminders, and optional voice channel links. Keep your community engaged.',
+              action: 'View Events',
+              targetTab: 'about',
+              show: true,
+            },
+            {
+              id: 'shortcuts',
+              icon: '⌨️',
+              title: 'Keyboard Shortcuts',
+              desc: 'Navigate faster with Ctrl+K (quick switcher), Ctrl+E (emoji), Ctrl+Shift+M (mute), and more. Press Ctrl+/ to see all.',
+              action: 'View Shortcuts',
+              targetTab: 'keybinds',
+              show: true,
+            },
+            {
+              id: 'recovery_key',
+              icon: '🔑',
+              title: 'Recovery Key',
+              desc: 'Back up your encryption key fingerprint. If you lose access to your account, the recovery key is your last line of defense.',
+              action: 'View Key',
+              targetTab: 'account',
+              show: true,
+            },
+            {
+              id: 'dnd_schedule',
+              icon: '🌙',
+              title: 'DND Schedule',
+              desc: 'Set quiet hours to automatically silence notifications at night. DM @mentions still come through.',
+              action: 'Set Schedule',
+              targetTab: 'notifications',
+              show: !(s?.dnd_enabled),
+            },
+            {
+              id: 'privacy_toggles',
+              icon: '👁',
+              title: 'Privacy Controls',
+              desc: 'Control read receipts, typing indicators, and link previews. All off by default — Discreet respects your privacy.',
+              action: 'Review Privacy',
+              targetTab: 'privacy',
+              show: true,
+            },
+            {
+              id: 'message_density',
+              icon: '📐',
+              title: 'Chat Display Density',
+              desc: 'Switch between Comfortable, Compact, and Cozy message layouts. Adjust chat font size from 12px to 20px.',
+              action: 'Customize',
+              targetTab: 'appearance',
+              show: !s?.message_density || s.message_density === 'comfortable',
+            },
+          ];
+
+          const visible = cards.filter(c => c.show && !dismissedCards.has(c.id));
+          const allDismissed = visible.length === 0;
+
+          return (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Discover Features</div>
+              <div style={{ fontSize: 12, color: T.mt, marginBottom: 14, lineHeight: 1.5 }}>Features you haven't explored yet. Dismiss cards you don't need.</div>
+
+              {allDismissed && (
+                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>All caught up!</div>
+                  <div style={{ fontSize: 12, color: T.mt, marginBottom: 16 }}>You've explored all available features.</div>
+                  <button onClick={() => { setDismissedCards(new Set()); localStorage.removeItem('d_discover_dismissed'); }} style={{ padding: '6px 16px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer' }}>Reset All Cards</button>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                {visible.map(card => (
+                  <div key={card.id} style={{ padding: '16px 14px', background: T.sf2, borderRadius: 12, border: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', gap: 8, position: 'relative' }}>
+                    <button onClick={() => dismissCard(card.id)} aria-label="Dismiss" style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1, opacity: 0.5 }} title="Dismiss">✕</button>
+                    <div style={{ fontSize: 24 }}>{card.icon}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.tx }}>{card.title}</div>
+                    <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, flex: 1 }}>{card.desc}</div>
+                    <button onClick={() => setTab(card.targetTab)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}>{card.action}</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
 
         {/* ── Appearance ── */}
         {tab === 'appearance' && (<>
@@ -1989,7 +2164,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <div style={{ fontSize: 13, fontWeight: 600 }}>Username</div>
               <div style={{ fontSize: 12, color: T.ac, fontFamily: 'monospace', marginTop: 2 }}>{api.username || '—'}</div>
             </div>
-            <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>ID: {api.userId?.slice(0, 8) || '—'}</div>
+            <button onClick={() => navigator.clipboard?.writeText(api.userId || '')} style={{ fontSize: 10, color: T.mt, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }} title="Copy user ID">Copy ID</button>
           </div>
           <div style={{ display: sectionVisible('change-email') ? undefined : 'none' }}>
           <div data-section="change-email"><ChangeEmail /></div>
@@ -2015,7 +2190,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           </div>
           <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
             <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Encryption Key Fingerprint <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
-            <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
+            <button onClick={() => navigator.clipboard?.writeText(api.userId || '')} style={{ fontSize: 10, color: T.ac, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontFamily: 'monospace' }} title="Copy fingerprint">Copy</button>
           </div>
 
           </div>
@@ -2266,6 +2441,18 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 🌙 {ns.dndStart} — {ns.dndEnd} on selected days. Synced to your account.
               </div>
             </>)}
+          </div>
+
+          {/* ─ @everyone suppression ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Mention Controls</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Suppress @everyone and @here</div>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>The text still shows, but you won't get pinged or notified. Applies to all servers.</div>
+            </div>
+            <div onClick={() => save('suppress_all_everyone', !(s.suppress_all_everyone === true))} role="switch" aria-checked={s.suppress_all_everyone === true} style={{ width: 36, height: 20, borderRadius: 10, background: s.suppress_all_everyone === true ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.suppress_all_everyone === true ? 18 : 2, transition: 'left 0.2s' }} />
+            </div>
           </div>
 
           {/* ─ Per-server mute ─ */}

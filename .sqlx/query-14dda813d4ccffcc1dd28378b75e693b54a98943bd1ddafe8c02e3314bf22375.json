@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_category_items (category_id, channel_id, position)\n         VALUES ($1, $2, $3)\n         ON CONFLICT (category_id, channel_id) DO UPDATE SET position = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14dda813d4ccffcc1dd28378b75e693b54a98943bd1ddafe8c02e3314bf22375"
+}

@@ -148,7 +148,7 @@ export function LeaderboardPanel({ serverId, members }: LeaderboardPanelProps) {
   // Resolve display name: prefer member list, fall back to entry username
   const getName = (entry: LeaderboardEntry) => {
     const m = members.find(x => x.user_id === entry.user_id);
-    return m?.display_name || m?.username || entry.username || entry.user_id.slice(0, 8);
+    return m?.display_name || m?.username || entry.username || 'Unknown User';
   };
 
   const myRank   = myPoints !== null ? getRank(myPoints) : null;

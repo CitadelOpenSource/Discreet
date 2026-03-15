@@ -215,6 +215,8 @@ pub struct SessionInfo {
     pub expires_at: String,
     /// True if this is the session making the request.
     pub current: bool,
+    pub device_verified: bool,
+    pub verification_emoji: Option<String>,
 }
 
 // ─── POST /auth/register ────────────────────────────────────────────────
@@ -1390,7 +1392,7 @@ pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let rows = sqlx::query!(
-        "SELECT id, device_name, ip_address, created_at, last_active_at, expires_at
+        "SELECT id, device_name, ip_address, created_at, last_active_at, expires_at, device_verified, verification_emoji
          FROM sessions
          WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
          ORDER BY last_active_at DESC",
@@ -1409,6 +1411,8 @@ pub async fn list_sessions(
             last_active_at: r.last_active_at.to_rfc3339(),
             expires_at: r.expires_at.to_rfc3339(),
             current: r.id == auth.session_id,
+            device_verified: r.device_verified,
+            verification_emoji: r.verification_emoji,
         })
         .collect();
 
@@ -1488,6 +1492,89 @@ pub async fn revoke_all_other_sessions(
     Ok((StatusCode::OK, Json(serde_json::json!({
         "revoked": result.rows_affected()
     }))))
+}
+
+// ─── POST /auth/sessions/:id/verify — initiate device verification ──────
+
+/// Generate a 6-emoji sequence for this session and return it.
+/// The user compares the emoji on both devices.
+pub async fn initiate_verify(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify the session belongs to this user
+    let exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM sessions WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL) as "exists!""#,
+        session_id, auth.user_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    if !exists {
+        return Err(AppError::NotFound("Session not found".into()));
+    }
+
+    // Generate emoji from session ID (deterministic — same session always produces same emoji)
+    let emoji = generate_verification_emoji(session_id);
+
+    // Store on the session row for later comparison
+    sqlx::query!(
+        "UPDATE sessions SET verification_emoji = $1 WHERE id = $2",
+        emoji,
+        session_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "emoji": emoji,
+    })))
+}
+
+/// POST /auth/sessions/:id/confirm — confirm device verification.
+/// User has visually confirmed the emoji matches on both devices.
+pub async fn confirm_verify(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let result = sqlx::query!(
+        "UPDATE sessions SET device_verified = TRUE WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+         RETURNING id",
+        session_id, auth.user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    if result.is_none() {
+        return Err(AppError::NotFound("Session not found".into()));
+    }
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "verified": true,
+    })))
+}
+
+/// Generate a deterministic 6-emoji verification sequence from a UUID.
+/// Uses the UUID bytes as a seed to pick from a curated emoji set.
+fn generate_verification_emoji(id: Uuid) -> String {
+    const EMOJI_SET: &[&str] = &[
+        "🐶", "🐱", "🐻", "🦊", "🐸", "🐵", "🦁", "🐧",
+        "🦄", "🐝", "🦋", "🐢", "🐬", "🦉", "🦩", "🐙",
+        "🌸", "🌻", "🌵", "🍄", "🌈", "⭐", "🌙", "❄️",
+        "🍎", "🍊", "🍋", "🍇", "🍉", "🍓", "🫐", "🥝",
+    ];
+    let bytes = id.as_bytes();
+    let mut result = String::new();
+    for i in 0..6 {
+        // Use pairs of bytes for better distribution
+        let idx = ((bytes[i * 2] as usize) * 256 + bytes[i * 2 + 1] as usize) % EMOJI_SET.len();
+        result.push_str(EMOJI_SET[idx]);
+    }
+    result
 }
 
 // ─── DELETE /auth/sessions/:id ──────────────────────────────────────────

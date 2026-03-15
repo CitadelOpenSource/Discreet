@@ -62,6 +62,8 @@ pub struct UpdateServerRequest {
     pub slash_commands_enabled: Option<bool>,
     pub message_retention_days: Option<Option<i32>>,
     pub disappearing_messages_default: Option<Option<String>>,
+    pub mention_everyone_role: Option<String>,
+    pub mention_here_role: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -638,6 +640,19 @@ pub async fn update_server(
         .await?;
     }
 
+    if let Some(ref role) = req.mention_everyone_role {
+        if matches!(role.as_str(), "admin" | "moderator" | "everyone") {
+            sqlx::query!("UPDATE servers SET mention_everyone_role = $1, updated_at = NOW() WHERE id = $2", role, server_id)
+                .execute(&state.db).await?;
+        }
+    }
+    if let Some(ref role) = req.mention_here_role {
+        if matches!(role.as_str(), "admin" | "moderator" | "everyone") {
+            sqlx::query!("UPDATE servers SET mention_here_role = $1, updated_at = NOW() WHERE id = $2", role, server_id)
+                .execute(&state.db).await?;
+        }
+    }
+
     // Audit log
     let changes = serde_json::json!({
         "name": req.name, "description": req.description.is_some(),
@@ -648,6 +663,8 @@ pub async fn update_server(
         "slash_commands_enabled": req.slash_commands_enabled,
         "message_retention_days": req.message_retention_days,
         "disappearing_messages_default": req.disappearing_messages_default,
+        "mention_everyone_role": req.mention_everyone_role,
+        "mention_here_role": req.mention_here_role,
     });
     let _ = citadel_audit::log_action(
         &state.db,

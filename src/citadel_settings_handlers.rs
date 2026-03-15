@@ -32,6 +32,7 @@ pub struct UserSettingsResponse {
     pub message_density: String,
     pub chat_font_size: i32,
     pub default_status: String,
+    pub suppress_all_everyone: bool,
     pub updated_at: String,
 }
 
@@ -59,6 +60,7 @@ pub struct UpdateUserSettingsRequest {
     pub message_density: Option<String>,
     pub chat_font_size: Option<i32>,
     pub default_status: Option<String>,
+    pub suppress_all_everyone: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,7 +97,7 @@ pub async fn get_my_settings(
     .await?;
 
     let row = sqlx::query!(
-        "SELECT user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, updated_at
+        "SELECT user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, suppress_all_everyone, updated_at
          FROM user_settings WHERE user_id = $1",
         auth.user_id,
     )
@@ -126,6 +128,7 @@ pub async fn get_my_settings(
         message_density: row.message_density,
         chat_font_size: row.chat_font_size,
         default_status: row.default_status,
+        suppress_all_everyone: row.suppress_all_everyone,
         updated_at: row.updated_at.to_rfc3339(),
     }))
 }
@@ -166,9 +169,10 @@ pub async fn patch_my_settings(
              message_density = COALESCE($20, message_density),
              chat_font_size = COALESCE($21, chat_font_size),
              default_status = COALESCE($22, default_status),
+             suppress_all_everyone = COALESCE($23, suppress_all_everyone),
              updated_at = NOW()
-         WHERE user_id = $23
-         RETURNING user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, updated_at",
+         WHERE user_id = $24
+         RETURNING user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, suppress_all_everyone, updated_at",
         req.theme,
         req.font_size,
         req.compact_mode,
@@ -191,6 +195,7 @@ pub async fn patch_my_settings(
         req.message_density,
         req.chat_font_size,
         req.default_status,
+        req.suppress_all_everyone,
         auth.user_id,
     )
     .fetch_one(&state.db)
@@ -220,6 +225,7 @@ pub async fn patch_my_settings(
         message_density: row.message_density,
         chat_font_size: row.chat_font_size,
         default_status: row.default_status,
+        suppress_all_everyone: row.suppress_all_everyone,
         updated_at: row.updated_at.to_rfc3339(),
     }))
 }

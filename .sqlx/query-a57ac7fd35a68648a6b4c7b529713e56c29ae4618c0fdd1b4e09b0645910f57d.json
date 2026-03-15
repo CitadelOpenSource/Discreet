@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.channel_id, m.author_id, c.server_id\n               FROM messages m\n               JOIN channels c ON c.id = m.channel_id\n               WHERE m.priority = 'urgent'\n                 AND m.created_at > NOW() - INTERVAL '30 minutes'\n                 AND m.created_at < NOW() - INTERVAL '5 minutes'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "server_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a57ac7fd35a68648a6b4c7b529713e56c29ae4618c0fdd1b4e09b0645910f57d"
+}

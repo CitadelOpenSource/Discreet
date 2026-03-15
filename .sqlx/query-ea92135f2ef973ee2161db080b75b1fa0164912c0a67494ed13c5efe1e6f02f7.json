@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, suppress_all_everyone, updated_at\n         FROM user_settings WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "theme",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "font_size",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "compact_mode",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "show_embeds",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "dm_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "friend_request_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "show_shared_servers",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "timezone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "show_read_receipts",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "show_typing_indicator",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "show_link_previews",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "dnd_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "dnd_start",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "dnd_end",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "dnd_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "sound_dm",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "sound_server",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "sound_mention",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "message_density",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "chat_font_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 22,
+        "name": "default_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 23,
+        "name": "suppress_all_everyone",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 24,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ea92135f2ef973ee2161db080b75b1fa0164912c0a67494ed13c5efe1e6f02f7"
+}

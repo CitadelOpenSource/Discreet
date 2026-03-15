@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT owner_id, mention_everyone_role, mention_here_role FROM servers WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mention_everyone_role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "mention_here_role",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c4bc9b2bc2950363fbf1e723451e79ed1f4a9355473ca3a005612f5969b0f05b"
+}

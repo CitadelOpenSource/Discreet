@@ -449,7 +449,11 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
 
   // ── Tab state ──
-  const [tab, setTab] = useState<'overview' | 'users'>('overview');
+  const [tab, setTab] = useState<'overview' | 'users' | 'reports' | 'export'>('overview');
+  // Reports
+  const [reports, setReports] = useState<any[]>([]);
+  const [reportsFilter, setReportsFilter] = useState('open');
+  const [reportsLoading, setReportsLoading] = useState(false);
 
   // ── Stats ──
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -463,6 +467,16 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const [maintMsg, setMaintMsg] = useState('');
   const [aiRateLimit, setAiRateLimit] = useState(0);
   const [officialServerId, setOfficialServerId] = useState('');
+
+  // ── Compliance Export ──
+  const [exportServerId, setExportServerId] = useState('');
+  const [exportStart, setExportStart] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0]; });
+  const [exportEnd, setExportEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const [exportFormat, setExportFormat] = useState('json');
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportResult, setExportResult] = useState<any>(null);
+  const [exportError, setExportError] = useState('');
+  const [exportServers, setExportServers] = useState<{ id: string; name: string }[]>([]);
 
   // ── Health ──
   const [health, setHealth] = useState<ServerInfo | null>(null);
@@ -631,12 +645,12 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['overview', 'users'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
+          {(['overview', 'users', 'reports', ...(platformUser?.platform_role === 'admin' ? ['export' as const] : [])] as const).map(t => (
+            <button key={t} onClick={() => { setTab(t as any); if (t === 'reports') { setReportsLoading(true); api.listReports(reportsFilter).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }).catch(() => setReportsLoading(false)); } }} style={{
               padding: '6px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
               background: tab === t ? T.ac : T.sf2, color: tab === t ? '#000' : T.mt,
             }}>
-              {t === 'overview' ? 'Overview' : 'Users'}
+              {t === 'overview' ? 'Overview' : t === 'users' ? 'Users' : t === 'reports' ? `Reports${reports.length ? ` (${reports.length})` : ''}` : 'Compliance Export'}
             </button>
           ))}
         </div>
@@ -1076,6 +1090,142 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                   background: usersPage >= totalPages ? T.sf2 : `${T.ac}18`, color: usersPage >= totalPages ? T.mt : T.ac,
                   border: `1px solid ${usersPage >= totalPages ? T.bd : `${T.ac}44`}`, cursor: usersPage >= totalPages ? 'not-allowed' : 'pointer',
                 }}>Next →</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'reports' && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Content Reports</span>
+              <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                {['open', 'dismissed', 'actioned'].map(s => (
+                  <button key={s} onClick={() => { setReportsFilter(s); setReportsLoading(true); api.listReports(s).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }); }}
+                    style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: reportsFilter === s ? T.ac : T.sf2, color: reportsFilter === s ? '#000' : T.mt, textTransform: 'capitalize' }}>{s}</button>
+                ))}
+              </div>
+            </div>
+            {reportsLoading && <div style={{ color: T.mt, fontSize: 12, padding: 20, textAlign: 'center' }}>Loading...</div>}
+            {!reportsLoading && reports.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No {reportsFilter} reports</div>
+                <div style={{ fontSize: 12, color: T.mt }}>Reports from users will appear here for review.</div>
+              </div>
+            )}
+            {reports.map((r: any) => {
+              const reasonLabels: Record<string, string> = { spam: 'Spam', harassment: 'Harassment', illegal_content: 'Illegal Content', other: 'Other' };
+              const reasonColors: Record<string, string> = { spam: '#faa61a', harassment: '#ff4757', illegal_content: '#ff4757', other: T.mt };
+              return (
+                <div key={r.id} style={{ padding: '12px 14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: `${reasonColors[r.reason] || T.mt}22`, color: reasonColors[r.reason] || T.mt }}>{reasonLabels[r.reason] || r.reason}</span>
+                    <span style={{ fontSize: 11, color: T.mt }}>Reported by <strong style={{ color: T.tx }}>{r.reporter_username || '?'}</strong></span>
+                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                  </div>
+                  <div style={{ padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}`, marginBottom: 6, fontSize: 12, color: T.tx, lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>
+                    <span style={{ fontWeight: 600 }}>{r.message_author_username || '?'}: </span>
+                    {r.message_content || '(message unavailable)'}
+                  </div>
+                  {r.details && <div style={{ fontSize: 11, color: T.mt, marginBottom: 8, fontStyle: 'italic' }}>"{r.details}"</div>}
+                  {r.status === 'open' && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={async () => { try { await api.resolveReport(r.id, 'dismissed'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.mt, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+                      <button onClick={async () => { try { await api.deleteMessage(r.message_id); await api.resolveReport(r.id, 'actioned'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,71,87,0.3)', background: 'rgba(255,71,87,0.1)', color: T.err, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Delete Message</button>
+                      <button onClick={async () => { try { await api.fetch(`/admin/users/${r.message_author_id}/ban`, { method: 'POST', body: JSON.stringify({ reason: 'Content violation' }) }); await api.resolveReport(r.id, 'actioned'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,71,87,0.3)', background: 'rgba(255,71,87,0.1)', color: T.err, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Ban User</button>
+                    </div>
+                  )}
+                  {r.status !== 'open' && (
+                    <div style={{ fontSize: 10, color: T.mt }}>Resolved: {r.status}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === 'export' && platformUser?.platform_role === 'admin' && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Compliance Export</div>
+            <div style={{ padding: '12px 14px', background: 'rgba(250,166,26,0.06)', borderRadius: 8, border: '1px solid rgba(250,166,26,0.15)', marginBottom: 16, fontSize: 12, lineHeight: 1.6, color: '#faa61a' }}>
+              Exported message content is encrypted ciphertext. The platform admin cannot read plaintext — only channel members with the decryption key can decrypt. Exports are rate-limited to 1 per hour and recorded in the audit log.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Server</label>
+                <select value={exportServerId} onChange={e => setExportServerId(e.target.value)} onFocus={() => { if (exportServers.length === 0) api.listServers().then((s: any) => { if (Array.isArray(s)) setExportServers(s.map((sv: any) => ({ id: sv.id, name: sv.name }))); }); }} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12 }}>
+                  <option value="">Select server...</option>
+                  {exportServers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Format</label>
+                <select value={exportFormat} onChange={e => setExportFormat(e.target.value)} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12 }}>
+                  <option value="json">JSON</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Start Date</label>
+                <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>End Date</label>
+                <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!exportServerId) return;
+                setExportLoading(true); setExportError(''); setExportResult(null);
+                try {
+                  const start = new Date(exportStart).toISOString();
+                  const end = new Date(exportEnd + 'T23:59:59Z').toISOString();
+                  const result = await api.complianceExport(exportServerId, start, end, exportFormat);
+                  setExportResult(result);
+                } catch (e: any) { setExportError(e?.message || 'Export failed'); }
+                setExportLoading(false);
+              }}
+              disabled={!exportServerId || exportLoading}
+              style={{ padding: '8px 24px', borderRadius: 8, border: 'none', background: exportLoading ? T.sf2 : T.ac, color: exportLoading ? T.mt : '#000', fontSize: 13, fontWeight: 700, cursor: !exportServerId || exportLoading ? 'not-allowed' : 'pointer', opacity: !exportServerId ? 0.5 : 1, marginBottom: 12 }}
+            >
+              {exportLoading ? 'Exporting...' : 'Generate Export'}
+            </button>
+
+            {exportError && (
+              <div style={{ padding: '10px 14px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: 8, color: T.err, fontSize: 12, marginBottom: 12 }}>{exportError}</div>
+            )}
+
+            {exportResult && (
+              <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>Export Complete</div>
+                  <button onClick={() => {
+                    const blob = new Blob([JSON.stringify(exportResult, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `compliance-export-${exportStart}-to-${exportEnd}.json`; a.click(); URL.revokeObjectURL(url);
+                  }} style={{ padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.ac, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Download</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12, marginBottom: 10 }}>
+                  <div style={{ padding: '8px', background: T.bg, borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: T.ac }}>{exportResult.message_count ?? exportResult.messages?.length ?? 0}</div>
+                    <div style={{ fontSize: 10, color: T.mt }}>Messages</div>
+                  </div>
+                  <div style={{ padding: '8px', background: T.bg, borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: T.ac }}>{exportResult.member_count ?? exportResult.members?.length ?? 0}</div>
+                    <div style={{ fontSize: 10, color: T.mt }}>Members</div>
+                  </div>
+                  <div style={{ padding: '8px', background: T.bg, borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: T.ac }}>{exportResult.audit_count ?? exportResult.audit_log?.length ?? 0}</div>
+                    <div style={{ fontSize: 10, color: T.mt }}>Audit Entries</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: T.mt, fontStyle: 'italic' }}>{exportResult.notice}</div>
               </div>
             )}
           </div>

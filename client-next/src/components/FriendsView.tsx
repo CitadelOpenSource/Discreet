@@ -137,13 +137,13 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest }: FriendsViewPro
                       }
                     }},
                     { sep: true },
-                    { label: 'Copy User ID',   icon: <I.Copy />, hint: fid?.slice(0, 8), fn: () => navigator.clipboard?.writeText(fid || '') },
+                    { label: 'Copy User ID',   icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(fid || '') },
                     { label: 'Copy Username',  icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(fname) },
                   ]});
                 }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8 }}>
                 <Av name={f.friend_username || f.username || '?'} />
-                <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600 }}>{f.friend_username || f.username || fid?.slice(0, 8)}</div></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600 }}>{f.friend_username || f.username || 'Unknown User'}</div></div>
                 <div onClick={() => startDm(fid)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Message"><I.Msg /></div>
                 <div onClick={async () => {
                   if (await showConfirm('Remove Friend', `Remove ${f.friend_username || f.username || 'this user'} from your friends list?`, true, 'remove_friend')) {

@@ -60,8 +60,8 @@ import type { CtxMenuItem } from './components/CtxMenu';
 
 // ── Types ─────────────────────────────────────────────────
 interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; message_retention_days?: number | null; disappearing_messages_default?: string | null; last_activity_at?: string | null; is_archived?: boolean; archived_at?: string | null; scheduled_deletion_at?: string | null; }
-interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; }
-interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; }
+interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; read_only?: boolean; }
+interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; priority?: string; }
 interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; }
 
 // ── Crypto ────────────────────────────────────────────────
@@ -531,6 +531,7 @@ export default function App() {
   const [servers, setServers] = useState<Server[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [userChannelCats, setUserChannelCats] = useState<{ id: string; name: string; position: number; collapsed: boolean; channel_ids: string[] }[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [dms, setDms] = useState<DM[]>([]);
@@ -666,10 +667,14 @@ export default function App() {
   const [emojiTarget, setEmojiTarget] = useState<string | null>(null); // message id for reaction
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
   const [editMsg, setEditMsg] = useState<Msg | null>(null);
+  const [msgPriority, setMsgPriority] = useState<'normal' | 'important' | 'urgent'>('normal');
+  const [reportTarget, setReportTarget] = useState<Msg | null>(null);
+  const [ackCounts, setAckCounts] = useState<Record<string, { ack: number; total: number; myAck: boolean }>>({}); // message_id → ack info
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [a11yReduceMotion, setA11yReduceMotion] = useState(() => localStorage.getItem('d_reduce_motion') === 'true');
   const [a11yHighContrast, setA11yHighContrast] = useState(() => localStorage.getItem('d_high_contrast') === 'true');
   const [a11yFocusRings, setA11yFocusRings] = useState(() => localStorage.getItem('d_focus_rings') === 'true');
+  const [hasUnverifiedDevice, setHasUnverifiedDevice] = useState(false);
   const [serverEmoji, setServerEmoji] = useState<CustomEmoji[]>([]);
   const [panel, setPanel] = useState<'members' | 'search' | 'thread' | null>('members');
   const [threadParent, setThreadParent] = useState<Msg | null>(null);
@@ -797,6 +802,7 @@ export default function App() {
     } catch {}
     loadServers(true); loadDms(); api.getMe().then(setMe).catch(() => {});
     api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
+    api.listSessions().then((ss: any[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
     api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null } })); } }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
@@ -1103,6 +1109,14 @@ export default function App() {
           if (ch) joinVoice(ch as any);
         }
       }
+      // Real-time ack updates
+      if (evt.type === 'message_ack') {
+        setAckCounts(p => ({ ...p, [evt.message_id]: { ack: evt.ack_count, total: evt.member_count, myAck: p[evt.message_id]?.myAck || evt.user_id === api.userId } }));
+      }
+      // Urgent reminder — play sound for targeted users
+      if (evt.type === 'urgent_reminder' && evt.target_user_ids?.includes(api.userId)) {
+        if (localStorage.getItem('d_notif_dnd') !== 'true') playNotifSound('mention');
+      }
     };
     const unsub = api.onWsEvent(handler);
     // Latency ping every 10 seconds
@@ -1223,6 +1237,7 @@ export default function App() {
     setCurServer(s); setCurChannel(null); setCurDm(null); setMessages([]); setView('server'); setMobileMenuOpen(false);
     setMembersLoaded(null); setMembers([]);
     api.listEmojis(s.id).then((e: any) => setServerEmoji(Array.isArray(e) ? e : []));
+    api.listChannelCategories(s.id).then((cats: any) => setUserChannelCats(Array.isArray(cats) ? cats : [])).catch(() => {});
     const [chs] = await Promise.all([loadChannels(s.id), loadCategories(s.id), loadRoles(s.id)]);
     // Auto-join: localStorage default → 'welcome'/'general' → first text channel
     const textChs = chs.filter((c: Channel) => !c.channel_type || c.channel_type === 'text');
@@ -1264,7 +1279,7 @@ export default function App() {
     try { const raw = await api.getGroupDmMessages(gdm.id); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
   };
   const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setServerEmoji([]); setMobileMenuOpen(false); };
-  const getName = (uid: string) => userMap[uid] || uid?.slice(0, 8) || '?';
+  const getName = (uid: string) => userMap[uid] || '?';
 
   // Inline badge shown after a username. badge_type drives the emoji; account_tier
   // drives the text label for users with no special badge.
@@ -1389,8 +1404,10 @@ export default function App() {
         setMessages(prev => [...prev, tempMsg]);
         setMsgInput(''); setReplyTo(null);
         try {
-          await api.sendMessage(curChannel.id, ct, 0, replyId, threadRoot, mentionIds.length ? mentionIds : undefined);
+          const pri = msgPriority !== 'normal' ? msgPriority : undefined;
+          await api.sendMessage(curChannel.id, ct, 0, replyId, threadRoot, mentionIds.length ? mentionIds : undefined, pri);
           playSound('send');
+          setMsgPriority('normal');
           await loadMessages(curChannel);
         } catch (sendErr: any) {
           // Mark as failed — keep in list, add to failedMessages for retry
@@ -1765,7 +1782,8 @@ export default function App() {
   };
   const renderServerIcon = (s: Server, isFav: boolean) => {
     const isActive = curServer?.id === s.id;
-    const hasUnread = Object.entries(unreadCounts).some(([k, v]) => v > 0 && channels.some(c => c.id === k && c.server_id === s.id));
+    const srvUnreadCount = Object.entries(unreadCounts).reduce((sum, [k, v]) => v > 0 && channels.some(c => c.id === k && c.server_id === s.id) ? sum + v : sum, 0);
+    const hasUnread = srvUnreadCount > 0;
     return (
     <div key={s.id} onClick={() => selectServer(s)}
       className={`srv-icon${isActive ? ' srv-icon--active' : hasUnread && !isActive ? ' srv-icon--unread' : ''}`}
@@ -1810,7 +1828,9 @@ export default function App() {
       {s.icon_url ? <img src={s.icon_url} alt="" style={{ width: 48, height: 48, objectFit: 'cover' }} /> : s.name[0]?.toUpperCase()}
       {isFav && <div style={{ position: 'absolute', bottom: -1, right: -1, fontSize: 8, color: '#f0b232' }}>★</div>}
       {hasUnread && !isActive && (
-        <div style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, background: T.err, border: `2px solid ${T.bg}` }} />
+        <div style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: T.err, border: `2px solid ${T.bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff', padding: '0 3px' }}>
+          {srvUnreadCount > 99 ? '99+' : srvUnreadCount}
+        </div>
       )}
       {serverNotifLevels[s.id] === 'nothing' && (
         <div style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, background: T.bg, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9 }} title="Muted"><I.BellOff s={9} /></div>
@@ -2027,7 +2047,30 @@ export default function App() {
                   items.push({ sep: true });
                   items.push({ label: 'Delete Channel', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Channel', `This will permanently delete #${ch.name} and all its messages. This action cannot be undone.`, true, ch.name, 'Delete Channel')) { await api.deleteChannel(ch.id); if (curServer) await loadChannels(curServer.id); if (curChannel?.id === ch.id) setCurChannel(null); } } });
                 }
+                // Add to user category options
+                if (userChannelCats.length > 0) {
+                  items.push({ sep: true });
+                  userChannelCats.forEach(uc => items.push({ label: `📁 Move to ${uc.name}`, fn: async () => { try { await api.addChannelToCategory(uc.id, ch.id); api.listChannelCategories(curServer!.id).then(c => setUserChannelCats(Array.isArray(c) ? c : [])); } catch {} } }));
+                  items.push({ label: '📁 Remove from folder', fn: async () => { for (const uc of userChannelCats) { try { await api.removeChannelFromCategory(uc.id, ch.id); } catch {} } api.listChannelCategories(curServer!.id).then(c => setUserChannelCats(Array.isArray(c) ? c : [])); } });
+                }
+                items.push({ sep: true });
+                items.push({ label: '📁 New Folder…', fn: async () => { const name = prompt('Folder name:'); if (name?.trim() && curServer) { try { const cat = await api.createChannelCategory(curServer.id, name.trim()); await api.addChannelToCategory(cat.id, ch.id); api.listChannelCategories(curServer.id).then(c => setUserChannelCats(Array.isArray(c) ? c : [])); } catch {} } } });
                 setCtxMenu({ x: e.clientX, y: e.clientY, items });
+              }}
+              userCategories={userChannelCats}
+              onUserCategoryToggle={async (catId) => {
+                const cat = userChannelCats.find(c => c.id === catId);
+                if (cat) { await api.updateChannelCategory(catId, { collapsed: !cat.collapsed }); setUserChannelCats(p => p.map(c => c.id === catId ? { ...c, collapsed: !c.collapsed } : c)); }
+              }}
+              onUserCategoryCtx={(e, cat) => {
+                e.preventDefault();
+                setCtxMenu({ x: e.clientX, y: e.clientY, items: [
+                  { label: 'Rename', icon: <I.Edit />, fn: async () => { const name = prompt('New name:', cat.name); if (name?.trim()) { await api.updateChannelCategory(cat.id, { name: name.trim() }); setUserChannelCats(p => p.map(c => c.id === cat.id ? { ...c, name: name.trim() } : c)); } } },
+                  { label: 'Delete Folder', icon: <I.Trash />, danger: true, fn: async () => { await api.deleteChannelCategory(cat.id); setUserChannelCats(p => p.filter(c => c.id !== cat.id)); } },
+                ] });
+              }}
+              onDropOnUserCategory={async (channelId, catId) => {
+                try { await api.addChannelToCategory(catId, channelId); if (curServer) api.listChannelCategories(curServer.id).then(c => setUserChannelCats(Array.isArray(c) ? c : [])); } catch {}
               }}
             />
             )}
@@ -2205,6 +2248,12 @@ export default function App() {
         {wsStatusVisible && wsStatus === 'connected' && (
           <div style={{ padding: '6px 16px', background: '#43b581', color: '#fff', fontSize: 12, fontWeight: 600, flexShrink: 0, animation: 'fadeIn 0.2s ease' }}>
             Connected
+          </div>
+        )}
+        {hasUnverifiedDevice && view === 'server' && (
+          <div style={{ padding: '4px 16px', background: 'rgba(250,166,26,0.08)', borderBottom: '1px solid rgba(250,166,26,0.15)', fontSize: 11, color: '#faa61a', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span>⚠️</span> Unverified device detected. <span onClick={() => setModal('settings')} style={{ textDecoration: 'underline', cursor: 'pointer' }}>Verify in Settings</span>
+            <span onClick={() => setHasUnverifiedDevice(false)} style={{ marginLeft: 'auto', cursor: 'pointer', opacity: 0.6 }}>✕</span>
           </div>
         )}
         {/* Header */}
@@ -2860,7 +2909,7 @@ export default function App() {
                     <div style={{ flex: 1, height: 1, background: T.bd }} />
                   </div>
                 )}
-                <div className="msg-row" data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: msgDensity === 'compact' ? 6 : msgDensity === 'cozy' ? 12 : 10, padding: msgDensity === 'compact' ? '1px 16px' : msgDensity === 'cozy' ? '6px 16px' : '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
+                <div className="msg-row" data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: msgDensity === 'compact' ? 6 : msgDensity === 'cozy' ? 12 : 10, padding: msgDensity === 'compact' ? '1px 16px' : msgDensity === 'cozy' ? '6px 16px' : '4px 16px', position: 'relative', background: m.priority === 'urgent' ? 'rgba(255,107,53,0.08)' : m.priority === 'important' ? 'rgba(250,166,26,0.06)' : highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
                   onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
                   onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}>
                 <div className="msg-avatar" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer', flexShrink: 0 }}>
@@ -2872,6 +2921,8 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span className="msg-name" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} title={rawUsernameMap[m.author_id] || ''} style={{ fontWeight: 600, fontSize: msgDensity === 'compact' ? 12 : 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
                     {renderPlatformBadge(m.author_id)}
+                    {m.priority === 'urgent' && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,107,53,0.2)', color: '#ff6b35' }}>URGENT</span>}
+                    {m.priority === 'important' && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.2)', color: '#faa61a' }}>IMPORTANT</span>}
                     {msgDensity === 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 9, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
                     <span style={{ flex: 1 }} />
                     {msgDensity !== 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
@@ -2880,6 +2931,34 @@ export default function App() {
                   {failedMessages[m.id] && (
                     <div onClick={() => retryFailedMessage(m.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', color: T.err, fontSize: 11, cursor: 'pointer', fontWeight: 600 }} title="Click to retry sending">
                       ⚠ Failed — click to retry
+                    </div>
+                  )}
+                  {/* Urgent message acknowledge bar */}
+                  {m.priority === 'urgent' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.2)' }}>
+                      {ackCounts[m.id] ? (
+                        <span style={{ fontSize: 11, color: '#ff6b35', fontWeight: 600 }}>
+                          {ackCounts[m.id].ack}/{ackCounts[m.id].total} acknowledged
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: T.mt }}>Acknowledgement required</span>
+                      )}
+                      <span style={{ flex: 1 }} />
+                      {(!ackCounts[m.id] || !ackCounts[m.id].myAck) && m.author_id !== api.userId && (
+                        <button onClick={async () => {
+                          try {
+                            const res = await api.ackMessage(m.id);
+                            setAckCounts(p => ({ ...p, [m.id]: { ack: res.ack_count, total: res.member_count, myAck: true } }));
+                          } catch {}
+                        }} style={{ padding: '3px 12px', borderRadius: 5, border: 'none', background: '#ff6b35', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Acknowledge</button>
+                      )}
+                      {ackCounts[m.id]?.myAck && <span style={{ fontSize: 10, color: '#3ba55d' }}>✓ Acknowledged</span>}
+                    </div>
+                  )}
+                  {/* Important message indicator */}
+                  {m.priority === 'important' && (
+                    <div style={{ fontSize: 10, color: '#faa61a', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      ⚠ Important message
                     </div>
                   )}
                   {/* Invite previews */}
@@ -2986,6 +3065,7 @@ export default function App() {
                   <span onClick={() => { setReplyTo(m); inputRef.current?.focus(); }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Reply"><I.Reply /></span>
                   {curServer && curChannel && <span onClick={async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Pin">📌</span>}
                   <span onClick={() => toggleBookmark(m)} style={{ cursor: 'pointer', padding: '2px 4px', color: bookmarkedIds.has(m.id) ? T.ac : T.mt, fontSize: 12 }} title={bookmarkedIds.has(m.id) ? 'Remove bookmark' : 'Bookmark'}><I.Bookmark /></span>
+                  {m.author_id !== api.userId && <span onClick={() => setReportTarget(m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Report message"><I.Flag /></span>}
                   <span onClick={e => openMsgCtx(e, m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="More">⋯</span>
                 </div>
               </div>
@@ -3092,6 +3172,13 @@ export default function App() {
             )}
 
             {/* Input */}
+            {curChannel.read_only && !hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR) ? (
+              <div style={{ padding: '14px 16px', borderTop: `1px solid ${T.bd}`, textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: T.mt, fontSize: 13 }}>
+                  <span style={{ fontSize: 16 }}>📣</span> This is a read-only channel.
+                </div>
+              </div>
+            ) : (
             <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <label style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Attach file">
@@ -3123,12 +3210,16 @@ export default function App() {
                 }}
                 placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
                 style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+              <div onClick={() => setMsgPriority(p => p === 'normal' ? 'important' : p === 'important' ? 'urgent' : 'normal')} title={`Priority: ${msgPriority} (click to cycle)`} style={{ cursor: 'pointer', padding: 4, fontSize: 13, color: msgPriority === 'urgent' ? '#ff6b35' : msgPriority === 'important' ? '#faa61a' : T.mt }}>
+                {msgPriority === 'urgent' ? '🔴' : msgPriority === 'important' ? '🟡' : '⚪'}
+              </div>
               <div onClick={() => setShowEmojiPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
               <div onClick={() => { setPollQuestion(''); setPollOptions(['', '']); setModal('create-poll'); }} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
               <div onClick={() => setShowGifPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
               <div onClick={sendMessage} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
+          )}
           </div>{/* close positioned wrapper */}
         </div>)}
 
@@ -3334,7 +3425,7 @@ export default function App() {
                     <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 12px 2px' }}>Friends</div>
                     {filteredFriends.map(f => {
                       const uid = f.friend_id || f.user_id || f.id;
-                      const name = f.username || f.display_name || uid?.slice(0, 8);
+                      const name = f.username || f.display_name || 'Unknown User';
                       return <UserRow key={uid} uid={uid} name={name} onSelect={async () => { await startDm(uid); setShowNewDmModal(false); }} />;
                     })}
                   </>
@@ -3353,7 +3444,7 @@ export default function App() {
                         <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 12px 2px' }}>All Users</div>
                         {extraResults.map(u => {
                           const uid = u.id || u.user_id;
-                          const name = u.username || u.display_name || uid?.slice(0, 8);
+                          const name = u.username || u.display_name || 'Unknown User';
                           return <UserRow key={uid} uid={uid} name={name} onSelect={async () => { await startDm(uid); setShowNewDmModal(false); }} />;
                         })}
                       </>
@@ -3382,7 +3473,7 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16, maxHeight: 220, overflowY: 'auto' }}>
                 {gdmFriends.map((f: any) => {
                   const uid = f.friend_id || f.user_id || f.id;
-                  const name = f.username || f.display_name || uid?.slice(0, 8);
+                  const name = f.username || f.display_name || 'Unknown User';
                   const checked = gdmSelected.includes(uid);
                   return (
                     <div key={uid} onClick={() => setGdmSelected(p => checked ? p.filter(id => id !== uid) : [...p, uid])}
@@ -4184,6 +4275,53 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Report Modal */}
+      {reportTarget && React.createElement(function ReportModal() {
+        const [reason, setReason] = useState('spam');
+        const [details, setDetails] = useState('');
+        const [submitting, setSubmitting] = useState(false);
+        const [submitted, setSubmitted] = useState(false);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002 }} onClick={() => setReportTarget(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '90vw', background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 24, boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+              {submitted ? (
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>✓</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>Report Submitted</div>
+                  <div style={{ fontSize: 12, color: T.mt, marginBottom: 16 }}>Platform admins will review this report.</div>
+                  <button onClick={() => setReportTarget(null)} style={{ padding: '6px 20px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+                </div>
+              ) : (<>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>Report Message</div>
+                  <button onClick={() => setReportTarget(null)} aria-label="Close" style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
+                </div>
+                <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12, fontSize: 12, color: T.mt, lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>
+                  <span style={{ fontWeight: 600, color: T.tx }}>{getName(reportTarget.author_id)}: </span>
+                  {reportTarget.text?.slice(0, 200) || '(encrypted)'}
+                </div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: T.mt, display: 'block', marginBottom: 4, textTransform: 'uppercase' }}>Reason</label>
+                <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, marginBottom: 10 }}>
+                  <option value="spam">Spam</option>
+                  <option value="harassment">Harassment</option>
+                  <option value="illegal_content">Illegal Content</option>
+                  <option value="other">Other</option>
+                </select>
+                <label style={{ fontSize: 11, fontWeight: 600, color: T.mt, display: 'block', marginBottom: 4, textTransform: 'uppercase' }}>Details (optional)</label>
+                <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Additional context..." rows={3} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 12 }} />
+                <button onClick={async () => {
+                  setSubmitting(true);
+                  try { await api.submitReport(reportTarget.id, reason, details.trim() || undefined); setSubmitted(true); } catch {}
+                  setSubmitting(false);
+                }} disabled={submitting} style={{ padding: '8px 24px', borderRadius: 8, border: 'none', background: submitting ? T.sf2 : T.err, color: '#fff', fontSize: 13, fontWeight: 700, cursor: submitting ? 'default' : 'pointer' }}>
+                  {submitting ? 'Submitting...' : 'Submit Report'}
+                </button>
+              </>)}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Confirm Dialog */}
       <ConfirmDialog dialog={confirmDialog} setDialog={setConfirmDialog} />
