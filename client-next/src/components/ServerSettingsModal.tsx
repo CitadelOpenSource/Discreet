@@ -45,6 +45,8 @@ interface Channel {
   category_id?: string | null;
   is_archived?: boolean;
   is_announcement?: boolean;
+  ai_model_override?: string | null;
+  read_only?: boolean;
 }
 
 interface Category {
@@ -187,11 +189,24 @@ interface ChannelManagerRowProps {
   showConfirm: (title: string, message: string, danger?: boolean, confirmPhrase?: string, confirmLabel?: string) => Promise<boolean>;
 }
 
+const AI_MODEL_OPTIONS = [
+  { value: '',                          label: 'Default (server)' },
+  { value: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  { value: 'claude-opus-4-6',          label: 'Claude Opus 4.6' },
+  { value: 'gpt-4o',                    label: 'GPT-4o' },
+  { value: 'gpt-4o-mini',              label: 'GPT-4o Mini' },
+  { value: 'llama3',                    label: 'Llama 3 (Ollama)' },
+  { value: 'mistral',                   label: 'Mistral (Ollama)' },
+  { value: 'codellama',                 label: 'Code Llama (Ollama)' },
+];
+
 function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, showConfirm }: ChannelManagerRowProps) {
   const [editing, setEditing]   = useState(false);
   const [chName, setChName]     = useState(ch.name);
   const [saving, setSaving]     = useState(false);
   const [hovered, setHovered]   = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
 
   const saveRename = async () => {
     const trimmed = chName.trim().toLowerCase().replace(/\s+/g, '-');
@@ -268,6 +283,42 @@ function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, sh
         {ch.channel_type || 'text'}
       </span>
 
+      {/* AI model override badge / picker */}
+      {ch.channel_type !== 'voice' && (
+        showModelPicker ? (
+          <select
+            autoFocus
+            value={ch.ai_model_override || ''}
+            onChange={async (e) => {
+              const val = e.target.value || null;
+              await api.updateChannel(ch.id, { ai_model_override: val });
+              onRefresh();
+              setShowModelPicker(false);
+            }}
+            onBlur={() => setShowModelPicker(false)}
+            style={{ ...getInp(), padding: '3px 6px', fontSize: 10, maxWidth: 130, flexShrink: 0 }}
+          >
+            {AI_MODEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : ch.ai_model_override ? (
+          <span
+            onClick={() => setShowModelPicker(true)}
+            title={`AI Model: ${ch.ai_model_override} (click to change)`}
+            style={{ fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: 'rgba(88,101,242,0.12)', color: '#5865F2', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
+          >
+            🤖 {ch.ai_model_override}
+          </span>
+        ) : hovered ? (
+          <span
+            onClick={() => setShowModelPicker(true)}
+            title="Set AI model override for this channel"
+            style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, color: T.mt, cursor: 'pointer', flexShrink: 0, opacity: 0.6 }}
+          >
+            🤖
+          </span>
+        ) : null
+      )}
+
       {/* category move */}
       {categories.length > 0 && (
         <select
@@ -287,6 +338,14 @@ function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, sh
         <button onClick={() => { setEditing(false); setChName(ch.name); }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: 4, fontSize: 14 }} title="Cancel"><I.X /></button>
       </>) : (<>
         <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: 4, fontSize: 13, opacity: hovered ? 1 : 0.5, transition: 'opacity .12s' }} title="Rename"><I.Edit /></button>
+        <button
+          onClick={async () => {
+            await api.updateChannel(ch.id, { read_only: !ch.read_only });
+            onRefresh();
+          }}
+          title={ch.read_only ? 'Make writable' : 'Make read-only'}
+          style={{ background: 'none', border: 'none', color: ch.read_only ? '#faa61a' : T.mt, cursor: 'pointer', padding: 4, fontSize: 13, opacity: hovered ? 1 : 0.5, transition: 'opacity .12s' }}
+        >{ch.read_only ? '📣' : '📢'}</button>
         <button
           onClick={toggleArchive}
           title={ch.is_archived ? 'Unarchive' : 'Archive'}
@@ -473,7 +532,7 @@ function MemberManagerRow({ member: m, userRoles, allRoles, serverId, onRolesCha
             )}
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>User ID</div>
-              <div style={{ fontSize: 11, color: T.mt, fontFamily: "'JetBrains Mono',monospace" }}>{m.user_id.slice(0, 16)}…</div>
+              <button onClick={() => navigator.clipboard?.writeText(m.user_id)} style={{ fontSize: 11, color: T.mt, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace" }}>Copy ID</button>
             </div>
           </div>
 
@@ -1139,7 +1198,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
             <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.sf2, borderRadius: 8, marginBottom: 6 }}>
               <Av name={getName(uid) || '?'} size={28} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{getName(uid) || uid.slice(0, 8)}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{getName(uid) || 'Unknown User'}</div>
                 <div style={{ fontSize: 11, color: T.warn }}>Expires {new Date(exp).toLocaleTimeString()}</div>
               </div>
               <button onClick={() => {
@@ -1313,6 +1372,21 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
   const [memberSearch, setMemberSearch] = useState('');
   const [roleMemberCounts, setRoleMemberCounts] = useState<Record<string, number>>({});
   const [serverBots, setServerBots]       = useState<BotEntry[]>([]);
+  // Playbooks
+  const [playbooks, setPlaybooks] = useState<any[]>([]);
+  const [showCreatePlaybook, setShowCreatePlaybook] = useState(false);
+  const [newPbName, setNewPbName] = useState('');
+  const [newPbDesc, setNewPbDesc] = useState('');
+  const [newPbSteps, setNewPbSteps] = useState<{ title: string; assignee_id?: string }[]>([]);
+  const [expandedPb, setExpandedPb] = useState<string | null>(null);
+  // Automation tasks
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskType, setNewTaskType] = useState('channel_monitor');
+  const [newTaskChannel, setNewTaskChannel] = useState('');
+  const [newTaskCron, setNewTaskCron] = useState('0 */6 * * *');
+  const [newTaskMonitorType, setNewTaskMonitorType] = useState('action_items');
+  const [newTaskConfig, setNewTaskConfig] = useState<Record<string, any>>({});
   const [spawnName, setSpawnName]         = useState('');
   const [spawnPersona, setSpawnPersona]   = useState(PRESETS[0]?.id || 'general');
   const [spawning, setSpawning]           = useState(false);
@@ -1340,6 +1414,8 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
       api.listCategories(server.id).then(c => setCategories(Array.isArray(c) ? c : []));
     }
     if (tab === 'bots')     api.listBots(server.id).then(b => setServerBots(Array.isArray(b) ? b : []));
+    if (tab === 'automation') { api.listTasks(server.id).then(t => setTasks(Array.isArray(t) ? t : [])); api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : [])); }
+    if (tab === 'playbooks') { api.listPlaybooks(server.id).then(p => setPlaybooks(Array.isArray(p) ? p : [])); if (mgmtMembers.length === 0) api.listMembers(server.id).then(m => { if (Array.isArray(m)) setMgmtMembers(m); }); }
     if (tab === 'bans')     api.listBans(server.id).then(b => setBans(Array.isArray(b) ? b : []));
     if (tab === 'audit')    api.getAuditLog(server.id).then(a => setAuditLog(Array.isArray(a) ? a : []));
     if (tab === 'invites') { setInvitesLoading(true); api.listInvites(server.id).then(inv => { setInvites(Array.isArray(inv) ? inv : []); setInvitesLoading(false); }).catch(() => setInvitesLoading(false)); }
@@ -1495,6 +1571,8 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     { id: 'moderation',  label: 'Moderation' },
     { id: 'data',        label: 'Data Management' },
     { id: 'bans',        label: 'Bans' },
+    { id: 'playbooks',   label: 'Playbooks' },
+    { id: 'automation',  label: 'Automation' },
     { id: 'audit',       label: 'Audit Log' },
   ];
 
@@ -1578,6 +1656,27 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: slashCmdsEnabled ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
             </div>
           </div>
+          {/* Mention controls */}
+          <div style={{ fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 8, marginTop: 16, textTransform: 'uppercase' }}>Mention Controls</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
+            <div>
+              <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Who can @everyone</label>
+              <select value={(server as any).mention_everyone_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_everyone_role: e.target.value } as any); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
+                <option value="admin">Admins only</option>
+                <option value="moderator">Moderators & Admins</option>
+                <option value="everyone">Everyone</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Who can @here</label>
+              <select value={(server as any).mention_here_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_here_role: e.target.value } as any); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
+                <option value="admin">Admins only</option>
+                <option value="moderator">Moderators & Admins</option>
+                <option value="everyone">Everyone</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: T.mt, lineHeight: 1.5 }}>Users without permission can still type @everyone — the text posts but the ping is silently suppressed.</div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -2249,7 +2348,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           <div key={b.user_id || b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: T.sf2 }}>
             <Av name={b.username || '?'} size={28} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{b.username || b.user_id?.slice(0, 8)}</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{b.username || 'Unknown User'}</div>
               {b.reason && <div style={{ fontSize: 11, color: T.mt }}>{b.reason}</div>}
             </div>
             <button onClick={() => handleUnban(b.user_id)} className="pill-btn" style={{ background: T.sf, color: T.ac, border: `1px solid ${T.bd}` }}>Unban</button>
@@ -2259,6 +2358,325 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
 
       {/* ── Danger Zone (data tab footer) ── */}
       {tab === 'data' && <ServerDangerZone server={server} onUpdate={onUpdate} />}
+
+      {tab === 'playbooks' && (() => {
+        const TEMPLATES = [
+          { name: 'Incident Response', desc: 'Steps for handling production incidents', steps: ['Acknowledge incident', 'Assess severity (P1-P4)', 'Notify stakeholders', 'Investigate root cause', 'Implement fix', 'Verify resolution', 'Write post-mortem', 'Update runbook'] },
+          { name: 'New Member Onboarding', desc: 'Welcome checklist for new server members', steps: ['Introduce in #welcome', 'Assign roles', 'Share server guidelines', 'Add to relevant channels', 'Schedule intro meeting', 'Check in after 1 week'] },
+          { name: 'Release Checklist', desc: 'Pre-deployment verification steps', steps: ['Code review approved', 'Tests passing', 'Changelog updated', 'Version bumped', 'Staging deploy verified', 'Production deploy', 'Smoke test production', 'Announce in #releases'] },
+        ];
+
+        const loadPb = () => api.listPlaybooks(server.id).then(p => setPlaybooks(Array.isArray(p) ? p : []));
+
+        return (<>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Playbooks — {playbooks.length}
+          </span>
+          <button onClick={() => { setShowCreatePlaybook(p => !p); setNewPbName(''); setNewPbDesc(''); setNewPbSteps([]); }}
+            style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {showCreatePlaybook ? 'Cancel' : '+ Create Playbook'}
+          </button>
+        </div>
+
+        {/* Templates */}
+        {!showCreatePlaybook && playbooks.length === 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Templates</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+              {TEMPLATES.map(tmpl => (
+                <div key={tmpl.name} onClick={async () => {
+                  try { await api.createPlaybook(server.id, { name: tmpl.name, description: tmpl.desc, steps: tmpl.steps.map(s => ({ title: s })) }); loadPb(); } catch {}
+                }} style={{ padding: '12px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = T.ac}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = T.bd}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 4 }}>{tmpl.name}</div>
+                  <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4 }}>{tmpl.desc}</div>
+                  <div style={{ fontSize: 10, color: T.ac, marginTop: 6 }}>{tmpl.steps.length} steps</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Create form */}
+        {showCreatePlaybook && (
+          <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>New Playbook</div>
+            <input value={newPbName} onChange={e => setNewPbName(e.target.value)} placeholder="Playbook name" style={{ ...getInp(), marginBottom: 8 }} />
+            <textarea value={newPbDesc} onChange={e => setNewPbDesc(e.target.value)} placeholder="Description (optional)" rows={2} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 10 }} />
+            <div style={{ fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6 }}>Steps</div>
+            {newPbSteps.map((step, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: T.mt, width: 16, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+                <input value={step.title} onChange={e => setNewPbSteps(p => p.map((s, j) => j === i ? { ...s, title: e.target.value } : s))} placeholder={`Step ${i + 1}`} style={{ ...getInp(), flex: 1, fontSize: 12, padding: '5px 8px' }} />
+                <select value={step.assignee_id || ''} onChange={e => setNewPbSteps(p => p.map((s, j) => j === i ? { ...s, assignee_id: e.target.value || undefined } : s))} style={{ ...getInp(), width: 120, fontSize: 11, padding: '5px 6px', flexShrink: 0 }}>
+                  <option value="">Unassigned</option>
+                  {mgmtMembers.filter(m => !m.is_bot).map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username}</option>)}
+                </select>
+                <button onClick={() => setNewPbSteps(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', fontSize: 13, padding: 2 }}>✕</button>
+              </div>
+            ))}
+            <button onClick={() => setNewPbSteps(p => [...p, { title: '' }])} style={{ background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.mt, fontSize: 11, padding: '4px 10px', cursor: 'pointer', marginBottom: 10 }}>+ Add Step</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={async () => {
+                if (!newPbName.trim()) return;
+                const steps = newPbSteps.filter(s => s.title.trim()).map(s => ({ title: s.title.trim(), assignee_id: s.assignee_id }));
+                try { await api.createPlaybook(server.id, { name: newPbName.trim(), description: newPbDesc.trim() || undefined, steps: steps.length > 0 ? steps : undefined }); setShowCreatePlaybook(false); loadPb(); } catch {}
+              }} disabled={!newPbName.trim()} style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 700, cursor: newPbName.trim() ? 'pointer' : 'not-allowed', opacity: newPbName.trim() ? 1 : 0.5 }}>Create</button>
+              {/* Template quick-fill */}
+              <select onChange={e => { const t = TEMPLATES.find(t => t.name === e.target.value); if (t) { setNewPbName(t.name); setNewPbDesc(t.desc); setNewPbSteps(t.steps.map(s => ({ title: s }))); } e.target.value = ''; }} style={{ ...getInp(), fontSize: 11, padding: '5px 8px', width: 'auto' }}>
+                <option value="">Use template...</option>
+                {TEMPLATES.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Playbook list */}
+        {playbooks.length === 0 && !showCreatePlaybook && (
+          <div style={{ textAlign: 'center', padding: '24px 20px', color: T.mt }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No playbooks yet</div>
+            <div style={{ fontSize: 12 }}>Create a playbook or use a template above to get started.</div>
+          </div>
+        )}
+        {playbooks.map((pb: any) => {
+          const isExpanded = expandedPb === pb.id;
+          const steps: any[] = pb.steps || [];
+          const progress = pb.progress || { total: steps.length, completed: steps.filter((s: any) => s.completed).length, percent: 0 };
+          if (progress.total > 0 && !progress.percent) progress.percent = Math.round((progress.completed / progress.total) * 100);
+          return (
+            <div key={pb.id} style={{ background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8, overflow: 'hidden' }}>
+              {/* Header */}
+              <div onClick={() => setExpandedPb(isExpanded ? null : pb.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                <span style={{ fontSize: 12, color: T.mt }}>{isExpanded ? '▼' : '▶'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>{pb.name}</div>
+                  {pb.description && <div style={{ fontSize: 11, color: T.mt, marginTop: 1 }}>{pb.description}</div>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: progress.percent === 100 ? '#3ba55d' : T.mt, fontWeight: 600 }}>{progress.completed}/{progress.total}</span>
+                  <div style={{ width: 60, height: 6, borderRadius: 3, background: T.bg, overflow: 'hidden' }}>
+                    <div style={{ width: `${progress.percent}%`, height: '100%', borderRadius: 3, background: progress.percent === 100 ? '#3ba55d' : T.ac, transition: 'width .3s' }} />
+                  </div>
+                </div>
+                <button onClick={async (e) => { e.stopPropagation(); if (await showConfirm('Delete Playbook', `Delete "${pb.name}" and all its steps?`, true)) { await api.deletePlaybook(pb.id); loadPb(); } }} style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', padding: 4, fontSize: 12, opacity: 0.6 }} title="Delete"><I.Trash /></button>
+              </div>
+
+              {/* Expanded steps */}
+              {isExpanded && (
+                <div style={{ borderTop: `1px solid ${T.bd}`, padding: '8px 12px' }}>
+                  {steps.length === 0 && <div style={{ fontSize: 11, color: T.mt, padding: '8px 0', textAlign: 'center' }}>No steps — add one below</div>}
+                  {steps.map((step: any) => (
+                    <div key={step.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', borderRadius: 6 }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div onClick={async () => {
+                        try {
+                          const res = await api.completePlaybookStep(pb.id, step.id);
+                          setPlaybooks(prev => prev.map(p => p.id === pb.id ? { ...p, steps: p.steps.map((s: any) => s.id === step.id ? { ...s, completed: res.completed, completed_at: res.completed ? new Date().toISOString() : null, completed_by: res.completed ? api.userId : null } : s), progress: res.progress } : p));
+                        } catch {}
+                      }} style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${step.completed ? '#3ba55d' : T.bd}`, background: step.completed ? '#3ba55d' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}>
+                        {step.completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: step.completed ? T.mt : T.tx, textDecoration: step.completed ? 'line-through' : 'none' }}>{step.title}</div>
+                        {step.completed_by && step.completed_at && (
+                          <div style={{ fontSize: 10, color: T.mt }}>{getName(step.completed_by)} · {new Date(step.completed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+                        )}
+                      </div>
+                      {step.assignee_id && (
+                        <div title={getName(step.assignee_id)} style={{ flexShrink: 0 }}>
+                          <Av name={getName(step.assignee_id)} size={20} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {/* Add step inline */}
+                  {React.createElement(function AddStepInline() {
+                    const [title, setTitle] = useState('');
+                    const [assignee, setAssignee] = useState('');
+                    return (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+                        <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={async e => { if (e.key === 'Enter' && title.trim()) { try { await api.addPlaybookStep(pb.id, { title: title.trim(), assignee_id: assignee || undefined }); loadPb(); setTitle(''); } catch {} } }} placeholder="Add a step..." style={{ ...getInp(), flex: 1, fontSize: 11, padding: '4px 8px' }} />
+                        <select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ ...getInp(), width: 100, fontSize: 10, padding: '4px 4px', flexShrink: 0 }}>
+                          <option value="">Assign</option>
+                          {mgmtMembers.filter(m => !m.is_bot).map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        </>);
+      })()}
+
+      {tab === 'automation' && (<>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Scheduled Tasks — {tasks.length}
+          </span>
+          <button
+            onClick={() => setShowAddTask(p => !p)}
+            style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+          >{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+        </div>
+
+        {/* Add Task form */}
+        {showAddTask && (
+          <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>New Task</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Task Type</label>
+                <select value={newTaskType} onChange={e => { setNewTaskType(e.target.value); setNewTaskConfig({}); }} style={{ ...getInp(), fontSize: 12 }}>
+                  <option value="channel_monitor">Channel Monitor</option>
+                  <option value="announcement">Recurring Message</option>
+                  <option value="reminder">Daily Digest / Reminder</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Channel</label>
+                <select value={newTaskChannel} onChange={e => setNewTaskChannel(e.target.value)} style={{ ...getInp(), fontSize: 12 }}>
+                  <option value="">Select channel...</option>
+                  {channels.filter(c => c.channel_type !== 'voice').map(c => (
+                    <option key={c.id} value={c.id}>#{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Channel Monitor sub-type */}
+            {newTaskType === 'channel_monitor' && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Monitor Type</label>
+                <select value={newTaskMonitorType} onChange={e => setNewTaskMonitorType(e.target.value)} style={{ ...getInp(), fontSize: 12 }}>
+                  <option value="action_items">Action Items — detect TODO/action phrases</option>
+                  <option value="thread_summary">Thread Summary — summarize busy threads (20+ msgs)</option>
+                  <option value="inactive_alert">Inactive Alert — notify after silence</option>
+                </select>
+                {newTaskMonitorType === 'inactive_alert' && (
+                  <div style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Days before alert</label>
+                    <input type="number" min="1" max="90" value={newTaskConfig.inactive_days || 7} onChange={e => setNewTaskConfig(p => ({ ...p, inactive_days: parseInt(e.target.value) || 7 }))} style={{ ...getInp(), fontSize: 12, width: 80 }} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Announcement message */}
+            {newTaskType === 'announcement' && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Message</label>
+                <textarea value={newTaskConfig.message || ''} onChange={e => setNewTaskConfig(p => ({ ...p, message: e.target.value }))} placeholder="Message to post on schedule..." rows={2} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              </div>
+            )}
+
+            {/* Schedule */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Schedule (cron)</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                {[
+                  { label: 'Every 6h', cron: '0 */6 * * *' },
+                  { label: 'Daily 9am', cron: '0 9 * * *' },
+                  { label: 'Mon-Fri 9am', cron: '0 9 * * 1-5' },
+                  { label: 'Weekly Sun', cron: '0 10 * * 0' },
+                  { label: 'Hourly', cron: '0 * * * *' },
+                ].map(p => (
+                  <button key={p.cron} onClick={() => setNewTaskCron(p.cron)}
+                    style={{ padding: '3px 8px', borderRadius: 4, border: `1px solid ${newTaskCron === p.cron ? T.ac : T.bd}`, background: newTaskCron === p.cron ? `${T.ac}18` : T.bg, color: newTaskCron === p.cron ? T.ac : T.mt, fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input value={newTaskCron} onChange={e => setNewTaskCron(e.target.value)} placeholder="min hour dom month dow" style={{ ...getInp(), fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>5-field cron: minute(0-59) hour(0-23) day(1-31) month(1-12) weekday(0-6)</div>
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!newTaskChannel) return;
+                const config = newTaskType === 'channel_monitor'
+                  ? { monitor_type: newTaskMonitorType, ...newTaskConfig }
+                  : { ...newTaskConfig };
+                try {
+                  await api.createTask(server.id, {
+                    channel_id: newTaskChannel,
+                    task_type: newTaskType,
+                    config,
+                    cron_expr: newTaskCron,
+                  });
+                  setShowAddTask(false);
+                  setNewTaskConfig({});
+                  api.listTasks(server.id).then(t => setTasks(Array.isArray(t) ? t : []));
+                } catch { /* validation error shown by API */ }
+              }}
+              disabled={!newTaskChannel}
+              style={{ background: T.ac, color: '#000', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 700, cursor: newTaskChannel ? 'pointer' : 'not-allowed', opacity: newTaskChannel ? 1 : 0.5 }}
+            >Create Task</button>
+          </div>
+        )}
+
+        {/* Task list */}
+        {tasks.length === 0 && !showAddTask && (
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>⚙</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No automated tasks</div>
+            <div style={{ fontSize: 12, color: T.mt }}>Create a task to monitor channels, send recurring messages, or get daily digests.</div>
+          </div>
+        )}
+        {tasks.map((task: any) => {
+          const chName = channels.find(c => c.id === task.channel_id)?.name;
+          const typeLabels: Record<string, string> = {
+            channel_monitor: '📋 Channel Monitor',
+            announcement: '📢 Recurring Message',
+            reminder: '🔔 Daily Digest',
+            purge: '🧹 Channel Purge',
+            backup: '💾 Backup',
+            role_rotate: '🔄 Role Rotate',
+          };
+          const monitorType = task.config?.monitor_type;
+          const monitorLabels: Record<string, string> = {
+            action_items: 'Action Items',
+            thread_summary: 'Thread Summary',
+            inactive_alert: 'Inactive Alert',
+          };
+          return (
+            <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6, opacity: task.enabled ? 1 : 0.5 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{typeLabels[task.task_type] || task.task_type}</span>
+                  {monitorType && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: `${T.ac}15`, color: T.ac, fontWeight: 600 }}>{monitorLabels[monitorType] || monitorType}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, fontSize: 11, color: T.mt }}>
+                  {chName && <span>#{chName}</span>}
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>{task.cron_expr}</span>
+                  {task.last_run && <span>Last: {new Date(task.last_run).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                  {!task.last_run && <span style={{ fontStyle: 'italic' }}>Never run</span>}
+                </div>
+              </div>
+              {/* Toggle */}
+              <div onClick={async () => {
+                try {
+                  const res = await api.toggleTask(task.id);
+                  setTasks(prev => prev.map(t => t.id === task.id ? { ...t, enabled: res.enabled } : t));
+                } catch {}
+              }} role="switch" aria-checked={task.enabled} style={{ width: 36, height: 20, borderRadius: 10, background: task.enabled ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: task.enabled ? 18 : 2, transition: 'left .2s' }} />
+              </div>
+              {/* Delete */}
+              <button onClick={async () => {
+                if (await showConfirm('Delete Task', `Delete this ${typeLabels[task.task_type] || 'task'}? This cannot be undone.`, true)) {
+                  try { await api.deleteTask(task.id); setTasks(prev => prev.filter(t => t.id !== task.id)); } catch {}
+                }
+              }} style={{ background: 'none', border: 'none', color: T.err, cursor: 'pointer', padding: 4, fontSize: 13, opacity: 0.7 }} title="Delete task"><I.Trash /></button>
+            </div>
+          );
+        })}
+      </>)}
 
       {tab === 'audit' && (<>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>

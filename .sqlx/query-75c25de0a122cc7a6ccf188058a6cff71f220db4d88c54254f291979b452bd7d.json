@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT parent_message_id, COUNT(*) as reply_count\n         FROM messages\n         WHERE channel_id = $1\n           AND parent_message_id IS NOT NULL\n         GROUP BY parent_message_id\n         HAVING COUNT(*) >= $2\n         ORDER BY COUNT(*) DESC\n         LIMIT 5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "parent_message_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "reply_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "75c25de0a122cc7a6ccf188058a6cff71f220db4d88c54254f291979b452bd7d"
+}

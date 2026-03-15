@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.server_id, c.nsfw, c.disappearing_messages, c.read_only,\n                s.disappearing_messages_default, s.is_archived\n         FROM channels c\n         JOIN servers s ON s.id = c.server_id\n         WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "nsfw",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "disappearing_messages",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "read_only",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "disappearing_messages_default",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_archived",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "00abd6dede8bdee5788d5004412ba136d501ef4942439a23731cf72506a19112"
+}

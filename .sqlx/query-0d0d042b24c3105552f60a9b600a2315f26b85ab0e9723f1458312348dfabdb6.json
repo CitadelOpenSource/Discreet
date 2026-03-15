@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE playbook_steps SET completed = TRUE, completed_at = NOW(), completed_by = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d0d042b24c3105552f60a9b600a2315f26b85ab0e9723f1458312348dfabdb6"
+}

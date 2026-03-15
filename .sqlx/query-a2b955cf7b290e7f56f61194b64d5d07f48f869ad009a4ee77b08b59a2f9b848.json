@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, server_id, name, topic, channel_type, position,\n                locked, min_role_position, slowmode_seconds, nsfw, message_ttl_seconds,\n                message_retention_days, disappearing_messages, ai_model_override, thread_auto_archive_days, read_only, created_at\n         FROM channels WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "topic",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "channel_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "position",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "locked",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "min_role_position",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "slowmode_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "nsfw",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "message_ttl_seconds",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "message_retention_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "disappearing_messages",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "ai_model_override",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "thread_auto_archive_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "read_only",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a2b955cf7b290e7f56f61194b64d5d07f48f869ad009a4ee77b08b59a2f9b848"
+}

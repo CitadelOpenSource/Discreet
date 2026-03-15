@@ -249,7 +249,9 @@ export class CitadelAPI {
   async deleteChannel(cid: string) { return this.fetch(`/channels/${cid}`, { method: 'DELETE' }); }
 
   // ── Messages ──
-  async sendMessage(cid: string, ct: string, ep: number, replyId?: string, parentId?: string, mentionedIds?: string[]) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined, parent_message_id: parentId || undefined, mentioned_user_ids: mentionedIds?.length ? mentionedIds : undefined }) })).json(); }
+  async sendMessage(cid: string, ct: string, ep: number, replyId?: string, parentId?: string, mentionedIds?: string[], priority?: string) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined, parent_message_id: parentId || undefined, mentioned_user_ids: mentionedIds?.length ? mentionedIds : undefined, priority: priority || undefined }) })).json(); }
+  async ackMessage(mid: string) { return (await this.fetch(`/messages/${mid}/ack`, { method: 'POST' })).json(); }
+  async getAcks(mid: string) { try { const r = await this.fetch(`/messages/${mid}/acks`); return r.ok ? r.json() : null; } catch { return null; } }
   async getMessages(cid: string, limit = 50) { return (await this.fetch(`/channels/${cid}/messages?limit=${limit}`)).json(); }
   async editMessage(mid: string, content: string, epoch: number) { return this.fetch(`/messages/${mid}`, { method: 'PATCH', body: JSON.stringify({ content_ciphertext: content, mls_epoch: epoch }) }); }
   async deleteMessage(mid: string) { return this.fetch(`/messages/${mid}`, { method: 'DELETE' }); }
@@ -372,6 +374,7 @@ export class CitadelAPI {
   async refreshClaims() { try { const r = await this.fetch('/auth/me/refresh'); if (r.ok) { const d = await r.json(); if (d.access_token) this.token = d.access_token; return d; } return null; } catch { return null; } }
   async getPlatformMe() { try { const r = await this.fetch('/platform/me'); return r.ok ? r.json() : null; } catch { return null; } }
   async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
+  async complianceExport(serverId: string, startDate: string, endDate: string, format: string) { const r = await this.fetch('/admin/export', { method: 'POST', body: JSON.stringify({ server_id: serverId, start_date: startDate, end_date: endDate, format }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Export failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
   async saveTimezone(timezone: string) { return this.fetch('/settings/timezone', { method: 'POST', body: JSON.stringify({ timezone }) }); }
@@ -395,6 +398,8 @@ export class CitadelAPI {
   }
   async listSessions() { try { const r = await this.fetch('/auth/sessions'); return r.ok ? r.json() : []; } catch { return []; } }
   async revokeSession(id: string) { const r = await this.fetch(`/auth/sessions/${id}`, { method: 'DELETE' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Request failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } }
+  async initiateVerify(sessionId: string) { return (await this.fetch(`/auth/sessions/${sessionId}/verify`, { method: 'POST' })).json(); }
+  async confirmVerify(sessionId: string) { return (await this.fetch(`/auth/sessions/${sessionId}/confirm`, { method: 'POST' })).json(); }
   async revokeAllOtherSessions(reauthToken?: string) {
     const headers: Record<string, string> = {};
     if (reauthToken) headers['X-Reauth-Token'] = reauthToken;
@@ -465,6 +470,33 @@ export class CitadelAPI {
   async relayMlsWelcome(channelId: string, welcome: string, targetUserId: string) { return this.fetch(`/channels/${channelId}/mls/welcome`, { method: 'POST', body: JSON.stringify({ welcome, target_user_id: targetUserId }) }); }
   async getMlsInfo(channelId: string) { try { const r = await this.fetch(`/channels/${channelId}/mls/info`); return r.ok ? r.json() : null; } catch { return null; } }
   async uploadIdentityKey(signingKey: string, identityKey: string, deviceId?: string) { return this.fetch('/identity-keys', { method: 'POST', body: JSON.stringify({ signing_key: signingKey, identity_key: identityKey, device_id: deviceId || 'primary' }) }); }
+
+  // ── Reports ──
+  async submitReport(messageId: string, reason: string, details?: string) { return (await this.fetch('/reports', { method: 'POST', body: JSON.stringify({ message_id: messageId, reason, details: details || undefined }) })).json(); }
+  async listReports(status = 'open', limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/reports?status=${status}&limit=${limit}&offset=${offset}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async resolveReport(reportId: string, status: string) { return (await this.fetch(`/admin/reports/${reportId}`, { method: 'PATCH', body: JSON.stringify({ status }) })).json(); }
+
+  // ── Playbooks ──
+  async listPlaybooks(sid: string) { try { const r = await this.fetch(`/servers/${sid}/playbooks`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createPlaybook(sid: string, data: { name: string; description?: string; steps?: { title: string; assignee_id?: string }[] }) { return (await this.fetch(`/servers/${sid}/playbooks`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async getPlaybook(pid: string) { try { const r = await this.fetch(`/playbooks/${pid}`); return r.ok ? r.json() : null; } catch { return null; } }
+  async deletePlaybook(pid: string) { return this.fetch(`/playbooks/${pid}`, { method: 'DELETE' }); }
+  async addPlaybookStep(pid: string, data: { title: string; assignee_id?: string }) { return (await this.fetch(`/playbooks/${pid}/steps`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async completePlaybookStep(pid: string, stepId: string) { return (await this.fetch(`/playbooks/${pid}/steps/${stepId}/complete`, { method: 'PATCH' })).json(); }
+
+  // ── Channel Categories (user-level folders) ──
+  async listChannelCategories(sid: string) { try { const r = await this.fetch(`/servers/${sid}/channel-categories`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createChannelCategory(sid: string, name: string, position?: number) { return (await this.fetch(`/servers/${sid}/channel-categories`, { method: 'POST', body: JSON.stringify({ name, position }) })).json(); }
+  async updateChannelCategory(catId: string, data: { name?: string; position?: number; collapsed?: boolean }) { return this.fetch(`/channel-categories/${catId}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async deleteChannelCategory(catId: string) { return this.fetch(`/channel-categories/${catId}`, { method: 'DELETE' }); }
+  async addChannelToCategory(catId: string, channelId: string) { return this.fetch(`/channel-categories/${catId}/channels/${channelId}`, { method: 'PUT' }); }
+  async removeChannelFromCategory(catId: string, channelId: string) { return this.fetch(`/channel-categories/${catId}/channels/${channelId}`, { method: 'DELETE' }); }
+
+  // ── Scheduled Tasks ──
+  async listTasks(sid: string) { try { const r = await this.fetch(`/servers/${sid}/tasks`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createTask(sid: string, data: { channel_id?: string; task_type: string; config?: any; cron_expr: string; enabled?: boolean }) { return (await this.fetch(`/servers/${sid}/tasks`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async deleteTask(taskId: string) { return this.fetch(`/tasks/${taskId}`, { method: 'DELETE' }); }
+  async toggleTask(taskId: string) { return (await this.fetch(`/tasks/${taskId}/toggle`, { method: 'PATCH' })).json(); }
 
   // ── Streaming ──
   async startStream(channelId: string, title?: string, quality?: string) { try { const r = await this.fetch(`/channels/${channelId}/stream/start`, { method: 'POST', body: JSON.stringify({ title, quality: quality || '1080p' }) }); return r.ok ? r.json() : null; } catch { return null; } }

@@ -77,7 +77,7 @@ function msgText(m: ThreadMessage): string {
 
 export function ThreadView({ parentMessage, channelId, onClose, getName }: ThreadViewProps) {
   const resolveName = useCallback(
-    (uid: string) => getName ? getName(uid) : uid.slice(0, 8),
+    (uid: string) => getName ? getName(uid) : '?',
     [getName],
   );
 

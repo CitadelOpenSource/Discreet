@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sm.user_id FROM server_members sm\n                     WHERE sm.server_id = $1\n                       AND sm.user_id != $2\n                       AND sm.user_id NOT IN (\n                           SELECT user_id FROM message_acknowledgements WHERE message_id = $3\n                       )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d810c751199400053239742cfe27b85388bae28f306b34f794379358d6bb1c2"
+}

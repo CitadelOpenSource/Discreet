@@ -78,7 +78,12 @@ use citadel_server::citadel_premium;
 use citadel_server::citadel_platform_settings;
 use citadel_server::citadel_waitlist;
 use citadel_server::citadel_websocket;
+use citadel_server::discreet_ack_handlers;
 use citadel_server::discreet_bookmark_handlers;
+use citadel_server::discreet_channel_category_handlers;
+use citadel_server::discreet_playbook_handlers;
+use citadel_server::discreet_report_handlers;
+use citadel_server::discreet_scheduled_task_handlers;
 
 /// Middleware: maintenance mode gate.
 /// If maintenance_mode is enabled in platform_settings (cached in Redis),
@@ -400,6 +405,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(citadel_event_handlers::reminder_dispatcher(db, st));
     }
 
+    // Background task: execute scheduled tasks (channel monitors, announcements, etc.) every 60 seconds.
+    {
+        let db = state.db.clone();
+        let st = state.clone();
+        tokio::spawn(citadel_server::discreet_task_executor::task_executor_loop(db, st));
+    }
+
     // Build the versioned API sub-router.
     // ALL routes registered on a single Router to avoid Axum merge() conflicts
     // with overlapping path prefixes (e.g. /servers/:id + /servers/:id/channels).
@@ -433,6 +445,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/sessions", axum::routing::get(citadel_auth_handlers::list_sessions))
         .route("/auth/sessions/all-others", axum::routing::delete(citadel_auth_handlers::revoke_all_other_sessions))
         .route("/auth/sessions/:id", axum::routing::delete(citadel_auth_handlers::revoke_session))
+        .route("/auth/sessions/:id/verify", axum::routing::post(citadel_auth_handlers::initiate_verify))
+        .route("/auth/sessions/:id/confirm", axum::routing::post(citadel_auth_handlers::confirm_verify))
         // ── 2FA (login completion — no JWT required) ──
         .route("/auth/2fa/verify", axum::routing::post(citadel_auth_handlers::complete_2fa_login))
         // ── 2FA management (JWT required) ──
@@ -468,6 +482,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Bookmarks
         .route("/bookmarks", axum::routing::post(discreet_bookmark_handlers::create_bookmark).get(discreet_bookmark_handlers::list_bookmarks))
         .route("/bookmarks/:message_id", axum::routing::delete(discreet_bookmark_handlers::delete_bookmark))
+        // Channel categories (user-level custom folders)
+        .route("/servers/:server_id/channel-categories", axum::routing::get(discreet_channel_category_handlers::list_categories).post(discreet_channel_category_handlers::create_category))
+        .route("/channel-categories/:cat_id", axum::routing::patch(discreet_channel_category_handlers::update_category).delete(discreet_channel_category_handlers::delete_category))
+        .route("/channel-categories/:cat_id/channels/:channel_id", axum::routing::put(discreet_channel_category_handlers::add_channel_to_category).delete(discreet_channel_category_handlers::remove_channel_from_category))
+        // Playbooks
+        .route("/servers/:server_id/playbooks", axum::routing::post(discreet_playbook_handlers::create_playbook).get(discreet_playbook_handlers::list_playbooks))
+        .route("/playbooks/:playbook_id", axum::routing::get(discreet_playbook_handlers::get_playbook).delete(discreet_playbook_handlers::delete_playbook))
+        .route("/playbooks/:playbook_id/steps", axum::routing::post(discreet_playbook_handlers::add_step))
+        .route("/playbooks/:playbook_id/steps/:step_id/complete", axum::routing::patch(discreet_playbook_handlers::complete_step))
+        // Scheduled tasks
+        .route("/servers/:server_id/tasks", axum::routing::post(discreet_scheduled_task_handlers::create_task).get(discreet_scheduled_task_handlers::list_tasks))
+        .route("/tasks/:task_id", axum::routing::delete(discreet_scheduled_task_handlers::delete_task))
+        .route("/tasks/:task_id/toggle", axum::routing::patch(discreet_scheduled_task_handlers::toggle_task))
         // Soundboard
         .route("/servers/:server_id/automod", axum::routing::get(citadel_automod::get_automod_config).put(citadel_automod::update_automod_config))
         .route("/servers/:server_id/soundboard", axum::routing::get(citadel_soundboard_handlers::list_clips).post(citadel_soundboard_handlers::upload_clip))
@@ -502,6 +529,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/channels/:channel_id/messages", axum::routing::post(citadel_message_handlers::send_message).get(citadel_message_handlers::get_messages))
         .route("/channels/:channel_id/messages/search", axum::routing::get(citadel_message_handlers::search_messages))
         .route("/messages/:id", axum::routing::patch(citadel_message_handlers::edit_message).delete(citadel_message_handlers::delete_message))
+        .route("/messages/:id/ack", axum::routing::post(discreet_ack_handlers::ack_message))
+        .route("/messages/:id/acks", axum::routing::get(discreet_ack_handlers::get_acks))
         // ── Pins ──
         .route("/servers/:server_id/channels/:channel_id/pins/:message_id", axum::routing::post(citadel_pin_handlers::pin_message).delete(citadel_pin_handlers::unpin_message))
         .route("/servers/:server_id/channels/:channel_id/pins", axum::routing::get(citadel_pin_handlers::list_pinned_messages))
@@ -602,6 +631,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/bug-reports", axum::routing::post(citadel_bug_report_handlers::submit_bug_report))
         .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports))
         // ── Platform settings (kill switches) ──
+        // Content reports
+        .route("/reports", axum::routing::post(discreet_report_handlers::create_report))
+        .route("/admin/reports", axum::routing::get(discreet_report_handlers::list_reports))
+        .route("/admin/reports/:report_id", axum::routing::patch(discreet_report_handlers::resolve_report))
+        .route("/admin/export", axum::routing::post(citadel_platform_admin_handlers::compliance_export))
         .route("/admin/settings", axum::routing::get(citadel_platform_settings::get_settings)
             .put(citadel_platform_settings::update_settings))
         // ── Server lifecycle admin ──

@@ -123,6 +123,7 @@ fn default_endpoint(provider: &ProviderType) -> &'static str {
         ProviderType::Ollama => "http://localhost:11434",
         ProviderType::Mcp => "https://api.anthropic.com", // MCP uses Anthropic as LLM backbone
         ProviderType::Custom => "",
+        ProviderType::OpenJarvis => "http://localhost:8000",
     }
 }
 
@@ -134,6 +135,7 @@ fn default_model(provider: &ProviderType) -> &'static str {
         ProviderType::Ollama => "llama3",
         ProviderType::Mcp => "claude-haiku-4-5-20251001",
         ProviderType::Custom => "",
+        ProviderType::OpenJarvis => "default",
     }
 }
 
@@ -447,6 +449,7 @@ fn resolve_api_key(
         ProviderType::Anthropic | ProviderType::Mcp => std::env::var("ANTHROPIC_API_KEY").ok(),
         ProviderType::OpenAi => std::env::var("OPENAI_API_KEY").ok(),
         ProviderType::Ollama => None, // Ollama doesn't need a key
+        ProviderType::OpenJarvis => None, // OpenJarvis is local, no key needed
         ProviderType::Custom => std::env::var("CUSTOM_LLM_API_KEY").ok(),
     };
 

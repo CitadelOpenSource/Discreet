@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_tasks\n               SET last_run = NOW()\n               WHERE id IN (\n                   SELECT id FROM scheduled_tasks\n                   WHERE enabled = TRUE\n                     AND (next_run IS NULL OR next_run <= NOW())\n                   LIMIT 50\n               )\n               RETURNING id, server_id, channel_id, created_by, task_type,\n                         config, cron_expr",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "task_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "cron_expr",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b7b13eee85a15dff06f15c00937a37a3069c4f61db17bfc2d512b5dd07cebc2b"
+}

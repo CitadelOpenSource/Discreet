@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO message_acknowledgements (message_id, user_id)\n         VALUES ($1, $2)\n         ON CONFLICT (message_id, user_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "baaa6bc0472673114fc7a0f741bad8958bb8f77b23c015b63cc0fb47054fb39a"
+}

@@ -24,6 +24,7 @@ export interface Channel {
   nsfw?: boolean;
   message_ttl_seconds?: number;
   min_role_position?: number;
+  read_only?: boolean;
 }
 
 export interface CategoryData {
@@ -86,6 +87,11 @@ export interface ChannelSidebarProps {
   onChannelCtx:      (e: React.MouseEvent, ch: Channel) => void;
   /** Owner clicked the cogwheel on a channel row */
   onChannelSettings: (ch: Channel) => void;
+  /** User-level custom channel categories */
+  userCategories?: { id: string; name: string; position: number; collapsed: boolean; channel_ids: string[] }[];
+  onUserCategoryToggle?: (catId: string) => void;
+  onUserCategoryCtx?: (e: React.MouseEvent, cat: { id: string; name: string }) => void;
+  onDropOnUserCategory?: (channelId: string, catId: string) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -95,6 +101,7 @@ function chIcon(ch: Channel) {
   if (ch.channel_type === 'forum')        return <I.Msg />;
   if (ch.channel_type === 'announcement') return <span style={{ fontSize: 14, lineHeight: 1 }}>📢</span>;
   if (ch.channel_type === 'stage')        return <span style={{ fontSize: 14, lineHeight: 1 }}>🎤</span>;
+  if (ch.read_only) return <span style={{ fontSize: 14, lineHeight: 1 }}>📣</span>;
   if (ch.locked) return <I.Lock s={14} />;
   if ((ch.min_role_position ?? 0) > 0) return <I.EyeOff />;
   return <I.Hash s={14} />;
@@ -122,7 +129,7 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
   const peerMap = Object.fromEntries(voicePeers.map(p => [p.id, p]));
   const displayed: VoicePeer[] = presenceIds.map(uid => {
     const peer = peerMap[uid];
-    const info = memberMap[uid] || { name: uid.slice(0, 8), isBot: false };
+    const info = memberMap[uid] || { name: '?', isBot: false };
     return { id: uid, name: info.name, isBot: info.isBot, speaking: peer?.speaking, self: peer?.self };
   });
   // Fallback: include WebRTC peers missing from presence (race condition safety)
@@ -340,9 +347,16 @@ function ChannelRow({
           </span>
         )}
 
+        {/* Voice participant count */}
+        {ch.channel_type === 'voice' && (voicePresence[ch.id]?.length ?? 0) > 0 && !isInVoice && (
+          <span style={{ marginLeft: mentions > 0 || unread > 0 ? '4px' : 'auto', fontSize: 10, color: T.mt, fontWeight: 600 }}>
+            {voicePresence[ch.id].length}
+          </span>
+        )}
+
         {/* Active voice indicator dot */}
         {isInVoice && (
-          <span style={{ fontSize: 10, color: T.ac, marginLeft: unread ? '4px' : 'auto' }}>●</span>
+          <span style={{ fontSize: 10, color: T.ac, marginLeft: unread > 0 ? '4px' : 'auto' }}>● {(voicePresence[ch.id]?.length ?? 0) > 0 ? voicePresence[ch.id].length : ''}</span>
         )}
 
         {/* LIVE badge — shown when a stream is active on this voice channel */}
@@ -413,6 +427,7 @@ export function ChannelSidebar({
   sframeActive, sframeSupported,
   isOwner, canMoveMember, userMaxRolePos,
   onClick, onVoiceClick, onWatchStream, onReorder, onMoveUserToVoice, onChannelCtx, onChannelSettings,
+  userCategories, onUserCategoryToggle, onUserCategoryCtx, onDropOnUserCategory,
 }: ChannelSidebarProps) {
   const [collCats,      setCollCats]      = useState<Record<string, boolean>>({});
   const [dragCh,        setDragCh]        = useState<Channel | null>(null);
@@ -481,6 +496,50 @@ export function ChannelSidebar({
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+
+      {/* ── User-level custom categories ── */}
+      {userCategories && userCategories.length > 0 && userCategories
+        .sort((a, b) => a.position - b.position)
+        .map(uc => {
+          const ucChannels = uc.channel_ids
+            .map(id => channels.find(c => c.id === id))
+            .filter((c): c is Channel => !!c)
+            .filter(canSeeChannel);
+          if (ucChannels.length === 0) return null;
+          const catCollapsed = collCats[`uc_${uc.id}`];
+          return (
+            <div key={uc.id}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+              onDrop={e => {
+                e.preventDefault();
+                if (dragCh && onDropOnUserCategory) onDropOnUserCategory(dragCh.id, uc.id);
+                setDragCh(null);
+              }}
+            >
+              <div
+                onClick={() => {
+                  toggleCat(`uc_${uc.id}`);
+                  if (onUserCategoryToggle) onUserCategoryToggle(uc.id);
+                }}
+                onContextMenu={e => { if (onUserCategoryCtx) { e.preventDefault(); onUserCategoryCtx(e, uc); } }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '8px 6px 4px', cursor: 'pointer',
+                  fontSize: 11, fontWeight: 700, color: T.ac,
+                  textTransform: 'uppercase', letterSpacing: '0.5px', borderRadius: 4,
+                }}
+              >
+                {catCollapsed ? <I.ChevR /> : <I.ChevD />}
+                <span style={{ fontSize: 11 }}>📁</span> {uc.name}
+                <span style={{ fontSize: 9, color: T.mt, fontWeight: 500, marginLeft: 'auto' }}>{ucChannels.length}</span>
+              </div>
+              {!catCollapsed && ucChannels.map(ch => (
+                <ChannelRow key={ch.id} {...rowProps(ch)} indent={true} />
+              ))}
+            </div>
+          );
+        })
+      }
 
       {/* ── Uncategorized sections ── */}
       {uncatSections.map(sec => (

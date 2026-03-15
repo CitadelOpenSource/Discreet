@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext,\n                  m.created_at, m.mls_epoch,\n                  c.name as channel_name,\n                  u.username as author_username\n           FROM messages m\n           JOIN channels c ON c.id = m.channel_id\n           JOIN users u ON u.id = m.author_id\n           WHERE c.server_id = $1\n             AND m.created_at >= $2\n             AND m.created_at <= $3\n           ORDER BY m.created_at\n           LIMIT 10000",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "content_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "mls_epoch",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "channel_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "author_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b6324b42af002e5c208617c249867ac67107e3131fb70ac5aa804b8442d6cfa1"
+}

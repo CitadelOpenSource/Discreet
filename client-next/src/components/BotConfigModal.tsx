@@ -35,6 +35,7 @@ interface BotInfo {
   emoji_reactions?: boolean;
   language?: string;
   knowledge_base?: string;
+  response_style?: string;
 }
 
 interface BotConfig {
@@ -62,6 +63,7 @@ interface BotConfig {
   language: string;
   knowledge_base: string;
   show_bot_tag: boolean;
+  response_style: string;
 }
 
 export interface BotConfigModalProps {
@@ -212,6 +214,7 @@ function makeDefaultCfg(bot: BotInfo): BotConfig {
     language:           'auto',
     knowledge_base:     '',
     show_bot_tag:       true,
+    response_style:     'inline',
   };
 }
 
@@ -286,6 +289,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
     emoji_reactions:    bot?.emoji_reactions !== false,
     language:           bot?.language || 'auto',
     knowledge_base:     bot?.knowledge_base || '',
+    response_style:     bot?.response_style || 'inline',
     show_bot_tag:       localStorage.getItem('d_bot_tag_' + bot?.bot_user_id) !== 'false',
   });
   // True while the initial server fetch is in-flight.
@@ -322,6 +326,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             emoji_reactions:    b.emoji_reactions    ?? prev.emoji_reactions,
             language:           b.language           ?? prev.language,
             knowledge_base:     b.knowledge_base     ?? prev.knowledge_base,
+            response_style:     b.response_style     ?? prev.response_style,
             show_bot_tag:       prev.show_bot_tag, // local preference — not stored on server
           }));
         }
@@ -401,35 +406,75 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
   // All LLM calls happen client-side — preserving E2EE (server never sees
   // plaintext). API keys live in localStorage only, never sent to our server.
 
-  type LlmProvider = 'none' | 'openai' | 'anthropic' | 'ollama' | 'custom';
+  type LlmProvider = 'none' | 'openai' | 'anthropic' | 'ollama' | 'custom' | 'openjarvis';
+
+  // Check if OpenJarvis is configured (env var set on server)
+  const openJarvisAvailable = true; // Always show in dropdown — server validates availability
 
   const PROVIDER_DEFAULTS: Record<LlmProvider, { endpoint: string; model: string; label: string }> = {
-    none:      { endpoint: '',                            model: '',                            label: 'None (placeholder responses)' },
-    openai:    { endpoint: 'https://api.openai.com/v1',   model: 'gpt-4o',                      label: 'OpenAI' },
-    anthropic: { endpoint: 'https://api.anthropic.com',   model: 'claude-sonnet-4-6',           label: 'Anthropic' },
-    ollama:    { endpoint: 'http://localhost:11434',       model: 'llama3',                      label: 'Ollama (local)' },
-    custom:    { endpoint: '',                            model: '',                            label: 'Custom (OpenAI-compatible)' },
+    none:        { endpoint: '',                            model: '',                            label: 'None (placeholder responses)' },
+    openai:      { endpoint: 'https://api.openai.com/v1',   model: 'gpt-4o',                      label: 'OpenAI' },
+    anthropic:   { endpoint: 'https://api.anthropic.com',   model: 'claude-sonnet-4-6',           label: 'Anthropic' },
+    ollama:      { endpoint: 'http://localhost:11434',       model: 'llama3',                      label: 'Ollama (local)' },
+    custom:      { endpoint: '',                            model: '',                            label: 'Custom (OpenAI-compatible)' },
+    openjarvis:  { endpoint: 'http://localhost:8000',        model: 'default',                     label: 'OpenJarvis (local)' },
   };
 
-  // Cost per message estimate (approx 1500 input + max_tokens output)
+  // Model catalog with capability badges and pricing
+  interface ModelInfo {
+    id: string;
+    name: string;
+    badges: string[];     // 'Fast' | 'Code' | 'Local' | 'Private' | 'Reason'
+    costPer1k: string;    // $/1K tokens (input)
+  }
+
+  const MODEL_CATALOG: Record<LlmProvider, ModelInfo[]> = {
+    none: [],
+    openai: [
+      { id: 'gpt-4o',          name: 'GPT-4o — flagship',            badges: ['Code'],           costPer1k: '$0.0025' },
+      { id: 'gpt-4o-mini',     name: 'GPT-4o Mini — fast & cheap',   badges: ['Fast'],           costPer1k: '$0.00015' },
+      { id: 'gpt-4-turbo',     name: 'GPT-4 Turbo — high quality',   badges: ['Code'],           costPer1k: '$0.01' },
+      { id: 'gpt-3.5-turbo',   name: 'GPT-3.5 Turbo — legacy',      badges: ['Fast'],           costPer1k: '$0.0005' },
+      { id: 'o1',              name: 'o1 — reasoning',                badges: ['Reason'],         costPer1k: '$0.015' },
+      { id: 'o1-mini',         name: 'o1 Mini — fast reasoning',     badges: ['Fast', 'Reason'], costPer1k: '$0.003' },
+    ],
+    anthropic: [
+      { id: 'claude-opus-4-6',              name: 'Claude Opus 4.6 — most capable',         badges: ['Code'],   costPer1k: '$0.015' },
+      { id: 'claude-sonnet-4-6',            name: 'Claude Sonnet 4.6 — balanced',           badges: ['Code'],   costPer1k: '$0.003' },
+      { id: 'claude-haiku-4-5-20251001',    name: 'Claude Haiku 4.5 — fastest',             badges: ['Fast'],   costPer1k: '$0.0008' },
+    ],
+    ollama: [
+      { id: 'llama3',     name: 'Llama 3 (8B)',       badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
+      { id: 'llama3:70b', name: 'Llama 3 (70B)',      badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
+      { id: 'mistral',    name: 'Mistral 7B',         badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
+      { id: 'mixtral',    name: 'Mixtral 8x7B',       badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
+      { id: 'phi3',       name: 'Phi-3 (Microsoft)',   badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
+      { id: 'codellama',  name: 'Code Llama',          badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
+      { id: 'gemma2',     name: 'Gemma 2 (Google)',    badges: ['Local', 'Private'],          costPer1k: 'Free' },
+      { id: 'qwen2',      name: 'Qwen 2',             badges: ['Local', 'Private'],          costPer1k: 'Free' },
+    ],
+    custom: [],
+    openjarvis: [
+      { id: 'default', name: 'Default Model',    badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
+    ],
+  };
+
+  const BADGE_STYLES: Record<string, { bg: string; color: string }> = {
+    Fast:    { bg: 'rgba(59,165,93,0.15)',  color: '#3ba55d' },
+    Code:    { bg: 'rgba(88,101,242,0.15)', color: '#5865F2' },
+    Local:   { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6' },
+    Private: { bg: 'rgba(0,212,170,0.12)',  color: '#00d4aa' },
+    Reason:  { bg: 'rgba(250,166,26,0.15)', color: '#faa61a' },
+  };
+
   function estimateCost(model: string, provider: LlmProvider): string {
-    if (provider === 'none')   return 'Free (no API calls)';
+    if (provider === 'none') return 'Free (no API calls)';
+    const catalog = MODEL_CATALOG[provider];
+    const found = catalog.find(m => m.id === model);
+    if (found) return `${found.costPer1k} / 1K tokens`;
     if (provider === 'ollama') return 'Free (runs locally)';
-    const m = model.toLowerCase();
-    if (m.includes('gpt-4o-mini'))          return '~$0.0002 / msg';
-    if (m.includes('gpt-4o'))               return '~$0.003 / msg';
-    if (m.includes('gpt-4-turbo') || m.includes('gpt-4-0'))
-                                            return '~$0.016 / msg';
-    if (m.includes('gpt-3.5'))              return '~$0.0005 / msg';
-    if (m.includes('o1-mini'))              return '~$0.004 / msg';
-    if (m.includes('o1'))                   return '~$0.024 / msg';
-    if (m.includes('claude-opus'))          return '~$0.017 / msg';
-    if (m.includes('claude-sonnet'))        return '~$0.003 / msg';
-    if (m.includes('claude-haiku'))         return '~$0.0003 / msg';
-    if (m.includes('gemini-1.5-pro'))       return '~$0.003 / msg';
-    if (m.includes('gemini-1.5-flash'))     return '~$0.0002 / msg';
-    if (provider === 'custom')              return 'Cost depends on provider';
-    return '~$0.003 / msg (est.)';
+    if (provider === 'custom') return 'Cost depends on provider';
+    return '~$0.003 / 1K tokens (est.)';
   }
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('none');
@@ -447,6 +492,9 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
   const [llmSaveSuccess,    setLlmSaveSuccess]    = useState(false);
   const [llmFactCount,      setLlmFactCount]      = useState<number | null>(null);
   const [llmClearingMemory, setLlmClearingMemory] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<'unknown' | 'reachable' | 'unreachable'>('unknown');
+  const [quickTestResult, setQuickTestResult] = useState<{ response: string; latencyMs: number } | null>(null);
+  const [quickTestLoading, setQuickTestLoading] = useState(false);
 
   // Load LLM settings from server on mount
   useEffect(() => {
@@ -470,6 +518,46 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
     setLlmProvider(p);
     setLlmEndpoint(ep);
     setLlmModel(m);
+    setProviderStatus('unknown');
+    setQuickTestResult(null);
+  };
+
+  // Check provider reachability
+  useEffect(() => {
+    if (llmProvider === 'none' || !llmEndpoint) { setProviderStatus('unknown'); return; }
+    setProviderStatus('unknown');
+    const ctrl = new AbortController();
+    const checkHealth = async () => {
+      try {
+        // For Ollama, hit the root endpoint; for others, try a HEAD on the endpoint
+        const url = llmProvider === 'ollama' ? llmEndpoint : `${llmEndpoint}/models`;
+        const res = await fetch(url, { method: 'GET', signal: ctrl.signal, mode: 'no-cors' }).catch(() => null);
+        // no-cors returns opaque response (type === 'opaque') which means the server responded
+        setProviderStatus(res ? 'reachable' : 'unreachable');
+      } catch {
+        setProviderStatus('unreachable');
+      }
+    };
+    const timer = setTimeout(checkHealth, 500); // debounce
+    return () => { ctrl.abort(); clearTimeout(timer); };
+  }, [llmProvider, llmEndpoint]);
+
+  // Quick test: fixed prompt, measure latency
+  const runQuickTest = async () => {
+    if (!serverId || !bot?.bot_user_id) return;
+    setQuickTestLoading(true);
+    setQuickTestResult(null);
+    const start = Date.now();
+    try {
+      const result = await api.promptBot(serverId, bot.bot_user_id, 'Hello, respond in one sentence.', channelId || undefined);
+      const latencyMs = Date.now() - start;
+      if (!result) throw new Error('No response');
+      setQuickTestResult({ response: result.content ?? JSON.stringify(result), latencyMs });
+    } catch {
+      setQuickTestResult({ response: 'Test failed — check configuration', latencyMs: Date.now() - start });
+    } finally {
+      setQuickTestLoading(false);
+    }
   };
 
   const runLlmTest = async () => {
@@ -768,10 +856,10 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
 
         {/* Provider selector */}
         <label style={lbl}>LLM Provider</label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 16 }}>
-          {(['none', 'openai', 'anthropic', 'ollama', 'custom'] as LlmProvider[]).map(p => {
-            const icons: Record<LlmProvider, string> = { none: '⊘', openai: '⬡', anthropic: '△', ollama: '🦙', custom: '⚙' };
-            const colors: Record<LlmProvider, string> = { none: T.mt, openai: '#10a37f', anthropic: '#d97706', ollama: '#8b5cf6', custom: T.ac };
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 16 }}>
+          {(['none', 'openai', 'anthropic', 'ollama', 'openjarvis', 'custom'] as LlmProvider[]).map(p => {
+            const icons: Record<LlmProvider, string> = { none: '⊘', openai: '⬡', anthropic: '△', ollama: '🦙', custom: '⚙', openjarvis: '🧠' };
+            const colors: Record<LlmProvider, string> = { none: T.mt, openai: '#10a37f', anthropic: '#d97706', ollama: '#8b5cf6', custom: T.ac, openjarvis: '#06b6d4' };
             const active = llmProvider === p;
             return (
               <button
@@ -784,7 +872,11 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
                   outline: active ? `2px solid ${colors[p]}` : `1px solid ${T.bd}`,
                 }}
               >
-                <span style={{ fontSize: 20, color: colors[p] }}>{icons[p]}</span>
+                <span style={{ fontSize: 20, color: colors[p], position: 'relative' }}>
+                  {icons[p]}
+                  {active && providerStatus === 'reachable' && <span style={{ position: 'absolute', top: -2, right: -4, width: 7, height: 7, borderRadius: 4, background: '#3ba55d', border: `1.5px solid ${T.sf2}` }} />}
+                  {active && providerStatus === 'unreachable' && <span style={{ position: 'absolute', top: -2, right: -4, width: 7, height: 7, borderRadius: 4, background: T.err, border: `1.5px solid ${T.sf2}` }} />}
+                </span>
                 <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? colors[p] : T.mt, textAlign: 'center', lineHeight: 1.3 }}>
                   {PROVIDER_DEFAULTS[p].label.split('(')[0].trim()}
                 </span>
@@ -800,6 +892,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
           <label style={lbl}>
             API Endpoint
             {llmProvider === 'ollama' && <span style={{ color: T.ac, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
+            {llmProvider === 'openjarvis' && <span style={{ color: '#06b6d4', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— local, private, no API key needed</span>}
             {llmProvider === 'custom' && <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be OpenAI-compatible</span>}
           </label>
           <input
@@ -810,7 +903,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
           />
 
           {/* API Key */}
-          {llmProvider !== 'ollama' && (
+          {llmProvider !== 'ollama' && llmProvider !== 'openjarvis' && (
             <>
               <label style={lbl}>
                 API Key
@@ -849,62 +942,82 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             </>
           )}
 
-          {/* Model */}
-          <label style={lbl}>Model</label>
-          {llmProvider === 'openai' ? (
-            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
-              <option value="gpt-4o">gpt-4o — flagship, best quality</option>
-              <option value="gpt-4o-mini">gpt-4o-mini — fast &amp; cheap</option>
-              <option value="gpt-4-turbo">gpt-4-turbo — high quality</option>
-              <option value="gpt-3.5-turbo">gpt-3.5-turbo — legacy fast</option>
-              <option value="o1">o1 — reasoning model</option>
-              <option value="o1-mini">o1-mini — fast reasoning</option>
-            </select>
-          ) : llmProvider === 'anthropic' ? (
-            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
-              <option value="claude-opus-4-6">claude-opus-4-6 — most capable</option>
-              <option value="claude-sonnet-4-6">claude-sonnet-4-6 — balanced (recommended)</option>
-              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 — fastest &amp; cheapest</option>
-            </select>
-          ) : llmProvider === 'ollama' ? (
-            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ ...sel, marginBottom: 4 }}>
-              <option value="llama3">llama3 — Meta Llama 3 (8B)</option>
-              <option value="llama3:70b">llama3:70b — Meta Llama 3 (70B)</option>
-              <option value="mistral">mistral — Mistral 7B</option>
-              <option value="mixtral">mixtral — Mixtral 8x7B</option>
-              <option value="phi3">phi3 — Microsoft Phi-3</option>
-              <option value="gemma2">gemma2 — Google Gemma 2</option>
-              <option value="codellama">codellama — Code Llama</option>
-              <option value="qwen2">qwen2 — Qwen 2</option>
-            </select>
+          {/* Model Selection with Badges */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <label style={{ ...lbl, marginBottom: 0 }}>Model</label>
+            {providerStatus === 'reachable' && <span title="Provider reachable" style={{ width: 8, height: 8, borderRadius: 4, background: '#3ba55d', display: 'inline-block' }} />}
+            {providerStatus === 'unreachable' && <span title="Provider unreachable" style={{ width: 8, height: 8, borderRadius: 4, background: T.err, display: 'inline-block' }} />}
+            {providerStatus === 'unknown' && llmProvider !== 'none' && <span title="Checking..." style={{ width: 8, height: 8, borderRadius: 4, background: T.mt, display: 'inline-block', opacity: 0.4 }} />}
+          </div>
+          {MODEL_CATALOG[llmProvider].length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              {MODEL_CATALOG[llmProvider].map(mi => {
+                const active = llmModel === mi.id;
+                return (
+                  <div key={mi.id} onClick={() => setLlmModel(mi.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                    borderRadius: 8, cursor: 'pointer',
+                    background: active ? `${T.ac}10` : T.sf2,
+                    border: `1px solid ${active ? T.ac : T.bd}`,
+                    transition: 'border-color .15s',
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? T.ac : T.tx }}>{mi.name}</div>
+                      <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>{mi.id}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                      {mi.badges.map(b => (
+                        <span key={b} style={{ fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: BADGE_STYLES[b]?.bg || T.sf2, color: BADGE_STYLES[b]?.color || T.mt }}>{b}</span>
+                      ))}
+                    </div>
+                    <span style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{mi.costPer1k}</span>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <input
               value={llmModel}
               onChange={e => setLlmModel(e.target.value)}
               placeholder="e.g. gpt-4o, mistral-7b, your-custom-model"
-              style={{ ...getInp(), marginBottom: 4, fontFamily: 'monospace', fontSize: 12 }}
+              style={{ ...getInp(), marginBottom: 8, fontFamily: 'monospace', fontSize: 12 }}
             />
           )}
-          {/* Custom model text input for preset providers */}
-          {(llmProvider === 'openai' || llmProvider === 'anthropic' || llmProvider === 'ollama') && (
-            <div style={{ marginBottom: 4 }}>
-              <input
-                value={llmModel}
-                onChange={e => setLlmModel(e.target.value)}
-                placeholder="Or type a model name directly"
-                style={{ ...getInp(), fontSize: 12, fontFamily: 'monospace' }}
-              />
-            </div>
+          {/* Custom model override for preset providers */}
+          {MODEL_CATALOG[llmProvider].length > 0 && (
+            <input
+              value={llmModel}
+              onChange={e => setLlmModel(e.target.value)}
+              placeholder="Or type a model name directly"
+              style={{ ...getInp(), fontSize: 11, fontFamily: 'monospace', marginBottom: 4 }}
+            />
           )}
 
-          {/* Cost estimate */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 16, marginTop: 4 }}>
+          {/* Cost estimate + Quick test */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8, marginTop: 4 }}>
             <span style={{ fontSize: 14 }}>💰</span>
-            <div style={{ fontSize: 11, color: T.mt }}>
-              Estimated cost: <span style={{ color: T.ac, fontWeight: 700 }}>{estimateCost(llmModel, llmProvider)}</span>
-              <span style={{ marginLeft: 6 }}>· Based on ~1500 input + {cfg.max_tokens} output tokens</span>
+            <div style={{ flex: 1, fontSize: 11, color: T.mt }}>
+              <span style={{ color: T.ac, fontWeight: 700 }}>{estimateCost(llmModel, llmProvider)}</span>
+              <span style={{ marginLeft: 6 }}>· ~1500 input + {cfg.max_tokens} output tokens</span>
             </div>
+            <button
+              onClick={runQuickTest}
+              disabled={quickTestLoading || llmProvider === 'none' || !serverId || !bot?.bot_user_id}
+              aria-label="Quick test"
+              style={{ padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: quickTestLoading ? T.sf2 : T.bg, color: quickTestLoading ? T.mt : T.ac, fontSize: 11, fontWeight: 700, cursor: quickTestLoading ? 'default' : 'pointer', flexShrink: 0 }}
+            >
+              {quickTestLoading ? '⟳' : '▶ Test'}
+            </button>
           </div>
+          {quickTestResult && (
+            <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 16, fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontWeight: 600, color: T.ac, fontSize: 11 }}>Response</span>
+                <span style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>{quickTestResult.latencyMs}ms</span>
+              </div>
+              <div style={{ color: T.tx, lineHeight: 1.5, wordBreak: 'break-word' }}>{quickTestResult.response}</div>
+            </div>
+          )}
 
         </>)}
 
@@ -1051,6 +1164,23 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
         <div style={{ padding: '8px 12px', background: `${T.ac}11`, borderRadius: 6, marginBottom: 12, fontSize: 11, color: T.ac }}>
           In DMs: bots ALWAYS auto-respond (users are talking directly to the bot)
         </div>
+
+        <label style={lbl}>Response Style (where replies go)</label>
+        <select value={cfg.response_style} onChange={e => set('response_style', e.target.value)} style={sel}>
+          <option value="inline">Inline — reply in channel like a user</option>
+          <option value="thread">Thread — reply in a thread to keep channel clean</option>
+          <option value="dm">DM — reply privately to the person who asked</option>
+        </select>
+        {cfg.response_style === 'thread' && (
+          <div style={{ padding: '8px 12px', background: T.sf2, borderRadius: 6, marginBottom: 12, fontSize: 11, color: T.mt, border: `1px solid ${T.bd}` }}>
+            The bot will create a thread on the user's message and reply there. Other users can join the thread to follow the conversation.
+          </div>
+        )}
+        {cfg.response_style === 'dm' && (
+          <div style={{ padding: '8px 12px', background: 'rgba(250,166,26,0.08)', borderRadius: 6, marginBottom: 12, fontSize: 11, color: '#faa61a', border: '1px solid rgba(250,166,26,0.15)' }}>
+            The bot will DM the response to the user who asked. Other channel members will not see the response. Useful for private/sensitive queries.
+          </div>
+        )}
 
         <label style={lbl}>Greeting Message</label>
         <textarea value={cfg.greeting_message} onChange={e => set('greeting_message', e.target.value)} placeholder="Message sent when bot first joins or user starts a conversation..." rows={2} style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', marginBottom: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
@@ -1205,9 +1335,9 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
         <div style={{ padding: 12, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 8, textTransform: 'uppercase' }}>Bot Identity</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11, color: T.mt }}>
-            <div>Bot User ID: <span style={{ color: T.ac, fontFamily: 'monospace' }}>{bot?.bot_user_id?.slice(0, 8) || '—'}</span></div>
+            <div>Bot: <span style={{ color: T.ac }}>{cfg.display_name}</span> <button onClick={() => navigator.clipboard?.writeText(bot?.bot_user_id || '')} style={{ fontSize: 9, color: T.mt, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 3, padding: '1px 4px', cursor: 'pointer' }}>Copy ID</button></div>
             <div>Persona: <span style={{ color: T.ac }}>{cfg.persona}</span></div>
-            <div>Server ID: <span style={{ color: T.ac, fontFamily: 'monospace' }}>{serverId?.slice(0, 8) || '—'}</span></div>
+            <div>Server: <button onClick={() => navigator.clipboard?.writeText(serverId || '')} style={{ fontSize: 9, color: T.mt, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 3, padding: '1px 4px', cursor: 'pointer' }}>Copy ID</button></div>
             <div>Status: <span style={{ color: cfg.enabled ? T.ac : T.err }}>{cfg.enabled ? 'Active' : 'Disabled'}</span></div>
           </div>
         </div>

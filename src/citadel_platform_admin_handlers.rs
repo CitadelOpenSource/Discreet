@@ -763,3 +763,173 @@ pub async fn unban_user(
 
     Ok(Json(json!({ "message": "User unbanned" })))
 }
+
+// ─── POST /admin/export — Compliance data export ────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ComplianceExportRequest {
+    pub server_id: Uuid,
+    pub start_date: chrono::DateTime<chrono::Utc>,
+    pub end_date: chrono::DateTime<chrono::Utc>,
+    pub format: String,
+}
+
+/// Compliance export for platform admins only. Returns encrypted ciphertext —
+/// the admin CANNOT read plaintext message content (zero-knowledge).
+/// Rate limited to 1 export per hour. Audit-logged.
+pub async fn compliance_export(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ComplianceExportRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // ADMIN ONLY — not dev, not server owners
+    if caller.platform_role != Some(PlatformRole::Admin) {
+        return Err(AppError::Forbidden("Compliance export requires platform admin role".into()));
+    }
+
+    if !matches!(req.format.as_str(), "json" | "csv") {
+        return Err(AppError::BadRequest("Format must be 'json' or 'csv'".into()));
+    }
+
+    // Rate limit: 1 export per hour
+    let rate_key = format!("compliance_export:{}", caller.user_id);
+    let mut redis_conn = state.redis.clone();
+    let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
+    if count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(3600i64).query_async(&mut redis_conn).await;
+    }
+    if count > 1 {
+        return Err(AppError::RateLimited("Compliance export is limited to 1 per hour".into()));
+    }
+
+    // Audit log the export
+    let _ = crate::citadel_audit::log_action(
+        &state.db,
+        crate::citadel_audit::AuditEntry {
+            server_id: req.server_id,
+            actor_id: caller.user_id,
+            action: "COMPLIANCE_EXPORT",
+            target_type: Some("server"),
+            target_id: Some(req.server_id),
+            changes: Some(serde_json::json!({
+                "start_date": req.start_date.to_rfc3339(),
+                "end_date": req.end_date.to_rfc3339(),
+                "format": req.format,
+            })),
+            reason: Some("Platform admin compliance export"),
+        },
+    ).await;
+
+    // Query messages — returns CIPHERTEXT only (admin cannot read plaintext)
+    let messages = sqlx::query!(
+        r#"SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext,
+                  m.created_at, m.mls_epoch,
+                  c.name as channel_name,
+                  u.username as author_username
+           FROM messages m
+           JOIN channels c ON c.id = m.channel_id
+           JOIN users u ON u.id = m.author_id
+           WHERE c.server_id = $1
+             AND m.created_at >= $2
+             AND m.created_at <= $3
+           ORDER BY m.created_at
+           LIMIT 10000"#,
+        req.server_id,
+        req.start_date,
+        req.end_date,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    // Query members
+    let members = sqlx::query!(
+        "SELECT u.id as user_id, u.username, u.display_name, sm.joined_at
+         FROM server_members sm
+         JOIN users u ON u.id = sm.user_id
+         WHERE sm.server_id = $1
+         ORDER BY sm.joined_at",
+        req.server_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    // Query audit log entries in date range
+    let audit = sqlx::query!(
+        "SELECT id, actor_id, action, target_type, reason, created_at
+         FROM audit_log
+         WHERE server_id = $1
+           AND created_at >= $2
+           AND created_at <= $3
+         ORDER BY created_at
+         LIMIT 5000",
+        req.server_id,
+        req.start_date,
+        req.end_date,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    if req.format == "csv" {
+        let mut csv = String::from("message_id,author_username,channel_name,timestamp,mls_epoch,ciphertext_hex\n");
+        for m in &messages {
+            let hex = hex::encode(&m.content_ciphertext);
+            csv.push_str(&format!(
+                "{},{},{},{},{},{}\n",
+                m.id, m.author_username, m.channel_name, m.created_at.to_rfc3339(), m.mls_epoch, hex
+            ));
+        }
+        Ok(Json(serde_json::json!({
+            "format": "csv",
+            "server_id": req.server_id,
+            "message_count": messages.len(),
+            "member_count": members.len(),
+            "audit_count": audit.len(),
+            "messages_csv": csv,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "exported_by": caller.user_id,
+            "notice": "Message content is encrypted ciphertext. Only channel members with the decryption key can read the plaintext.",
+        })))
+    } else {
+        let msg_json: Vec<serde_json::Value> = messages.iter().map(|m| {
+            serde_json::json!({
+                "message_id": m.id,
+                "author_username": m.author_username,
+                "channel_name": m.channel_name,
+                "timestamp": m.created_at.to_rfc3339(),
+                "mls_epoch": m.mls_epoch,
+                "ciphertext_hex": hex::encode(&m.content_ciphertext),
+            })
+        }).collect();
+
+        let mem_json: Vec<serde_json::Value> = members.iter().map(|m| {
+            serde_json::json!({
+                "user_id": m.user_id,
+                "username": m.username,
+                "display_name": m.display_name,
+                "joined_at": m.joined_at.to_rfc3339(),
+            })
+        }).collect();
+
+        let aud_json: Vec<serde_json::Value> = audit.iter().map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "actor_id": a.actor_id,
+                "action": a.action,
+                "target_type": a.target_type,
+                "reason": a.reason,
+                "timestamp": a.created_at.to_rfc3339(),
+            })
+        }).collect();
+
+        Ok(Json(serde_json::json!({
+            "format": "json",
+            "server_id": req.server_id,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "exported_by": caller.user_id,
+            "notice": "Message content is encrypted ciphertext. Only channel members with the decryption key can read the plaintext.",
+            "messages": msg_json,
+            "members": mem_json,
+            "audit_log": aud_json,
+        })))
+    }
+}

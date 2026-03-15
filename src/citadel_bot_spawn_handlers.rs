@@ -184,6 +184,7 @@ pub struct UpdateBotConfigRequest {
     pub knowledge_base: Option<String>,
     pub response_mode: Option<String>,
     pub auto_thread: Option<bool>,
+    pub response_style: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,6 +390,7 @@ pub async fn list_server_bots(
                bc.knowledge_base,
                bc.response_mode,
                bc.auto_thread,
+               bc.response_style,
                bc.created_at,
                u.username  AS bot_username,
                u.is_bot
@@ -425,6 +427,7 @@ pub async fn list_server_bots(
         "knowledge_base":    r.knowledge_base,
         "response_mode":     r.response_mode,
         "auto_thread":       r.auto_thread,
+        "response_style":    r.response_style,
         "created_at":        r.created_at.to_rfc3339(),
     })).collect();
 
@@ -501,7 +504,8 @@ pub async fn add_bot_to_server(
         || req.language.is_some()
         || req.knowledge_base.is_some()
         || req.response_mode.is_some()
-        || req.auto_thread.is_some();
+        || req.auto_thread.is_some()
+        || req.response_mode.is_some();
 
     if has_extended {
         sqlx::query!(
@@ -519,7 +523,8 @@ pub async fn add_bot_to_server(
                 language           = COALESCE($13, language),
                 knowledge_base     = COALESCE($14, knowledge_base),
                 response_mode      = COALESCE($15, response_mode),
-                auto_thread        = COALESCE($16, auto_thread)
+                auto_thread        = COALESCE($16, auto_thread),
+                response_style     = COALESCE($17, response_style)
              WHERE bot_user_id = $1 AND server_id = $2",
             bot_id, server_id,
             req.greeting_message,
@@ -536,6 +541,7 @@ pub async fn add_bot_to_server(
             req.knowledge_base,
             req.response_mode,
             req.auto_thread,
+            req.response_mode,
         ).execute(&state.db).await?;
     }
 
@@ -744,7 +750,7 @@ pub async fn prompt_bot(
 
     // Load the bot config for this server.
     let bot = sqlx::query!(
-        "SELECT bot_user_id, persona, display_name, system_prompt, temperature, enabled
+        "SELECT bot_user_id, persona, display_name, system_prompt, temperature, enabled, response_style
          FROM bot_configs WHERE bot_user_id = $1 AND server_id = $2",
         bot_id, server_id,
     )
@@ -785,14 +791,29 @@ pub async fn prompt_bot(
         .ok_or_else(|| AppError::NotFound("No text channel found in server".into()))?
     };
 
+    // Check for per-channel AI model override.
+    let channel_model_override: Option<String> = sqlx::query_scalar!(
+        "SELECT ai_model_override FROM channels WHERE id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+
     // Attempt to load the full agent config (provider, encrypted API key, memory
     // mode, etc.).  Falls back to the placeholder response when not yet configured.
-    let agent_config = load_server_agent_config(
+    let mut agent_config = load_server_agent_config(
         &state.db,
         bot_id,
         server_id,
         state.config.agent_key_secret.as_bytes(),
     ).await;
+
+    // Apply per-channel model override if set.
+    if let (Some(ref model_override), Ok(ref mut cfg)) = (&channel_model_override, &mut agent_config) {
+        tracing::info!(channel_id = %channel_id, model = %model_override, "Using per-channel AI model override");
+        cfg.model_config.model_id = model_override.clone();
+    }
 
     // When agent config loaded successfully, build the LLM context window:
     // load the last N channel messages, append the current user prompt, then
@@ -875,37 +896,116 @@ pub async fn prompt_bot(
     };
     let response_text = cap_response(response_text);
 
-    // Insert the bot's reply as a message in the channel.
-    // content_ciphertext stores the plaintext bytes for bot messages (bots are
-    // not MLS group members; their messages are unencrypted placeholders).
+    // Route the response based on response_style.
+    let style = bot.response_style.as_str();
     let message_id = Uuid::new_v4();
     let content_bytes = response_text.as_bytes().to_vec();
 
-    sqlx::query!(
-        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch)
-         VALUES ($1, $2, $3, $4, $5)",
-        message_id,
-        channel_id,
-        bot_id,
-        &content_bytes,
-        0_i64,
-    )
-    .execute(&state.db)
-    .await?;
+    match style {
+        "thread" => {
+            // Create a thread on the user's original message (if we have one),
+            // or insert as a reply. Use parent_message_id to link to a thread.
+            // First, find the user's most recent message in this channel to thread off of.
+            let parent_id: Option<Uuid> = sqlx::query_scalar!(
+                "SELECT id FROM messages WHERE channel_id = $1 AND author_id = $2
+                 ORDER BY created_at DESC LIMIT 1",
+                channel_id, auth.user_id,
+            )
+            .fetch_optional(&state.db)
+            .await?;
 
-    // Broadcast so all connected clients render the message immediately.
-    state.ws_broadcast(server_id, serde_json::json!({
-        "type":       "message_create",
-        "channel_id": channel_id,
-        "message_id": message_id,
-        "author_id":  bot_id,
-        "content":    response_text,
-    })).await;
+            sqlx::query!(
+                "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, parent_message_id)
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+                message_id, channel_id, bot_id, &content_bytes, 0_i64, parent_id,
+            )
+            .execute(&state.db)
+            .await?;
+
+            state.ws_broadcast(server_id, serde_json::json!({
+                "type":              "message_create",
+                "channel_id":        channel_id,
+                "message_id":        message_id,
+                "author_id":         bot_id,
+                "content":           response_text,
+                "parent_message_id": parent_id,
+            })).await;
+        }
+        "dm" => {
+            // Send as a DM to the requesting user.
+            // Find or create a DM channel between the bot and the user.
+            // Schema enforces user_a < user_b to prevent duplicates.
+            let (user_a, user_b) = if bot_id < auth.user_id {
+                (bot_id, auth.user_id)
+            } else {
+                (auth.user_id, bot_id)
+            };
+
+            let dm_id: Option<Uuid> = sqlx::query_scalar!(
+                "SELECT id FROM dm_channels
+                 WHERE user_a = $1 AND user_b = $2
+                 LIMIT 1",
+                user_a, user_b,
+            )
+            .fetch_optional(&state.db)
+            .await?;
+
+            let dm_id = dm_id.unwrap_or_else(Uuid::new_v4);
+
+            // Ensure the DM channel exists
+            sqlx::query!(
+                "INSERT INTO dm_channels (id, user_a, user_b)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (user_a, user_b) DO NOTHING",
+                dm_id, user_a, user_b,
+            )
+            .execute(&state.db)
+            .await?;
+
+            // Insert the DM message
+            let dm_content_bytes = response_text.as_bytes().to_vec();
+            sqlx::query!(
+                "INSERT INTO dm_messages (id, dm_channel_id, sender_id, content_ciphertext)
+                 VALUES ($1, $2, $3, $4)",
+                message_id, dm_id, bot_id, &dm_content_bytes,
+            )
+            .execute(&state.db)
+            .await?;
+
+            // Notify the user via WS
+            state.ws_broadcast(server_id, serde_json::json!({
+                "type":       "dm_message",
+                "dm_id":      dm_id,
+                "message_id": message_id,
+                "author_id":  bot_id,
+                "content":    response_text,
+            })).await;
+        }
+        _ => {
+            // "inline" (default) — reply directly in the channel
+            sqlx::query!(
+                "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch)
+                 VALUES ($1, $2, $3, $4, $5)",
+                message_id, channel_id, bot_id, &content_bytes, 0_i64,
+            )
+            .execute(&state.db)
+            .await?;
+
+            state.ws_broadcast(server_id, serde_json::json!({
+                "type":       "message_create",
+                "channel_id": channel_id,
+                "message_id": message_id,
+                "author_id":  bot_id,
+                "content":    response_text,
+            })).await;
+        }
+    }
 
     tracing::info!(
         bot_id = %bot_id,
         server_id = %server_id,
         channel_id = %channel_id,
+        style = %style,
         "Bot prompt handled"
     );
 

@@ -100,6 +100,8 @@ pub enum ProviderType {
     Mcp,
     /// Raw HTTP endpoint (power users, custom inference servers)
     Custom,
+    /// OpenJarvis local AI provider (localhost:8000, no API key, fully private)
+    OpenJarvis,
 }
 
 impl std::fmt::Display for ProviderType {
@@ -110,6 +112,7 @@ impl std::fmt::Display for ProviderType {
             Self::Ollama => write!(f, "ollama"),
             Self::Mcp => write!(f, "mcp"),
             Self::Custom => write!(f, "custom"),
+            Self::OpenJarvis => write!(f, "openjarvis"),
         }
     }
 }
@@ -123,6 +126,7 @@ impl std::str::FromStr for ProviderType {
             "ollama" => Ok(Self::Ollama),
             "mcp" => Ok(Self::Mcp),
             "custom" => Ok(Self::Custom),
+            "openjarvis" => Ok(Self::OpenJarvis),
             other => Err(AgentError::UnsupportedProvider(other.to_string())),
         }
     }
@@ -245,6 +249,7 @@ pub fn create_provider(provider_type: &ProviderType) -> Box<dyn LlmProvider> {
         ProviderType::Ollama => Box::new(OllamaProvider),
         ProviderType::Mcp => Box::new(McpProvider),
         ProviderType::Custom => Box::new(CustomProvider),
+        ProviderType::OpenJarvis => Box::new(OpenJarvisProvider),
     }
 }
 
@@ -1084,6 +1089,166 @@ pub async fn check_agent_rate_limit(
     Ok(())
 }
 
+// ─── OpenJarvis Provider ─────────────────────────────────────────────────
+
+/// OpenJarvis local AI provider. Connects to a locally-running OpenJarvis
+/// instance. No API key required. Fully private — data never leaves the machine.
+/// Endpoint defaults to OPENJARVIS_URL env var or http://localhost:8000.
+pub struct OpenJarvisProvider;
+
+#[derive(Serialize)]
+struct OpenJarvisRequest {
+    messages: Vec<OpenJarvisMessage>,
+    temperature: f32,
+    max_tokens: u32,
+}
+
+#[derive(Serialize)]
+struct OpenJarvisMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct OpenJarvisResponse {
+    text: Option<String>,
+    content: Option<String>,
+    response: Option<String>,
+    error: Option<String>,
+}
+
+#[async_trait::async_trait]
+impl LlmProvider for OpenJarvisProvider {
+    #[instrument(skip(self, system_prompt, messages, config), fields(provider = "openjarvis"))]
+    async fn complete(
+        &self,
+        system_prompt: &str,
+        messages: Vec<AgentMessage>,
+        config: &AgentModelConfig,
+    ) -> Result<CompletionResult, AgentError> {
+        self.validate_config(config)?;
+
+        // Allow localhost HTTP (no TLS required for local provider)
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(config.timeout_secs))
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent("DiscreetAgent/0.4.0")
+            .build()
+            .map_err(|e| AgentError::Internal(format!("HTTP client error: {e}")))?;
+
+        let endpoint = if config.endpoint_url.is_empty() {
+            std::env::var("OPENJARVIS_URL").unwrap_or_else(|_| "http://localhost:8000".into())
+        } else {
+            config.endpoint_url.clone()
+        };
+
+        let url = format!("{}/v1/chat/completions", endpoint.trim_end_matches('/'));
+
+        let mut jarvis_msgs = vec![OpenJarvisMessage {
+            role: "system".into(),
+            content: system_prompt.to_string(),
+        }];
+        jarvis_msgs.extend(messages.into_iter().map(|m| OpenJarvisMessage {
+            role: m.role,
+            content: m.content,
+        }));
+
+        let body = OpenJarvisRequest {
+            messages: jarvis_msgs,
+            temperature: config.temperature,
+            max_tokens: config.max_tokens,
+        };
+
+        let start = std::time::Instant::now();
+
+        let response = client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    AgentError::Timeout(config.timeout_secs)
+                } else {
+                    AgentError::HttpError(format!("OpenJarvis request failed: {e}"))
+                }
+            })?;
+
+        let status = response.status();
+        let body_text = response.text().await.map_err(|e| {
+            AgentError::InvalidResponse(format!("Failed to read response body: {e}"))
+        })?;
+
+        if !status.is_success() {
+            warn!(status = %status, body = %body_text, "OpenJarvis returned error");
+            return Err(AgentError::HttpError(format!("OpenJarvis returned {status}")));
+        }
+
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        // Try to parse as our expected format, with fallbacks
+        let text = if let Ok(parsed) = serde_json::from_str::<OpenJarvisResponse>(&body_text) {
+            if let Some(err) = parsed.error {
+                return Err(AgentError::HttpError(err));
+            }
+            parsed.text
+                .or(parsed.content)
+                .or(parsed.response)
+                .unwrap_or_default()
+        } else if let Ok(oai) = serde_json::from_str::<serde_json::Value>(&body_text) {
+            // Fall back to OpenAI-compatible format
+            oai.get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string()
+        } else {
+            body_text.clone()
+        };
+
+        if text.is_empty() {
+            return Err(AgentError::EmptyCompletion);
+        }
+
+        info!(latency_ms, chars = text.len(), "OpenJarvis completion received");
+
+        Ok(CompletionResult {
+            text,
+            metadata: CompletionMetadata {
+                latency_ms,
+                input_tokens: None,
+                output_tokens: None,
+                stop_reason: Some("stop".into()),
+                provider: "openjarvis".into(),
+                model: config.model_id.clone(),
+            },
+        })
+    }
+
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::OpenJarvis
+    }
+
+    fn supports_streaming(&self) -> bool {
+        false
+    }
+
+    fn validate_config(&self, config: &AgentModelConfig) -> Result<(), AgentError> {
+        // No API key required — check endpoint is reachable
+        let endpoint = if config.endpoint_url.is_empty() {
+            std::env::var("OPENJARVIS_URL").unwrap_or_else(|_| "http://localhost:8000".into())
+        } else {
+            config.endpoint_url.clone()
+        };
+        if endpoint.is_empty() {
+            return Err(AgentError::NotConfigured("OpenJarvis endpoint not set".into()));
+        }
+        Ok(())
+    }
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1098,6 +1263,7 @@ mod tests {
             ProviderType::Ollama,
             ProviderType::Mcp,
             ProviderType::Custom,
+            ProviderType::OpenJarvis,
         ] {
             let s = pt.to_string();
             let parsed: ProviderType = s.parse().unwrap();

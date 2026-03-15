@@ -50,6 +50,8 @@ pub struct SendMessageRequest {
     /// Optional: UUIDs of mentioned users (client-provided, max 20).
     /// Special value "00000000-0000-0000-0000-000000000000" means @everyone.
     pub mentioned_user_ids: Option<Vec<Uuid>>,
+    /// Optional priority: 'important' or 'urgent'. Urgent requires acknowledgement.
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,7 +140,7 @@ pub async fn send_message(
 
     // Look up channel to get server_id and nsfw flag, then verify membership.
     let channel = sqlx::query!(
-        "SELECT c.server_id, c.nsfw, c.disappearing_messages,
+        "SELECT c.server_id, c.nsfw, c.disappearing_messages, c.read_only,
                 s.disappearing_messages_default, s.is_archived
          FROM channels c
          JOIN servers s ON s.id = c.server_id
@@ -153,6 +155,16 @@ pub async fn send_message(
     if channel.is_archived {
         return Err(AppError::Forbidden(
             "This server is archived and read-only. No new messages can be sent.".into(),
+        ));
+    }
+
+    // Read-only channels: only users with MANAGE_CHANNELS can post.
+    if channel.read_only && require_permission(
+        &state, channel.server_id, auth.user_id,
+        crate::citadel_permissions::PERM_MANAGE_CHANNELS,
+    ).await.is_err() {
+        return Err(AppError::Forbidden(
+            "This is a read-only channel. Only admins and moderators can post.".into(),
         ));
     }
 
@@ -267,34 +279,106 @@ pub async fn send_message(
     let has_everyone = mentions.contains(&everyone_uuid);
 
     // Cap individual mentions at 20.
-    let individual_mentions: Vec<Uuid> = mentions.iter().filter(|&&id| id != everyone_uuid).cloned().collect();
-    if individual_mentions.len() > 20 {
+    let raw_individual_mentions: Vec<Uuid> = mentions.iter().filter(|&&id| id != everyone_uuid).cloned().collect();
+    if raw_individual_mentions.len() > 20 {
         return Err(AppError::BadRequest("Too many mentions — max 20 per message".into()));
     }
 
-    // @everyone requires MENTION_EVERYONE permission + Redis rate limit (once per 5 min per channel).
-    if has_everyone {
-        crate::citadel_permissions::require_permission(
-            &state, channel.server_id, auth.user_id,
-            crate::citadel_permissions::PERM_MENTION_EVERYONE,
-        ).await?;
+    // @everyone / @here: check server-level role permission.
+    // If user lacks permission, strip the mention ping (message posts but no notification).
+    let here_uuid = Uuid::from_bytes([0,0,0,0, 0,0, 0,0, 0,0, 0,0,0,0,0,1]); // sentinel for @here
+    let has_here = mentions.contains(&here_uuid);
+    let mut strip_everyone = false;
+    let mut strip_here = false;
 
-        let rate_key = format!("mention_everyone:{}:{}:{}", auth.user_id, channel_id, channel.server_id);
-        let mut redis_conn = state.redis.clone();
-        let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
-        if count == 1 {
-            let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(300i64).query_async(&mut redis_conn).await;
+    if has_everyone || has_here {
+        let srv = sqlx::query!(
+            "SELECT owner_id, mention_everyone_role, mention_here_role FROM servers WHERE id = $1",
+            channel.server_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+
+        let is_owner = srv.owner_id == auth.user_id;
+
+        // Resolve user's effective role level
+        let user_role_level: &str = if is_owner {
+            "admin"
+        } else {
+            // Check if user has admin or moderator role
+            let max_pos = sqlx::query_scalar!(
+                r#"SELECT COALESCE(MAX(r.position), 0) as "pos!"
+                   FROM roles r
+                   JOIN member_roles mr ON mr.role_id = r.id
+                   WHERE mr.user_id = $1 AND r.server_id = $2"#,
+                auth.user_id,
+                channel.server_id,
+            )
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or(0);
+            if max_pos >= 90 { "admin" } else if max_pos >= 50 { "moderator" } else { "everyone" }
+        };
+
+        if has_everyone {
+            let required = srv.mention_everyone_role.as_str();
+            let allowed = match required {
+                "everyone" => true,
+                "moderator" => user_role_level == "admin" || user_role_level == "moderator",
+                _ => user_role_level == "admin",
+            };
+            if !allowed {
+                strip_everyone = true;
+            } else {
+                // Rate limit: once per 5 min per channel
+                let rate_key = format!("mention_everyone:{}:{}:{}", auth.user_id, channel_id, channel.server_id);
+                let mut redis_conn = state.redis.clone();
+                let count: i64 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await.unwrap_or(1);
+                if count == 1 {
+                    let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(300i64).query_async(&mut redis_conn).await;
+                }
+                if count > 1 {
+                    return Err(AppError::RateLimited("@everyone can only be used once per 5 minutes in this channel".into()));
+                }
+            }
         }
-        if count > 1 {
-            return Err(AppError::RateLimited("@everyone can only be used once per 5 minutes in this channel".into()));
+
+        if has_here {
+            let required = srv.mention_here_role.as_str();
+            let allowed = match required {
+                "everyone" => true,
+                "moderator" => user_role_level == "admin" || user_role_level == "moderator",
+                _ => user_role_level == "admin",
+            };
+            if !allowed {
+                strip_here = true;
+            }
         }
     }
 
-    let mentions_json = serde_json::json!(mentions);
+    // Build final mention list: strip unauthorized @everyone/@here pings
+    let effective_mentions: Vec<Uuid> = mentions.iter()
+        .filter(|&&id| !(strip_everyone && id == everyone_uuid || strip_here && id == here_uuid))
+        .cloned()
+        .collect();
+    // Recompute individual mentions from the effective list
+    let individual_mentions: Vec<Uuid> = effective_mentions.iter()
+        .filter(|&&id| id != everyone_uuid && id != here_uuid)
+        .cloned()
+        .collect();
+
+    let mentions_json = serde_json::json!(effective_mentions);
+
+    // Validate priority if provided
+    if let Some(ref p) = req.priority {
+        if !matches!(p.as_str(), "important" | "urgent") {
+            return Err(AppError::BadRequest("priority must be 'important' or 'urgent'".into()));
+        }
+    }
 
     sqlx::query!(
-        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id, parent_message_id, mentioned_user_ids, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, attachment_blob_id, reply_to_id, parent_message_id, mentioned_user_ids, expires_at, priority)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         message_id,
         channel_id,
         auth.user_id,
@@ -305,6 +389,7 @@ pub async fn send_message(
         req.parent_message_id,
         mentions_json,
         expires_at,
+        req.priority,
     )
     .execute(&state.db)
     .await?;
@@ -327,7 +412,8 @@ pub async fn send_message(
                 "message_id": message_id,
                 "author_id": auth.user_id,
                 "reply_to_id": req.reply_to_id,
-                "mentioned_user_ids": mentions,
+                "mentioned_user_ids": effective_mentions,
+                "priority": req.priority,
             }),
         )
         .await;
