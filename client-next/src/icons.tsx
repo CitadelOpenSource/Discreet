@@ -20,6 +20,7 @@ import {
   Star as LStar,
   ShieldCheck as LShieldCheck, ShieldAlert as LShieldAlert,
   Bug as LBug,
+  Bookmark as LBookmark,
 } from 'lucide-react';
 
 // Backward-compatible wrapper: accepts `s` (size) prop
@@ -75,6 +76,7 @@ export const Star = w(LStar);
 export const ShieldCheck = w(LShieldCheck);
 export const ShieldAlert = w(LShieldAlert);
 export const BugIcon = w(LBug);
+export const Bookmark = w(LBookmark);
 
 // Bundle export (same as before — import { I } from './icons')
 export const I = {
@@ -82,5 +84,5 @@ export const I = {
   Home, Msg, Search, Trash, Out, Edit, Mic, MicOff, Smile, Paperclip,
   Shield, Clock, Download, Eye, EyeOff, Zap, Bot, Reply, Sliders, At, Bell, BellOff,
   Pin, Check, Vol, Camera, Monitor, Headphones, PhoneOff, UserPlus,
-  Link, Globe, ChevD, ChevR, Star, ShieldCheck, ShieldAlert, BugIcon,
+  Link, Globe, ChevD, ChevR, Star, ShieldCheck, ShieldAlert, BugIcon, Bookmark,
 };

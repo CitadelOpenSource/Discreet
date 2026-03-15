@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2)\n         ON CONFLICT (user_id) DO UPDATE SET timezone = $2, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6258e6b997aeb9b6afa5c73bb1b1dc35bdc32530abc5c59ab125573bea1de9fb"
+}

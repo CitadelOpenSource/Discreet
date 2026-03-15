@@ -241,14 +241,32 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
 
       {/* Results */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
-        {searching && <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 13 }}>Searching...</div>}
+        {searching && (
+          <div style={{ padding: '12px 8px' }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 12, animation: `fadeIn 0.3s ${i * 0.06}s both` }}>
+                <div style={{ width: 28, height: 28, borderRadius: 14, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite', flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ width: `${40 + (i * 17) % 40}%`, height: 10, borderRadius: 4, marginBottom: 6, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite' }} />
+                  <div style={{ width: `${55 + (i * 11) % 35}%`, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {tab === 'messages' && !searching && query.trim().length >= 2 && (<>
           <div style={{ ...lbl, padding: '8px 6px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>{results.length} result{results.length !== 1 ? 's' : ''}</span>
             <span style={{ fontSize: 9, color: T.ac, fontWeight: 600, background: 'rgba(0,212,170,0.08)', padding: '2px 6px', borderRadius: 4, textTransform: 'none', letterSpacing: 0 }}>🔒 Local only</span>
           </div>
-          {results.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 13 }}>No messages found</div>}
+          {results.length === 0 && query.trim() && (
+            <div style={{ textAlign: 'center', padding: '36px 20px' }}>
+              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>🔍</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No messages matching &ldquo;{query}&rdquo;</div>
+              <div style={{ fontSize: 12, color: T.mt }}>Try a different search term or check your filters.</div>
+            </div>
+          )}
           {results.map(m => {
             const ch = channels.find(c => c.id === m.channel_id);
             const parsed = parseQuery(query);
@@ -278,7 +296,13 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
 
         {tab === 'members' && !searching && query.trim().length >= 2 && (<>
           <div style={{ ...lbl, padding: '8px 6px 6px' }}>{memberResults.length} member{memberResults.length !== 1 ? 's' : ''}</div>
-          {memberResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 13 }}>No members found</div>}
+          {memberResults.length === 0 && query.trim() && (
+            <div style={{ textAlign: 'center', padding: '36px 20px' }}>
+              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>👤</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No members matching &ldquo;{query}&rdquo;</div>
+              <div style={{ fontSize: 12, color: T.mt }}>Check spelling or try a partial username.</div>
+            </div>
+          )}
           {memberResults.map(m => {
             const uid = m.user_id || m.id || '';
             const uname = m.username || getName(uid);
@@ -306,7 +330,13 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
 
         {tab === 'users' && !searching && query.trim().length >= 2 && (<>
           <div style={{ ...lbl, padding: '8px 6px 6px' }}>{userResults.length} user{userResults.length !== 1 ? 's' : ''}</div>
-          {userResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: T.mt, fontSize: 13 }}>No users found</div>}
+          {userResults.length === 0 && query.trim() && (
+            <div style={{ textAlign: 'center', padding: '36px 20px' }}>
+              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>👤</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No users matching &ldquo;{query}&rdquo;</div>
+              <div style={{ fontSize: 12, color: T.mt }}>Users must have an account on Discreet to appear here.</div>
+            </div>
+          )}
           {userResults.map(u => {
             const shared = sharedServers[u.id] || [];
             return (

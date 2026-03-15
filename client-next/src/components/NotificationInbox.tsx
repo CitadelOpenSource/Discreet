@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { T } from '../theme';
 import { api } from '../api/CitadelAPI';
+import { useTimezone } from '../hooks/TimezoneContext';
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ function isToday(iso: string): boolean {
 // ─── Component ──────────────────────────────────────────
 
 export function NotificationInbox({ wsLastEvent, onNavigate }: NotificationInboxProps) {
+  const { formatTime } = useTimezone();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -113,7 +115,7 @@ export function NotificationInbox({ wsLastEvent, onNavigate }: NotificationInbox
           id: `ws_${wsLastEvent.event_id}_${Date.now()}`,
           type: 'event_reminder',
           title: wsLastEvent.title || 'Event starting soon',
-          body: `Starts ${new Date(wsLastEvent.start_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
+          body: `Starts ${formatTime(wsLastEvent.start_time, { hour: 'numeric', minute: '2-digit' })}`,
           action_url: null,
           read: false,
           created_at: new Date().toISOString(),
@@ -247,9 +249,23 @@ export function NotificationInbox({ wsLastEvent, onNavigate }: NotificationInbox
 
           {/* Content */}
           {loading && items.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: T.mt, fontSize: 13 }}>Loading...</div>
+            <div style={{ padding: '12px 16px' }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ width: `${50 + (i * 19) % 40}%`, height: 10, borderRadius: 4, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite', marginBottom: 6 }} />
+                    <div style={{ width: `${30 + (i * 13) % 30}%`, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.04)', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.5s infinite' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : items.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: T.mt, fontSize: 13 }}>No notifications yet</div>
+            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>You're all caught up</div>
+              <div style={{ fontSize: 12, color: T.mt }}>No new notifications. Enjoy the quiet.</div>
+            </div>
           ) : (
             <>
               {todayItems.length > 0 && (

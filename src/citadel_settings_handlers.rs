@@ -18,6 +18,20 @@ pub struct UserSettingsResponse {
     pub friend_request_privacy: String,
     pub notification_level: String,
     pub show_shared_servers: bool,
+    pub timezone: String,
+    pub show_read_receipts: bool,
+    pub show_typing_indicator: bool,
+    pub show_link_previews: bool,
+    pub dnd_enabled: bool,
+    pub dnd_start: String,
+    pub dnd_end: String,
+    pub dnd_days: String,
+    pub sound_dm: String,
+    pub sound_server: String,
+    pub sound_mention: String,
+    pub message_density: String,
+    pub chat_font_size: i32,
+    pub default_status: String,
     pub updated_at: String,
 }
 
@@ -31,6 +45,20 @@ pub struct UpdateUserSettingsRequest {
     pub friend_request_privacy: Option<String>,
     pub notification_level: Option<String>,
     pub show_shared_servers: Option<bool>,
+    pub timezone: Option<String>,
+    pub show_read_receipts: Option<bool>,
+    pub show_typing_indicator: Option<bool>,
+    pub show_link_previews: Option<bool>,
+    pub dnd_enabled: Option<bool>,
+    pub dnd_start: Option<String>,
+    pub dnd_end: Option<String>,
+    pub dnd_days: Option<String>,
+    pub sound_dm: Option<String>,
+    pub sound_server: Option<String>,
+    pub sound_mention: Option<String>,
+    pub message_density: Option<String>,
+    pub chat_font_size: Option<i32>,
+    pub default_status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,7 +95,7 @@ pub async fn get_my_settings(
     .await?;
 
     let row = sqlx::query!(
-        "SELECT user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, updated_at
+        "SELECT user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, updated_at
          FROM user_settings WHERE user_id = $1",
         auth.user_id,
     )
@@ -84,6 +112,20 @@ pub async fn get_my_settings(
         friend_request_privacy: row.friend_request_privacy,
         notification_level: row.notification_level,
         show_shared_servers: row.show_shared_servers,
+        timezone: row.timezone,
+        show_read_receipts: row.show_read_receipts,
+        show_typing_indicator: row.show_typing_indicator,
+        show_link_previews: row.show_link_previews,
+        dnd_enabled: row.dnd_enabled,
+        dnd_start: row.dnd_start,
+        dnd_end: row.dnd_end,
+        dnd_days: row.dnd_days,
+        sound_dm: row.sound_dm,
+        sound_server: row.sound_server,
+        sound_mention: row.sound_mention,
+        message_density: row.message_density,
+        chat_font_size: row.chat_font_size,
+        default_status: row.default_status,
         updated_at: row.updated_at.to_rfc3339(),
     }))
 }
@@ -110,9 +152,23 @@ pub async fn patch_my_settings(
              friend_request_privacy = COALESCE($6, friend_request_privacy),
              notification_level = COALESCE($7, notification_level),
              show_shared_servers = COALESCE($8, show_shared_servers),
+             timezone = COALESCE($9, timezone),
+             show_read_receipts = COALESCE($10, show_read_receipts),
+             show_typing_indicator = COALESCE($11, show_typing_indicator),
+             show_link_previews = COALESCE($12, show_link_previews),
+             dnd_enabled = COALESCE($13, dnd_enabled),
+             dnd_start = COALESCE($14, dnd_start),
+             dnd_end = COALESCE($15, dnd_end),
+             dnd_days = COALESCE($16, dnd_days),
+             sound_dm = COALESCE($17, sound_dm),
+             sound_server = COALESCE($18, sound_server),
+             sound_mention = COALESCE($19, sound_mention),
+             message_density = COALESCE($20, message_density),
+             chat_font_size = COALESCE($21, chat_font_size),
+             default_status = COALESCE($22, default_status),
              updated_at = NOW()
-         WHERE user_id = $9
-         RETURNING user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, updated_at",
+         WHERE user_id = $23
+         RETURNING user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, updated_at",
         req.theme,
         req.font_size,
         req.compact_mode,
@@ -121,6 +177,20 @@ pub async fn patch_my_settings(
         req.friend_request_privacy,
         req.notification_level,
         req.show_shared_servers,
+        req.timezone,
+        req.show_read_receipts,
+        req.show_typing_indicator,
+        req.show_link_previews,
+        req.dnd_enabled,
+        req.dnd_start,
+        req.dnd_end,
+        req.dnd_days,
+        req.sound_dm,
+        req.sound_server,
+        req.sound_mention,
+        req.message_density,
+        req.chat_font_size,
+        req.default_status,
         auth.user_id,
     )
     .fetch_one(&state.db)
@@ -136,6 +206,20 @@ pub async fn patch_my_settings(
         friend_request_privacy: row.friend_request_privacy,
         notification_level: row.notification_level,
         show_shared_servers: row.show_shared_servers,
+        timezone: row.timezone,
+        show_read_receipts: row.show_read_receipts,
+        show_typing_indicator: row.show_typing_indicator,
+        show_link_previews: row.show_link_previews,
+        dnd_enabled: row.dnd_enabled,
+        dnd_start: row.dnd_start,
+        dnd_end: row.dnd_end,
+        dnd_days: row.dnd_days,
+        sound_dm: row.sound_dm,
+        sound_server: row.sound_server,
+        sound_mention: row.sound_mention,
+        message_density: row.message_density,
+        chat_font_size: row.chat_font_size,
+        default_status: row.default_status,
         updated_at: row.updated_at.to_rfc3339(),
     }))
 }
@@ -227,6 +311,33 @@ pub async fn patch_server_notification_settings(
         event_reminders: row.event_reminders,
         email_reminders: row.email_reminders,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetTimezoneRequest {
+    pub timezone: String,
+}
+
+/// POST /settings/timezone — save the user's IANA timezone.
+pub async fn set_timezone(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SetTimezoneRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if req.timezone.len() > 64 {
+        return Err(AppError::BadRequest("Timezone must be 64 characters or fewer".into()));
+    }
+
+    sqlx::query!(
+        "INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET timezone = $2, updated_at = NOW()",
+        auth.user_id,
+        req.timezone,
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "timezone": req.timezone })))
 }
 
 async fn ensure_server_membership(

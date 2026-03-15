@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { TimezoneProvider } from './hooks/TimezoneContext';
 import { initCrypto } from './crypto/mls';
 import './i18n/i18n';
 
@@ -54,7 +55,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           ? <SupportPage />
           : _meetCode
           ? <GuestMeetingJoin code={_meetCode} />
-          : <App />
+          : <TimezoneProvider><App /></TimezoneProvider>
         }
       </React.Suspense>
     </ErrorBoundary>

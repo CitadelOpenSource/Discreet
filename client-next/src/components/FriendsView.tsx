@@ -113,7 +113,14 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest }: FriendsViewPro
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         {tab === 'all' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Friends — {friends.length}</div>
-          {friends.length === 0 && <div style={{ color: T.mt, fontSize: 13, padding: '20px 0', textAlign: 'center' }}>No friends yet. Click "Add Friend" to get started!</div>}
+          {friends.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Users s={28} /></div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>Add friends to start chatting</div>
+              <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 16px' }}>Search by username or share your ID so others can find you.</div>
+              <button onClick={() => setTab('add')} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Add Friend</button>
+            </div>
+          )}
           {friends.map(f => {
             const fid = f.friend_id || f.id;
             const fname = f.friend_username || f.username || '?';
@@ -171,7 +178,13 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest }: FriendsViewPro
               </div>
             ))}
           </>)}
-          {incoming.length === 0 && outgoing.length === 0 && <div style={{ color: T.mt, fontSize: 13, padding: '20px 0', textAlign: 'center' }}>No pending requests</div>}
+          {incoming.length === 0 && outgoing.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: `${T.ac}12`, marginBottom: 12 }}><I.Check s={24} /></div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No pending requests</div>
+              <div style={{ fontSize: 12, color: T.mt }}>When someone sends you a friend request, it will appear here.</div>
+            </div>
+          )}
         </>)}
 
         {tab === 'blocked' && <BlockedList showConfirm={showConfirm} />}
@@ -224,7 +237,13 @@ function BlockedList({ showConfirm }: BlockedListProps) {
   return (<>
     <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Blocked Users</div>
     <div style={{ fontSize: 12, color: T.mt, marginBottom: 14 }}>Blocked users cannot message you, see your online status, or send friend requests.</div>
-    {blocked.length === 0 && <div style={{ color: T.mt, fontSize: 13, padding: '12px 0', textAlign: 'center' }}>No blocked users</div>}
+    {blocked.length === 0 && (
+      <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: 'rgba(255,255,255,0.04)', marginBottom: 12 }}><I.Shield s={24} /></div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No blocked users</div>
+        <div style={{ fontSize: 12, color: T.mt }}>Users you block will appear here.</div>
+      </div>
+    )}
     {blocked.map(b => (
       <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: T.sf2 }}>
         <Av name={b.friend_username || b.username || '?'} size={32} />

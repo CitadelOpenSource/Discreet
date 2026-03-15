@@ -48,8 +48,10 @@ import { EventsPanel } from './components/EventsPanel';
 import { LeaderboardPanel, RankBadge } from './components/Gamification';
 import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { useVoice } from './hooks/useVoice';
+import { useTimezone, detectedTimezone } from './hooks/TimezoneContext';
 import { SlashSuggestions, processSlashCommand, type SlashContext } from './hooks/useSlashCommands';
 import { filterMessage, getProfanityLevel } from './utils/profanityFilter';
+import { playNotifSound } from './utils/sounds';
 import { sanitizeInput, validateMessageLength, rateLimitCheck } from './utils/security';
 import { PRIVILEGE_LEVELS, getUserLevel, hasPrivilege } from './utils/permissions';
 import { getUserTier, TIER_LIMITS, TIER_META, tierRank, checkRateLimit, checkStorageLimit, addStorageUsedBytes } from './utils/tiers';
@@ -110,12 +112,31 @@ const PERM_OPTS = [
 const shimBase: React.CSSProperties = {
   background: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)',
   backgroundSize: '400% 100%',
-  animation: 'shimmer 1.4s infinite',
+  animation: 'shimmer 1.5s infinite',
 };
+
+/** Delays a boolean by `ms` — returns true only if `value` has been true for >= `ms`.
+ *  This prevents skeleton flash on fast loads. */
+function useDelayedLoading(value: boolean, ms = 300): boolean {
+  const [show, setShow] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (value) {
+      timerRef.current = setTimeout(() => setShow(true), ms);
+    } else {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      setShow(false);
+    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [value, ms]);
+  return show;
+}
 function GlobalStyles() {
   return (
     <style>{`
       @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+      @keyframes shimmerPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}
       @keyframes fadeIn{from{opacity:0}to{opacity:1}}
       @keyframes spin{to{transform:rotate(360deg)}}
       @keyframes typingBounce{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
@@ -131,10 +152,53 @@ function GlobalStyles() {
       * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.06) transparent; }
 
       /* ── Structural helpers ───────────────────────────── */
+      :root { --chat-font-size: 14px; }
       .chat-root  { height:100vh; display:flex; overflow:hidden; }
       .chat-main  { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
       .msg-actions:hover { display:flex !important; }
       div:hover > .msg-actions { display:flex !important; }
+
+      /* ── Message density modes ─────────────────────── */
+      .density-comfortable .msg-row { padding: 4px 16px; gap: 10px; }
+      .density-comfortable .msg-avatar { width: 36px; height: 36px; }
+      .density-compact .msg-row { padding: 1px 16px; gap: 6px; }
+      .density-compact .msg-avatar { width: 28px; height: 28px; }
+      .density-compact .msg-name { font-size: 12px !important; }
+      .density-compact .msg-text { font-size: var(--chat-font-size) !important; line-height: 1.3 !important; }
+      .density-cozy .msg-row { padding: 6px 16px; gap: 12px; }
+      .density-cozy .msg-avatar { width: 44px; height: 44px; }
+      .density-cozy .msg-text { line-height: 1.6 !important; }
+
+      /* ── Reduced motion ─────────────────────────────── */
+      .reduce-motion, .reduce-motion * {
+        animation-duration: 0.001s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001s !important;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        :root:not(.force-motion), :root:not(.force-motion) * {
+          animation-duration: 0.001s !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001s !important;
+        }
+      }
+
+      /* ── High contrast mode (WCAG AAA) ──────────────── */
+      .high-contrast {
+        --hc-text: #ffffff;
+        --hc-muted: #c0c4cc;
+        --hc-border: #6b7280;
+        --hc-bg: #000000;
+      }
+      .high-contrast * { border-color: var(--hc-border) !important; }
+      .high-contrast .msg-text, .high-contrast .msg-name { color: var(--hc-text) !important; }
+      .high-contrast .ch-row { border: 1px solid var(--hc-border) !important; margin-bottom: 1px; }
+
+      /* ── Focus visible (keyboard navigation) ────────── */
+      .focus-visible :focus-visible {
+        outline: 2px solid #00d4aa !important;
+        outline-offset: 2px !important;
+      }
 
       /* ── Server icon pill indicator ──── */
       .srv-icon { position:relative; }
@@ -455,6 +519,7 @@ function ColorTool({ onInsert }: { onInsert: (v: string) => void }) {
 
 // ══════════════════════════════════════════════════════════
 export default function App() {
+  const tzCtx = useTimezone();
   const [authed, setAuthed] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!api.userId); // true if we need to try cookie refresh
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null);
@@ -479,6 +544,14 @@ export default function App() {
   const [platformUser, setPlatformUser] = useState<any>(null);
   const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [privacyPrefs, setPrivacyPrefs] = useState({ show_read_receipts: false, show_typing_indicator: false, show_link_previews: false });
+  const [dndSchedule, setDndSchedule] = useState({ enabled: false, start: '22:00', end: '08:00', days: '0,1,2,3,4,5,6' });
+  const [serverNotifLevels, setServerNotifLevels] = useState<Record<string, string>>({}); // server_id → 'all'|'mentions'|'nothing'
+  const [serverVisibility, setServerVisibility] = useState<Record<string, string | null>>({}); // server_id → null|'online'|'idle'|'invisible'
+  const [msgDensity, setMsgDensity] = useState<'comfortable' | 'compact' | 'cozy'>(() => (localStorage.getItem('d_msg_density') as any) || 'comfortable');
+  const [chatFontSize, setChatFontSize] = useState(() => parseInt(localStorage.getItem('d_chat_font_size') || '14', 10));
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -594,6 +667,9 @@ export default function App() {
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
   const [editMsg, setEditMsg] = useState<Msg | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [a11yReduceMotion, setA11yReduceMotion] = useState(() => localStorage.getItem('d_reduce_motion') === 'true');
+  const [a11yHighContrast, setA11yHighContrast] = useState(() => localStorage.getItem('d_high_contrast') === 'true');
+  const [a11yFocusRings, setA11yFocusRings] = useState(() => localStorage.getItem('d_focus_rings') === 'true');
   const [serverEmoji, setServerEmoji] = useState<CustomEmoji[]>([]);
   const [panel, setPanel] = useState<'members' | 'search' | 'thread' | null>('members');
   const [threadParent, setThreadParent] = useState<Msg | null>(null);
@@ -615,6 +691,11 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>(() => loadNotifications());
   const [showNotifCenter, setShowNotifCenter] = useState(false);
   const [wsLastEvent, setWsLastEvent] = useState<any>(null);
+  const [wsStatus, setWsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
+  const [wsStatusVisible, setWsStatusVisible] = useState(false);
+  const wsStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsHadDisconnect = useRef(false); // suppress "Connected" on first load
+  const [failedMessages, setFailedMessages] = useState<Record<string, { text: string; channelId: string; replyToId?: string }>>({}); // tempId → retry info
   const [showWatchParty, setShowWatchParty] = useState(false);
   const [showMeeting,    setShowMeeting]    = useState(false);
   const [meetingCode,    setMeetingCode]    = useState<string | undefined>(undefined);
@@ -630,6 +711,11 @@ export default function App() {
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [loadingMembers,  setLoadingMembers]  = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  // Delayed flags — only true after 300ms of loading (prevents skeleton flash on fast loads)
+  const showServersSkeleton  = useDelayedLoading(loadingServers);
+  const showChannelsSkeleton = useDelayedLoading(loadingChannels);
+  const showMembersSkeleton  = useDelayedLoading(loadingMembers);
+  const showMessagesSkeleton = useDelayedLoading(loadingMessages);
   const [channelFadeKey,  setChannelFadeKey]  = useState(0); // bumped on channel switch for fade-in
   const [membersLoaded,   setMembersLoaded]   = useState<string | null>(null); // server id for which members were loaded
 
@@ -710,6 +796,7 @@ export default function App() {
       }
     } catch {}
     loadServers(true); loadDms(); api.getMe().then(setMe).catch(() => {});
+    api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
     api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null } })); } }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
@@ -717,15 +804,57 @@ export default function App() {
         api.ws.send(JSON.stringify({ type: 'voice_ice', to: e.peerId, candidate: e.candidate }));
       }
     });
-    // Keyboard shortcuts
+    // Keyboard shortcuts — respect focus (skip when typing in input/textarea)
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setQuickSwitcher(p => !p); }
-      if (e.key === 'Escape') { setQuickSwitcher(false); setModal(null); }
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // Always-active shortcuts (even in inputs)
+      if (ctrl && e.key === 'k') { e.preventDefault(); setQuickSwitcher(p => !p); return; }
+      if (ctrl && e.key === '/') { e.preventDefault(); setModal(m => m === 'shortcuts-help' ? null : 'shortcuts-help'); return; }
+      if (e.key === 'Escape') {
+        setQuickSwitcher(false);
+        setShowEmojiPicker(false);
+        setEmojiTarget(null);
+        setModal(null);
+        return;
+      }
+
+      // Shortcuts that only fire outside of inputs
+      if (inInput) return;
+      if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); vc.toggleMute(); return; }
+      if (ctrl && e.shiftKey && e.key === 'D') { e.preventDefault(); vc.toggleDeafen(); return; }
+      if (ctrl && e.key === 'e') { e.preventDefault(); setShowEmojiPicker(p => !p); return; }
     };
     window.addEventListener('keydown', onKey);
-    // Load theme from settings
+    // Load theme and timezone from settings
     api.getSettings?.().then((s: any) => {
       if (s?.theme) handleThemeChange(s.theme);
+      if (s?.timezone && s.timezone !== 'UTC') {
+        tzCtx.setTimezone(s.timezone);
+      } else if (!s?.timezone || s.timezone === 'UTC') {
+        // Auto-detect on first login and persist
+        tzCtx.setTimezone(detectedTimezone);
+        api.saveTimezone(detectedTimezone).catch(() => {});
+      }
+      // Load privacy preferences (all default OFF — privacy-first)
+      if (s) {
+        setPrivacyPrefs({ show_read_receipts: !!s.show_read_receipts, show_typing_indicator: !!s.show_typing_indicator, show_link_previews: !!s.show_link_previews });
+        setDndSchedule({ enabled: !!s.dnd_enabled, start: s.dnd_start || '22:00', end: s.dnd_end || '08:00', days: s.dnd_days || '0,1,2,3,4,5,6' });
+        // Sync sound preferences to localStorage for the sound utility
+        if (s.sound_dm) localStorage.setItem('d_sound_dm', s.sound_dm);
+        if (s.sound_server) localStorage.setItem('d_sound_server', s.sound_server);
+        if (s.sound_mention) localStorage.setItem('d_sound_mention', s.sound_mention);
+        // Load density and chat font size
+        if (s.message_density) { setMsgDensity(s.message_density); localStorage.setItem('d_msg_density', s.message_density); }
+        if (s.chat_font_size) { setChatFontSize(s.chat_font_size); localStorage.setItem('d_chat_font_size', String(s.chat_font_size)); document.documentElement.style.setProperty('--chat-font-size', `${s.chat_font_size}px`); }
+        // Load default online status
+        if (s.default_status && s.default_status !== 'online' && !localStorage.getItem('d_manual_status')) {
+          setUserStatus(s.default_status);
+          localStorage.setItem('d_status', s.default_status);
+        }
+      }
     }).catch(() => {});
     return () => { unsubVoice(); window.removeEventListener('keydown', onKey); };
   }, [authed]);
@@ -762,10 +891,34 @@ export default function App() {
     if (!authed || !curServer) return;
     api.connectWs(curServer.id);
     const handler = (evt: any) => {
+      // Connection status events from CitadelAPI
+      if (evt.type === 'ws_status') {
+        if (evt.status === 'connected') {
+          setWsStatus('connected');
+          // Only show "Connected" banner after a disconnect, not on first load
+          if (wsHadDisconnect.current) {
+            setWsStatusVisible(true);
+            if (wsStatusTimer.current) clearTimeout(wsStatusTimer.current);
+            wsStatusTimer.current = setTimeout(() => setWsStatusVisible(false), 3000);
+            // Reload messages on reconnect to catch anything missed
+            if (curChannelRef.current) loadMessages(curChannelRef.current);
+          }
+          wsHadDisconnect.current = false;
+        } else if (evt.status === 'reconnecting') {
+          wsHadDisconnect.current = true;
+          setWsStatus('reconnecting');
+          setWsStatusVisible(true);
+        } else if (evt.status === 'disconnected') {
+          wsHadDisconnect.current = true;
+          setWsStatus('disconnected');
+          setWsStatusVisible(true);
+        }
+        return;
+      }
       setWsLastEvent(evt);
       const ch = curChannelRef.current;
       if ((evt.type === 'message_create' || evt.type === 'MESSAGE_CREATE') && evt.channel_id === ch?.id) {
-        if (evt.author_id !== api.userId) playSound('receive');
+        if (evt.author_id !== api.userId && localStorage.getItem('d_notif_dnd') !== 'true') playNotifSound('server');
         // Advance the persisted read cursor while viewing this channel.
         localStorage.setItem(`d_channel_last_read_${ch.id}`, String(Date.now()));
         loadMessages(ch);
@@ -871,13 +1024,20 @@ export default function App() {
         const dmId = evt.dm_id || (dmsRef.current.find((dm: DM) => dm.id === evt.channel_id)?.id);
         if (dmId && curDmRef.current?.id !== dmId) {
           setDmUnreadCounts(p => ({ ...p, [dmId]: (p[dmId] || 0) + 1 }));
+          if (localStorage.getItem('d_notif_dnd') !== 'true') playNotifSound('dm');
         }
       }
       if (evt.type === 'message_create' && evt.channel_id !== ch?.id) {
-        setUnreadCounts(p => ({ ...p, [evt.channel_id]: (p[evt.channel_id] || 0) + 1 }));
-        // @mention notification for messages in other channels
+        const srvLevel = serverNotifLevels[curServer?.id || ''] || 'mentions';
+        // Unread count always increments (even if muted — badge shows)
+        if (srvLevel !== 'nothing') {
+          setUnreadCounts(p => ({ ...p, [evt.channel_id]: (p[evt.channel_id] || 0) + 1 }));
+        }
+        // @mention notification — only if notification_level allows
         const evtContent: string = evt.content || evt.text || '';
-        if (evtContent && api.username && evtContent.toLowerCase().includes(`@${api.username.toLowerCase()}`)) {
+        const isMention = evtContent && api.username && evtContent.toLowerCase().includes(`@${api.username.toLowerCase()}`);
+        if (isMention && srvLevel !== 'nothing') {
+          if (localStorage.getItem('d_notif_dnd') !== 'true') playNotifSound('mention');
           pushNotif(makeNotification('mention',
             `@${api.username} mentioned`,
             `${evt.username || 'Someone'}: ${evtContent.slice(0, 120)}`,
@@ -1039,7 +1199,7 @@ export default function App() {
   const loadCategories = async (sid: string) => { try { const c = await api.listCategories(sid); if (Array.isArray(c)) setCategories(c); } catch {} };
   const loadMembers = async (sid: string) => {
     setLoadingMembers(true);
-    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); } } catch {} finally { setLoadingMembers(false); }
+    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); const myMem = m.find((u: any) => u.user_id === api.userId); if (myMem?.notification_level) setServerNotifLevels(p => ({ ...p, [sid]: myMem.notification_level })); if (myMem) setServerVisibility(p => ({ ...p, [sid]: myMem.visibility_override ?? null })); } } catch {} finally { setLoadingMembers(false); }
   };
   const loadRoles = async (sid: string) => {
     try { const r = await api.listRoles(sid); if (Array.isArray(r)) setRoles(r); } catch {}
@@ -1121,7 +1281,28 @@ export default function App() {
     return null;
   };
 
-  const pushNotif = (n: AppNotification) => {
+  /** Check if DND is currently active (manual override OR schedule). */
+  const isDndActive = (): boolean => {
+    // Manual DND always wins
+    if (localStorage.getItem('d_notif_dnd') === 'true') return true;
+    // Check schedule
+    if (!dndSchedule.enabled) return false;
+    const now = new Date();
+    const currentDay = now.getDay(); // 0=Sun
+    const activeDays = dndSchedule.days.split(',').map(Number);
+    if (!activeDays.includes(currentDay)) return false;
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const { start, end } = dndSchedule;
+    // Handle overnight ranges (e.g. 22:00 → 08:00)
+    if (start <= end) {
+      return hhmm >= start && hhmm < end;
+    }
+    return hhmm >= start || hhmm < end;
+  };
+
+  const pushNotif = (n: AppNotification, isDmMention?: boolean) => {
+    // During DND, only DM @mentions come through
+    if (isDndActive() && !isDmMention) return;
     setNotifications(prev => {
       const next = [n, ...prev];
       saveNotifications(next);
@@ -1189,9 +1370,7 @@ export default function App() {
         setEditMsg(null); setMsgInput(''); await loadMessages(curChannel); return;
       }
       if (curChannel) {
-        console.log('[send] encrypting for channel:', curChannel.id);
         const ct = await enc(curChannel.id, text);
-        console.log('[send] ciphertext length:', ct.length);
         // Extract mentioned user IDs from @mentions in text
         const mentionIds: string[] = [];
         const mentionRe2 = /@([\w.-]+)/g;
@@ -1203,9 +1382,22 @@ export default function App() {
           if (found) mentionIds.push(found.user_id);
         }
         const threadRoot = replyTo ? (replyTo.parent_message_id || replyTo.id) : undefined;
-        const res = await api.sendMessage(curChannel.id, ct, 0, replyTo?.id, threadRoot, mentionIds.length ? mentionIds : undefined);
-        console.log('[send] response:', res);
-        setMsgInput(''); setReplyTo(null); playSound('send'); await loadMessages(curChannel);
+        const replyId = replyTo?.id;
+        // Optimistic: add temp message immediately
+        const tempId = `_pending_${Date.now()}`;
+        const tempMsg: Msg = { id: tempId, author_id: api.userId || '', content_ciphertext: ct, mls_epoch: 0, created_at: new Date().toISOString(), text, authorName: getName(api.userId || ''), reply_to_id: replyId };
+        setMessages(prev => [...prev, tempMsg]);
+        setMsgInput(''); setReplyTo(null);
+        try {
+          await api.sendMessage(curChannel.id, ct, 0, replyId, threadRoot, mentionIds.length ? mentionIds : undefined);
+          playSound('send');
+          await loadMessages(curChannel);
+        } catch (sendErr: any) {
+          // Mark as failed — keep in list, add to failedMessages for retry
+          setFailedMessages(prev => ({ ...prev, [tempId]: { text, channelId: curChannel!.id, replyToId: replyId } }));
+          // Keep the temp message in the list — failedMessages[tempId] marks it visually
+          return; // Don't throw — we handle it via UI
+        }
         // Trigger bot responses for any @mentioned bots in this message
         if (curServer) {
           const mentionRe = /@([\w.-]+)/g;
@@ -1235,6 +1427,24 @@ export default function App() {
       console.error('[send] FAILED:', e);
       setToast('Send failed: ' + (e?.message || 'Unknown error'));
       setTimeout(() => setToast(''), 5000);
+    }
+  };
+
+  const retryFailedMessage = async (tempId: string) => {
+    const info = failedMessages[tempId];
+    if (!info) return;
+    try {
+      const ct = await enc(info.channelId, info.text);
+      await api.sendMessage(info.channelId, ct, 0, info.replyToId);
+      // Success — remove from failed, reload messages
+      setFailedMessages(prev => { const n = { ...prev }; delete n[tempId]; return n; });
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      playSound('send');
+      const ch = channels.find(c => c.id === info.channelId);
+      if (ch) await loadMessages(ch);
+    } catch {
+      setToast('Retry failed — check your connection');
+      setTimeout(() => setToast(''), 3000);
     }
   };
 
@@ -1410,10 +1620,44 @@ export default function App() {
       items.push({ label: 'Pin Message', icon: <I.Lock />, fn: async () => { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } });
     }
     items.push({ label: 'Mention Author', icon: <I.At />, fn: () => { setMsgInput(p => p + `@${getName(m.author_id)} `); inputRef.current?.focus(); } });
+    items.push({ label: bookmarkedIds.has(m.id) ? 'Remove Bookmark' : 'Bookmark', icon: <I.Bookmark />, fn: () => toggleBookmark(m) });
     items.push({ sep: true });
     items.push({ label: 'Copy Text', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(m.text || '') });
     items.push({ label: 'Copy Message ID', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(m.id) });
     setCtxMenu({ x: e.clientX, y: e.clientY, items });
+  };
+
+  const toggleBookmark = async (m: Msg) => {
+    if (bookmarkedIds.has(m.id)) {
+      const prevBookmarks = bookmarks;
+      setBookmarkedIds(prev => { const n = new Set(prev); n.delete(m.id); return n; });
+      setBookmarks(prev => prev.filter(b => b.message_id !== m.id));
+      try { await api.deleteBookmark(m.id); } catch { setBookmarkedIds(prev => new Set(prev).add(m.id)); setBookmarks(prevBookmarks); }
+    } else if (curServer && curChannel) {
+      setBookmarkedIds(prev => new Set(prev).add(m.id));
+      const bm = { message_id: m.id, channel_id: curChannel.id, server_id: curServer.id, note: '', created_at: new Date().toISOString(), message_content: m.text || m.content_ciphertext, message_author_id: m.author_id, message_created_at: m.created_at };
+      setBookmarks(prev => [bm, ...prev]);
+      try { await api.createBookmark(m.id, curChannel.id, curServer.id); } catch { setBookmarkedIds(prev => { const n = new Set(prev); n.delete(m.id); return n; }); setBookmarks(prev => prev.filter(b => b.message_id !== m.id)); }
+    }
+  };
+
+  const navigateToBookmark = async (bm: any) => {
+    const s = servers.find(sv => sv.id === bm.server_id);
+    if (!s) return;
+    // Select server (loads channels internally), then override to the bookmark's channel.
+    await selectServer(s);
+    // Small delay to let channels state update, then switch to the target channel.
+    setTimeout(async () => {
+      const chs = await api.listChannels(bm.server_id);
+      const ch = (Array.isArray(chs) ? chs : []).find((c: Channel) => c.id === bm.channel_id);
+      if (ch) {
+        await selectChannel(ch);
+        setTimeout(() => {
+          const el = document.querySelector(`[data-msg-id="${bm.message_id}"]`);
+          if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightedMsg(bm.message_id); setTimeout(() => setHighlightedMsg(null), 2000); }
+        }, 400);
+      }
+    }, 100);
   };
 
   // ── Move to Voice ────────────────────────────────────────
@@ -1486,8 +1730,8 @@ export default function App() {
   const totalDmUnread = Object.values(dmUnreadCounts).reduce((s, n) => s + n, 0);
   const myMember = curServer ? members.find(m => m.user_id === api.userId) : undefined;
   const myPrivilege = getUserLevel(myMember ?? null, curServer?.owner_id ?? '', roles);
-  const curTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const curDate = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const curTime = tzCtx.formatTime(now);
+  const curDate = tzCtx.formatDate(now, { weekday: 'long', month: 'long', day: 'numeric' });
 
   // ── Server icon render helper (with favorites/folders/drag) ──────────
   const toggleFavorite = (sid: string) => {
@@ -1535,6 +1779,19 @@ export default function App() {
           { label: 'Server Settings', icon: <I.Settings />, fn: () => { selectServer(s).then(() => setModal('server-settings')); } },
           { sep: true },
         ];
+        // Notification level options
+        const curLevel = serverNotifLevels[s.id] || 'mentions';
+        items.push({ label: `${curLevel === 'all' ? '● ' : ''}All Messages`, icon: <I.Bell />, fn: async () => { setServerNotifLevels(p => ({ ...p, [s.id]: 'all' })); try { await api.setServerNotificationLevel(s.id, 'all'); } catch {} } });
+        items.push({ label: `${curLevel === 'mentions' ? '● ' : ''}Only @Mentions`, icon: <I.At />, fn: async () => { setServerNotifLevels(p => ({ ...p, [s.id]: 'mentions' })); try { await api.setServerNotificationLevel(s.id, 'mentions'); } catch {} } });
+        items.push({ label: `${curLevel === 'nothing' ? '● ' : ''}Nothing (Muted)`, icon: <I.BellOff />, fn: async () => { setServerNotifLevels(p => ({ ...p, [s.id]: 'nothing' })); try { await api.setServerNotificationLevel(s.id, 'nothing'); } catch {} } });
+        items.push({ sep: true });
+        // Appearance (per-server visibility)
+        const curVis = serverVisibility[s.id];
+        items.push({ label: `${!curVis ? '● ' : ''}Use Global Status`, icon: <I.Globe />, fn: async () => { setServerVisibility(p => ({ ...p, [s.id]: null })); try { await api.setServerVisibility(s.id, null); } catch {} } });
+        items.push({ label: `${curVis === 'online' ? '● ' : ''}Online on this server`, icon: <I.Eye />, fn: async () => { setServerVisibility(p => ({ ...p, [s.id]: 'online' })); try { await api.setServerVisibility(s.id, 'online'); } catch {} } });
+        items.push({ label: `${curVis === 'idle' ? '● ' : ''}Idle on this server`, icon: <I.Clock />, fn: async () => { setServerVisibility(p => ({ ...p, [s.id]: 'idle' })); try { await api.setServerVisibility(s.id, 'idle'); } catch {} } });
+        items.push({ label: `${curVis === 'invisible' ? '● ' : ''}Invisible on this server`, icon: <I.EyeOff />, fn: async () => { setServerVisibility(p => ({ ...p, [s.id]: 'invisible' })); try { await api.setServerVisibility(s.id, 'invisible'); } catch {} } });
+        items.push({ sep: true });
         // Folder options
         const folderNames = Object.keys(serverFolders);
         if (folderNames.length > 0) {
@@ -1555,13 +1812,16 @@ export default function App() {
       {hasUnread && !isActive && (
         <div style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, background: T.err, border: `2px solid ${T.bg}` }} />
       )}
+      {serverNotifLevels[s.id] === 'nothing' && (
+        <div style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, background: T.bg, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9 }} title="Muted"><I.BellOff s={9} /></div>
+      )}
     </div>
     );
   };
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className="chat-root" style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: T.bg }}>
+    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg }}>
       <GlobalStyles />
       {/* Verify email banner — shown when user skipped verification */}
       {me && !me.email_verified && me.email && !verifyBannerDismissed && _storage.getItem('d_verify_skipped') === '1' && (
@@ -1573,10 +1833,10 @@ export default function App() {
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
       {/* ═══ Server Rail ═══ */}
-      <div className="server-rail" style={{ width: 68, minWidth: 68, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
-        <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
+      <div className="server-rail" role="navigation" aria-label="Server list" style={{ width: 68, minWidth: 68, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
+        <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" role="button" aria-label="Home" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') goHome(); }} style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
         {/* DM button */}
-        <div title="Direct Messages" style={{ width: 48, height: 48, borderRadius: view === 'dm' ? 16 : 24, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
+        <div title="Direct Messages" role="button" aria-label="Direct Messages" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setView('dm'); }} style={{ width: 48, height: 48, borderRadius: view === 'dm' ? 16 : 24, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
           <I.Msg />
           {totalDmUnread > 0 && <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 12, background: '#ed4245', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${T.bg}`, padding: '0 3px' }}>{totalDmUnread}</div>}
         </div>
@@ -1603,20 +1863,20 @@ export default function App() {
           </React.Fragment>);
         })}
         {/* Regular servers (not in favorites or folders) */}
-        {loadingServers && servers.length === 0
-          ? Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} style={{ width: 48, height: 48, borderRadius: 24, ...shimBase }} />
+        {showServersSkeleton && servers.length === 0
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} style={{ width: 48, height: 48, borderRadius: 24, ...shimBase, animationDelay: `${i * 0.1}s` }} />
             ))
           : (() => {
               const inFolder = new Set(Object.values(serverFolders).flat());
               return servers.filter(s => !serverFavorites.includes(s.id) && !inFolder.has(s.id)).map(s => renderServerIcon(s, false));
             })()
         }
-        <div onClick={() => me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server')} title="Create Server" style={{ width: 48, height: 48, borderRadius: 24, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>
+        <div onClick={() => me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server')} title="Create Server" role="button" aria-label="Create Server" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') { me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server'); } }} style={{ width: 48, height: 48, borderRadius: 24, background: T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ac, fontSize: 20 }}>+</div>
       </div>
 
       {/* ═══ Sidebar ═══ */}
-      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} style={{ width: 230, minWidth: 230, background: T.sf, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.bd}` }}>
+      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 230, minWidth: 230, background: T.sf, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.bd}` }}>
         <div onContextMenu={e => {
           if (view === 'server' && curServer) {
             e.preventDefault();
@@ -1641,6 +1901,7 @@ export default function App() {
             <div onClick={() => { goHome(); setHomeTab('events'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'events' ? T.ac : T.mt, background: homeTab === 'events' ? 'rgba(0,212,170,0.08)' : 'transparent' }}><I.Clock /> Events</div>
             <div onClick={() => { goHome(); setHomeTab('leaderboard'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'leaderboard' ? T.ac : T.mt, background: homeTab === 'leaderboard' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🏆 Leaderboard</div>
             <div onClick={() => { goHome(); setHomeTab('tools'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'tools' ? T.ac : T.mt, background: homeTab === 'tools' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🧰 Tools</div>
+            <div onClick={() => { goHome(); setHomeTab('bookmarks'); api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {}); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'bookmarks' ? T.ac : T.mt, background: homeTab === 'bookmarks' ? 'rgba(0,212,170,0.08)' : 'transparent' }}><I.Bookmark /> Saved Messages</div>
             <div onClick={() => { goHome(); setHomeTab('discover'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'discover' ? T.ac : T.mt, background: homeTab === 'discover' ? 'rgba(0,212,170,0.08)' : 'transparent' }}>🔭 Discover</div>
             {(isAnyOwner || isPlatformDevOrAdmin) && <div onClick={() => { goHome(); setHomeTab('admin'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'admin' ? '#f0b232' : T.mt, background: homeTab === 'admin' ? 'rgba(240,178,50,0.08)' : 'transparent' }}>🛡️ Admin</div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 10px 6px' }}>
@@ -1698,12 +1959,13 @@ export default function App() {
                 <div onClick={() => setModal('server-settings')} style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: T.mt, background: T.sf2, border: `1px solid ${T.bd}` }}><I.Settings /></div>
               </div>
             )}
-            {loadingChannels && channels.length === 0 ? (
+            {showChannelsSkeleton && channels.length === 0 ? (
               <div style={{ flex: 1, padding: '12px 10px' }}>
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <div style={{ ...shimBase, width: 14, height: 14, borderRadius: 3 }} />
-                    <SkeletonBar w={`${50 + (i * 13) % 40}%`} h={12} mb={0} />
+                <SkeletonBar w="40%" h={9} mb={12} />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, animationDelay: `${i * 0.08}s` }}>
+                    <div style={{ ...shimBase, width: 16, height: 16, borderRadius: 4, flexShrink: 0 }} />
+                    <SkeletonBar w={`${50 + (i * 17) % 40}%`} h={12} mb={0} />
                   </div>
                 ))}
               </div>
@@ -1846,7 +2108,7 @@ export default function App() {
               <span title={TIER_META[effectiveTier].label} style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: `${TIER_META[effectiveTier].color}22`, color: TIER_META[effectiveTier].color, border: `1px solid ${TIER_META[effectiveTier].color}44` }}>{TIER_META[effectiveTier].icon} {effectiveTier === 'verified' ? '✓' : effectiveTier === 'pro' ? 'Pro' : effectiveTier === 'teams' ? 'Teams' : effectiveTier === 'enterprise' ? 'Ent' : TIER_META[effectiveTier].label}</span>
               {isDev && <span title="Developer account" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(255,59,48,0.15)', color: '#ff3b30', border: '1px solid rgba(255,59,48,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>DEV</span>}
             </div>
-            <div onClick={e => { e.stopPropagation(); setModal('status-picker'); }} style={{ fontSize: 10, color: userStatus === 'online' ? T.ac : userStatus === 'idle' ? '#faa61a' : T.mt, cursor: 'pointer' }}>{userStatus === 'online' ? '● Online' : userStatus === 'idle' ? '🌙 Idle' : userStatus === 'dnd' ? '⛔ DND' : '👻 Invisible'} ▾</div>
+            <div onClick={e => { e.stopPropagation(); setModal('status-picker'); }} style={{ fontSize: 10, color: userStatus === 'online' ? T.ac : userStatus === 'idle' ? '#faa61a' : T.mt, cursor: 'pointer' }}>{userStatus === 'dnd' ? '⛔ DND' : isDndActive() ? '🌙 Quiet Hours' : userStatus === 'online' ? '● Online' : userStatus === 'idle' ? '🌙 Idle' : '👻 Invisible'} ▾</div>
           </div>
           {/* Latency indicator */}
           <div onClick={() => setShowConnInfo(p => !p)} title={`Latency: ${wsLatency}ms`} style={{ position: 'relative', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, background: T.sf2, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: wsLatency > 300 ? '#ff4757' : wsLatency > 100 ? '#faa61a' : '#43b581', flexShrink: 0 }}>
@@ -1921,12 +2183,30 @@ export default function App() {
               </div>
             )}
           </div>
-          <div onClick={() => setModal('settings')} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Settings"><I.Settings /></div>
+          <div onClick={() => setModal('settings')} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Settings" role="button" aria-label="Settings" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setModal('settings'); }}><I.Settings /></div>
         </div>
       </div>
 
       {/* ═══ Main Content ═══ */}
-      <div className="chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="chat-main" role="main" aria-label="Chat" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Connection status banner */}
+        {wsStatusVisible && wsStatus === 'reconnecting' && (
+          <div style={{ padding: '6px 16px', background: '#faa61a', color: '#000', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={{ width: 14, height: 14, border: '2px solid rgba(0,0,0,0.3)', borderTop: '2px solid #000', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            Reconnecting...
+          </div>
+        )}
+        {wsStatusVisible && wsStatus === 'disconnected' && (
+          <div style={{ padding: '8px 16px', background: T.err, color: '#fff', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <span>Connection lost. Check your internet.</span>
+            <button onClick={() => api.retryWs()} style={{ padding: '3px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Retry</button>
+          </div>
+        )}
+        {wsStatusVisible && wsStatus === 'connected' && (
+          <div style={{ padding: '6px 16px', background: '#43b581', color: '#fff', fontSize: 12, fontWeight: 600, flexShrink: 0, animation: 'fadeIn 0.2s ease' }}>
+            Connected
+          </div>
+        )}
         {/* Header */}
         <div className="chat-header" style={{ padding: '10px 16px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 10, minHeight: 48 }}>
           {/* Hamburger — mobile only */}
@@ -1941,7 +2221,7 @@ export default function App() {
           {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span></>)}
           {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span></>)}
           {view === 'dm' && curGroupDm && (<><span style={{ fontSize: 16 }}>👥</span><span style={{ fontWeight: 700, fontSize: 15 }}>{curGroupDm.name || 'Group DM'}</span></>)}
-          {view === 'home' && (<><I.Home /><span style={{ fontWeight: 700, fontSize: 15 }}>{homeTab === 'friends' ? 'Friends' : 'Home'}</span></>)}
+          {view === 'home' && (<><I.Home /><span style={{ fontWeight: 700, fontSize: 15 }}>{homeTab === 'friends' ? 'Friends' : homeTab === 'bookmarks' ? 'Saved Messages' : 'Home'}</span></>)}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
             {React.createElement(function EncryptionBadge() {
               const [showInfo, setShowInfo] = useState(false);
@@ -2050,6 +2330,18 @@ export default function App() {
               <div onClick={() => setShowCalendar(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}>📅 Calendar</div>
               <div onClick={() => window.open('/app/tiers', '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}`, fontSize: 13, fontWeight: 600 }}>⚡ View Plans</div>
             </div>
+            {/* Zero servers welcome */}
+            {servers.length === 0 && !loadingServers && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 24 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: 36, background: `${T.ac}12`, marginBottom: 16 }}><I.Shield s={36} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Welcome to Discreet</div>
+                <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 360, margin: '0 auto 20px' }}>End-to-end encrypted messaging with zero-knowledge architecture. Create your first server or join an existing one to get started.</div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                  <button onClick={() => me?.is_guest ? setUpgradeFeature('create servers') : setModal('create-server')} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Create Server</button>
+                  <button onClick={() => setModal('join-server')} style={{ padding: '10px 24px', borderRadius: 10, border: `1px solid ${T.bd}`, background: T.sf, color: T.tx, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Join Server</button>
+                </div>
+              </div>
+            )}
             {/* Servers Grid */}
             {servers.length > 0 && (<>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Your Servers — {servers.length}</div>
@@ -2327,6 +2619,49 @@ export default function App() {
           />
         )}
 
+        {/* ─── Saved Messages (Bookmarks) ─── */}
+        {view === 'home' && homeTab === 'bookmarks' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <I.Bookmark s={18} />
+              <span style={{ fontWeight: 700, fontSize: 16, color: T.tx }}>Saved Messages</span>
+              <span style={{ fontSize: 11, color: T.mt, marginLeft: 4 }}>{bookmarks.length}</span>
+            </div>
+            {bookmarks.length === 0 ? (
+              <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Bookmark s={28} /></div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>No saved messages yet</div>
+                <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 300, margin: '0 auto' }}>Hover a message and click the bookmark icon to save it for later.</div>
+              </div>
+            ) : bookmarks.map((bm: any) => {
+              const serverName = servers.find(s => s.id === bm.server_id)?.name || 'Unknown server';
+              return (
+                <div key={bm.message_id} onClick={() => navigateToBookmark(bm)} style={{ padding: '12px 20px', borderBottom: `1px solid ${T.bd}20`, cursor: 'pointer', transition: 'background .1s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {bm.message_author_id && <Av name={getName(bm.message_author_id)} size={20} />}
+                      <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{bm.message_author_id ? getName(bm.message_author_id) : 'Unknown'}</span>
+                      <span style={{ fontSize: 10, color: T.mt }}>{serverName}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span title={bm.message_created_at ? tzCtx.formatFullTooltip(bm.message_created_at) : ''} style={{ fontSize: 10, color: T.mt }}>{bm.message_created_at ? tzCtx.formatRelative(bm.message_created_at) : ''}</span>
+                      <span onClick={async (e) => { e.stopPropagation(); await api.deleteBookmark(bm.message_id); setBookmarks(prev => prev.filter(b => b.message_id !== bm.message_id)); setBookmarkedIds(prev => { const n = new Set(prev); n.delete(bm.message_id); return n; }); }} style={{ color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 4px', borderRadius: 4 }} title="Remove bookmark"
+                        onMouseEnter={e => e.currentTarget.style.color = T.err}
+                        onMouseLeave={e => e.currentTarget.style.color = T.mt}><I.Trash s={12} /></span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.4, wordBreak: 'break-word', paddingLeft: 26, opacity: bm.message_content ? 1 : 0.5 }}>
+                    {bm.message_content || '(message deleted)'}
+                  </div>
+                  {bm.note && <div style={{ fontSize: 11, color: T.ac, marginTop: 4, paddingLeft: 26, fontStyle: 'italic' }}>{bm.note}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* ─── Admin Dashboard ─── */}
         {view === 'home' && homeTab === 'admin' && (isAnyOwner || isPlatformDevOrAdmin) && (
           <AdminDashboard platformUser={platformUser} />
@@ -2349,7 +2684,8 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{m.author_id === api.userId ? (api.username || '?') : getName(m.author_id)}</span>
                     {renderPlatformBadge(m.author_id)}
-                    <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span style={{ flex: 1 }} />
+                    <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
                 </div>
@@ -2360,7 +2696,7 @@ export default function App() {
           <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8 }}>
               <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curGroupDm.name || 'group'}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <div onClick={sendMessage} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
         </>)}
@@ -2389,7 +2725,8 @@ export default function App() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{m.author_id === api.userId ? api.username : curDm.other_username}</span>
-                    <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span style={{ flex: 1 }} />
+                    <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
                 </div>
@@ -2400,7 +2737,7 @@ export default function App() {
           <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
             <div style={{ display: 'flex', gap: 8 }}>
               <input ref={inputRef} value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }} placeholder={`Message ${curDm.other_username}`} style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <div onClick={sendMessage} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
         </>)}
@@ -2420,7 +2757,7 @@ export default function App() {
             />
           )}
           {(() => {
-            const MSG_H = 52;
+            const MSG_H = msgDensity === 'compact' ? 38 : msgDensity === 'cozy' ? 64 : 52;
             const BUFFER = 20;
             const containerH = msgScrollRef.current?.clientHeight || 600;
             const startIdx = Math.max(0, Math.floor(msgScrollTop / MSG_H) - BUFFER);
@@ -2442,11 +2779,20 @@ export default function App() {
                   }
                 } catch {} setLoadingMore(false);
               }
-            }} style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+            }} className={`density-${msgDensity}`} role="log" aria-live="polite" aria-label="Message history" style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
             {loadingMore && (
-              <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.bd}`, borderTop: `2px solid ${T.ac}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                <div style={{ fontSize: 11, color: T.mt, marginTop: 4 }}>Loading older messages...</div>
+              <div style={{ padding: '4px 0' }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 16px' }}>
+                    <SkeletonCircle size={36} />
+                    <div style={{ flex: 1, paddingTop: 2 }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                        <SkeletonBar w={`${50 + (i * 19) % 50}px`} h={12} mb={0} />
+                      </div>
+                      <SkeletonBar w={`${30 + (i * 23) % 50}%`} h={13} mb={0} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             {curChannel && agentDisclosures[curChannel.id] && (
@@ -2462,12 +2808,15 @@ export default function App() {
                 >✕</span>
               </div>
             )}
-            {loadingMessages && messages.length === 0 && <MessageSkeleton count={10} />}
-            {!loadingMessages && messages.length === 0 && (
-              <div key={channelFadeKey} style={{ textAlign: 'center', padding: 40, color: T.mt, animation: 'fadeIn 0.25s ease' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>#</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Welcome to #{curChannel?.name}</div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>Messages are end-to-end encrypted.</div>
+            {showMessagesSkeleton && messages.length === 0 && <MessageSkeleton count={8} />}
+            {!loadingMessages && !showMessagesSkeleton && messages.length === 0 && (
+              <div key={channelFadeKey} style={{ textAlign: 'center', padding: '60px 20px', color: T.mt, animation: 'fadeIn 0.25s ease' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Hash s={28} /></div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Welcome to #{curChannel?.name}</div>
+                <div style={{ fontSize: 13, color: T.mt, marginTop: 6, lineHeight: 1.5 }}>
+                  This is the start of <strong style={{ color: T.tx }}>#{curChannel?.name}</strong>. Send the first message!
+                </div>
+                <div style={{ fontSize: 11, color: T.mt, marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><I.Lock s={10} /> Messages are end-to-end encrypted</div>
               </div>
             )}
             {messages.length > 0 && <div style={{ height: startIdx * MSG_H }} />}
@@ -2475,8 +2824,8 @@ export default function App() {
               const idx = startIdx + vi;
               // Date separator
               const prevMsg = idx > 0 ? messages[idx - 1] : null;
-              const curDate = new Date(m.created_at).toLocaleDateString();
-              const showDateSep = !prevMsg || new Date(prevMsg.created_at).toLocaleDateString() !== curDate;
+              const curDateKey = tzCtx.formatDate(m.created_at);
+              const showDateSep = !prevMsg || tzCtx.formatDate(prevMsg.created_at) !== curDateKey;
 
               // Profanity filter (per-server, level from localStorage)
               const profanityLevel = curServer ? getProfanityLevel(curServer.id) : 'off';
@@ -2507,25 +2856,32 @@ export default function App() {
                 {showDateSep && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', margin: '4px 0' }}>
                     <div style={{ flex: 1, height: 1, background: T.bd }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: T.mt }}>{curDate}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.mt }}>{tzCtx.dateDividerLabel(m.created_at)}</span>
                     <div style={{ flex: 1, height: 1, background: T.bd }} />
                   </div>
                 )}
-                <div data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: 10, padding: '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
+                <div className="msg-row" data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: msgDensity === 'compact' ? 6 : msgDensity === 'cozy' ? 12 : 10, padding: msgDensity === 'compact' ? '1px 16px' : msgDensity === 'cozy' ? '6px 16px' : '4px 16px', position: 'relative', background: highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
                   onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
                   onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}>
-                <div onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer' }}>
-                  <Av name={getName(m.author_id)} size={36} />
+                <div className="msg-avatar" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer', flexShrink: 0 }}>
+                  <Av name={getName(m.author_id)} size={msgDensity === 'compact' ? 28 : msgDensity === 'cozy' ? 44 : 36} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {/* Reply reference */}
                   {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingLeft: 12, borderLeft: `2px solid ${T.bd}` }}>↩ replying to a message</div>}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} title={rawUsernameMap[m.author_id] || ''} style={{ fontWeight: 600, fontSize: 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
+                    <span className="msg-name" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} title={rawUsernameMap[m.author_id] || ''} style={{ fontWeight: 600, fontSize: msgDensity === 'compact' ? 12 : 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
                     {renderPlatformBadge(m.author_id)}
-                    <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    {msgDensity === 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 9, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
+                    <span style={{ flex: 1 }} />
+                    {msgDensity !== 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
                   </div>
-                  <div className="msg-text" style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}><Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} /></div>
+                  <div className="msg-text" style={{ fontSize: chatFontSize, lineHeight: msgDensity === 'compact' ? 1.3 : msgDensity === 'cozy' ? 1.6 : 1.5, wordBreak: 'break-word', opacity: failedMessages[m.id] ? 0.5 : 1 }}><Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} /></div>
+                  {failedMessages[m.id] && (
+                    <div onClick={() => retryFailedMessage(m.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', color: T.err, fontSize: 11, cursor: 'pointer', fontWeight: 600 }} title="Click to retry sending">
+                      ⚠ Failed — click to retry
+                    </div>
+                  )}
                   {/* Invite previews */}
                   {(msgText.match(/https?:\/\/[^\s<>]*\/invite\/[A-Za-z0-9]+\/?/g) || []).map((invUrl: string, i: number) => (
                     <InvitePreview key={`inv-${m.id}-${i}`} url={invUrl} joinedServerIds={servers.map(s => s.id)} onJoined={loadServers} />
@@ -2590,13 +2946,13 @@ export default function App() {
                         </div>
                         <div style={{ fontSize: 10, color: T.mt, marginTop: 8 }}>
                           {total} vote{total !== 1 ? 's' : ''}
-                          {poll.expires_at ? ` · ends ${new Date(poll.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}
+                          {poll.expires_at ? ` · ends ${tzCtx.formatDate(poll.expires_at, { month: 'short', day: 'numeric' })}` : ''}
                         </div>
                       </div>
                     );
                   })()}
                   {/* URL Previews */}
-                  {m.text && <LinkPreview text={msgText} />}
+                  {privacyPrefs.show_link_previews && m.text && <LinkPreview text={msgText} />}
                   {/* Reactions */}
                   {reactions[m.id]?.length > 0 && (
                     <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
@@ -2629,6 +2985,7 @@ export default function App() {
                   <span style={{ width: 1, background: T.bd, margin: '0 2px' }} />
                   <span onClick={() => { setReplyTo(m); inputRef.current?.focus(); }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Reply"><I.Reply /></span>
                   {curServer && curChannel && <span onClick={async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Pin">📌</span>}
+                  <span onClick={() => toggleBookmark(m)} style={{ cursor: 'pointer', padding: '2px 4px', color: bookmarkedIds.has(m.id) ? T.ac : T.mt, fontSize: 12 }} title={bookmarkedIds.has(m.id) ? 'Remove bookmark' : 'Bookmark'}><I.Bookmark /></span>
                   <span onClick={e => openMsgCtx(e, m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="More">⋯</span>
                 </div>
               </div>
@@ -2728,7 +3085,7 @@ export default function App() {
                 <span style={{ fontSize: 12, color: '#ffa500', fontWeight: 600 }}>This server is archived and read-only.</span>
                 {curServer.scheduled_deletion_at && (
                   <span style={{ fontSize: 11, color: T.err, marginLeft: 4 }}>
-                    Scheduled for deletion on {new Date(curServer.scheduled_deletion_at).toLocaleDateString()}.
+                    Scheduled for deletion on {tzCtx.formatDate(curServer.scheduled_deletion_at)}.
                   </span>
                 )}
               </div>
@@ -2752,14 +3109,24 @@ export default function App() {
                 }} />
               </label>
               <input ref={inputRef} value={msgInput}
-                onChange={e => { setMsgInput(e.target.value); if (Date.now() - typingRef.current > 3000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
-                onKeyDown={e => { if (e.key === 'Escape') { setSlashTool(null); } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                onChange={e => { setMsgInput(e.target.value); if (privacyPrefs.show_typing_indicator && Date.now() - typingRef.current > 3000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') { setSlashTool(null); }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+                  // Up arrow in empty input → edit last own message
+                  if (e.key === 'ArrowUp' && !msgInput.trim()) {
+                    const lastOwn = [...messages].reverse().find(m => m.author_id === api.userId && !failedMessages[m.id]);
+                    if (lastOwn) { e.preventDefault(); setEditMsg(lastOwn); setMsgInput(lastOwn.text || ''); }
+                  }
+                  // Ctrl+E → emoji picker
+                  if ((e.ctrlKey || e.metaKey) && e.key === 'e') { e.preventDefault(); setShowEmojiPicker(p => !p); }
+                }}
                 placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
                 style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
               <div onClick={() => setShowEmojiPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
               <div onClick={() => { setPollQuestion(''); setPollOptions(['', '']); setModal('create-poll'); }} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
               <div onClick={() => setShowGifPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
-              <div onClick={sendMessage} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
+              <div onClick={sendMessage} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
             </div>
           </div>
           </div>{/* close positioned wrapper */}
@@ -2783,15 +3150,15 @@ export default function App() {
       )}
 
       {/* ═══ Right Panel ═══ */}
-      {view === 'server' && !openThread && panel === 'members' && (loadingMembers && members.length === 0 ? (
+      {view === 'server' && !openThread && panel === 'members' && (showMembersSkeleton && members.length === 0 ? (
         <div className="member-panel" style={{ width: 220, minWidth: 220, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: 16 }}>
-          <SkeletonBar w="50%" h={11} mb={14} />
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-              <SkeletonCircle size={30} />
+          <SkeletonBar w="45%" h={9} mb={14} />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, animation: `fadeIn 0.3s ${i * 0.06}s both` }}>
+              <SkeletonCircle size={32} />
               <div style={{ flex: 1 }}>
                 <SkeletonBar w={`${45 + (i * 17) % 40}%`} h={11} mb={4} />
-                <SkeletonBar w="30%" h={9} mb={0} />
+                <SkeletonBar w="30%" h={8} mb={0} />
               </div>
             </div>
           ))}
@@ -3675,7 +4042,8 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Av name={getName(threadParent.author_id)} size={24} />
               <span style={{ fontWeight: 600, fontSize: 13, color: T.tx }}>{getName(threadParent.author_id)}</span>
-              <span style={{ fontSize: 10, color: T.mt }}>{new Date(threadParent.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span style={{ flex: 1 }} />
+              <span title={tzCtx.formatFullTooltip(threadParent.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(threadParent.created_at)}</span>
             </div>
             <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word' }}>{threadParent.text || threadParent.content_ciphertext}</div>
           </div>
@@ -3690,7 +4058,8 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                     <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{getName(r.author_id)}</span>
-                    <span style={{ fontSize: 9, color: T.mt }}>{new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span style={{ flex: 1 }} />
+                    <span title={tzCtx.formatFullTooltip(r.created_at)} style={{ fontSize: 9, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(r.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.4, wordBreak: 'break-word' }}>{r.text || r.content_ciphertext}</div>
                 </div>
@@ -3711,14 +4080,18 @@ export default function App() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
             {pinnedMsgs.length === 0 ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center', color: T.mt, fontSize: 13 }}>No pinned messages in this channel.</div>
+              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>📌</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No pinned messages</div>
+                <div style={{ fontSize: 12, color: T.mt }}>Pin important messages so everyone can find them easily.</div>
+              </div>
             ) : pinnedMsgs.map((m: any) => (
               <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${T.bd}20` }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Av name={getName(m.author_id)} size={22} />
                     <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{getName(m.author_id)}</span>
-                    <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                    <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default' }}>{tzCtx.formatRelative(m.created_at)}</span>
                   </div>
                   <button onClick={async () => { if (curServer && curChannel) { await api.unpinMessage(curServer.id, curChannel.id, m.id); setPinnedMsgs(p => p.filter(x => x.id !== m.id)); } }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Unpin" onMouseEnter={e => { e.currentTarget.style.color = T.err; }} onMouseLeave={e => { e.currentTarget.style.color = T.mt; }}>Unpin</button>
                 </div>
@@ -3756,7 +4129,57 @@ export default function App() {
                   <span style={{ fontSize: 10, color: T.mt, background: T.sf2, padding: '2px 6px', borderRadius: 3 }}>dm</span> {dm.other_username}
                 </div>
               ))}
-              <div style={{ padding: '6px 12px', fontSize: 10, color: T.mt }}>Ctrl+K to open · Esc to close</div>
+              <div style={{ padding: '6px 12px', fontSize: 10, color: T.mt }}>Ctrl+K to toggle · Esc to close · Ctrl+/ for all shortcuts</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard Shortcuts Help (Ctrl+/) */}
+      {modal === 'shortcuts-help' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002 }} onClick={() => setModal(null)} role="presentation">
+          <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" style={{ width: 480, maxWidth: '90vw', maxHeight: '80vh', background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div id="shortcuts-title" style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>Keyboard Shortcuts</div>
+              <button onClick={() => setModal(null)} aria-label="Close" style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: '12px 20px', overflowY: 'auto', maxHeight: 'calc(80vh - 60px)' }}>
+              {[
+                { section: 'Navigation', shortcuts: [
+                  { keys: 'Ctrl + K', desc: 'Quick switcher — search channels, DMs, servers' },
+                  { keys: 'Ctrl + /', desc: 'Show this shortcuts panel' },
+                  { keys: 'Escape', desc: 'Close any modal, picker, or overlay' },
+                ]},
+                { section: 'Messaging', shortcuts: [
+                  { keys: 'Enter', desc: 'Send message' },
+                  { keys: '↑ (empty input)', desc: 'Edit your last message' },
+                  { keys: 'Ctrl + E', desc: 'Toggle emoji picker' },
+                ]},
+                { section: 'Voice & Audio', shortcuts: [
+                  { keys: 'Ctrl + Shift + M', desc: 'Toggle mute' },
+                  { keys: 'Ctrl + Shift + D', desc: 'Toggle deafen' },
+                ]},
+              ].map(group => (
+                <div key={group.section} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{group.section}</div>
+                  {group.shortcuts.map(sc => (
+                    <div key={sc.keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.bd}20` }}>
+                      <span style={{ fontSize: 13, color: T.tx }}>{sc.desc}</span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {sc.keys.split(' + ').map((k, i) => (
+                          <React.Fragment key={i}>
+                            {i > 0 && <span style={{ fontSize: 10, color: T.mt, lineHeight: '22px' }}>+</span>}
+                            <kbd style={{ padding: '2px 8px', borderRadius: 4, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 11, fontFamily: 'monospace', color: T.ac, fontWeight: 600, minWidth: 24, textAlign: 'center' }}>{k.trim()}</kbd>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 8, textAlign: 'center' }}>
+                Customize keybinds in Settings → Keybinds
+              </div>
             </div>
           </div>
         </div>

@@ -50,6 +50,10 @@ export class CitadelAPI {
   ws: WebSocket | null;
   wsListeners: Set<WsListener>;
   private _userCache: Record<string, any>;
+  private _wsServerId: string | null;
+  private _wsReconnectTimer: ReturnType<typeof setTimeout> | null;
+  private _wsReconnectAttempt: number;
+  private _wsManualClose: boolean;
 
   constructor() {
     // Access token is memory-only (NOT persisted) for XSS protection.
@@ -61,6 +65,10 @@ export class CitadelAPI {
     this.ws = null;
     this.wsListeners = new Set();
     this._userCache = {};
+    this._wsServerId = null;
+    this._wsReconnectTimer = null;
+    this._wsReconnectAttempt = 0;
+    this._wsManualClose = false;
 
     // Warn if cookies are not writable (privacy browsers, iframe sandboxing)
     try {
@@ -230,6 +238,8 @@ export class CitadelAPI {
   async updateServer(sid: string, data: any) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async deleteServer(sid: string) { return this.fetch(`/servers/${sid}`, { method: 'DELETE' }); }
   async leaveServer(sid: string) { return this.fetch(`/servers/${sid}/leave`, { method: 'POST' }); }
+  async setServerNotificationLevel(sid: string, level: string) { return this.fetch(`/servers/${sid}/notification-level`, { method: 'PATCH', body: JSON.stringify({ notification_level: level }) }); }
+  async setServerVisibility(sid: string, override_: string | null) { return this.fetch(`/servers/${sid}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility_override: override_ }) }); }
 
   // ── Channels + Categories ──
   async listChannels(sid: string) { return (await this.fetch(`/servers/${sid}/channels`)).json(); }
@@ -364,6 +374,7 @@ export class CitadelAPI {
   async listBugReports(limit = 50, offset = 0) { try { const r = await this.fetch(`/admin/bug-reports?limit=${limit}&offset=${offset}`); return r.ok ? r.json() : { reports: [], total: 0 }; } catch { return { reports: [], total: 0 }; } }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
+  async saveTimezone(timezone: string) { return this.fetch('/settings/timezone', { method: 'POST', body: JSON.stringify({ timezone }) }); }
   /** Verify password and get a single-use reauth token (5 min TTL). */
   async verifyPassword(password: string): Promise<{ reauth_token: string; expires_in: number }> {
     const r = await this.fetch('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) });
@@ -422,6 +433,11 @@ export class CitadelAPI {
   async markNotificationRead(id: string) { try { await this.fetch(`/notifications/${id}/read`, { method: 'PATCH' }); } catch {} }
   async markAllNotificationsRead() { try { await this.fetch('/notifications/read-all', { method: 'POST' }); } catch {} }
 
+  // ── Bookmarks ──
+  async createBookmark(messageId: string, channelId: string, serverId: string, note?: string) { return (await this.fetch('/bookmarks', { method: 'POST', body: JSON.stringify({ message_id: messageId, channel_id: channelId, server_id: serverId, note: note || undefined }) })).json(); }
+  async listBookmarks(limit = 50, before?: string) { try { const params = new URLSearchParams({ limit: String(limit) }); if (before) params.set('before', before); const r = await this.fetch(`/bookmarks?${params}`); return r.ok ? r.json() : []; } catch { return []; } }
+  async deleteBookmark(messageId: string) { return this.fetch(`/bookmarks/${messageId}`, { method: 'DELETE' }); }
+
   // ── AutoMod ──
   async getAutomod(sid: string) { try { const r = await this.fetch(`/servers/${sid}/automod`); return r.ok ? r.json() : null; } catch { return null; } }
   async updateAutomod(sid: string, config: any) { return this.fetch(`/servers/${sid}/automod`, { method: 'PUT', body: JSON.stringify(config) }); }
@@ -466,24 +482,53 @@ export class CitadelAPI {
 
   // ── WebSocket ──
   connectWs(sid: string) {
-    if (this.ws) this.ws.close();
-    // Pass token as query param — most reliable for browser WebSocket auth
+    this._wsManualClose = false;
+    this._wsServerId = sid;
+    this._wsReconnectAttempt = 0;
+    if (this._wsReconnectTimer) { clearTimeout(this._wsReconnectTimer); this._wsReconnectTimer = null; }
+    this._doConnect(sid);
+  }
+
+  private _doConnect(sid: string) {
+    if (this.ws) { try { this.ws.close(); } catch {} this.ws = null; }
     const wsUrl = `${WS_BASE}/ws?server_id=${sid}&token=${encodeURIComponent(this.token || '')}`;
     this.ws = new WebSocket(wsUrl);
-    this.ws.onopen = () => { console.log('[ws] connected to', sid); };
-    this.ws.onmessage = (e) => { try { this.wsListeners.forEach(fn => fn(JSON.parse(e.data))); } catch (err) { console.error('[ws] parse error:', err); } };
-    this.ws.onerror = (e) => { console.error('[ws] error:', e); };
+    this.ws.onopen = () => {
+      this._wsReconnectAttempt = 0;
+      this.wsListeners.forEach(fn => fn({ type: 'ws_status', status: 'connected' }));
+    };
+    this.ws.onmessage = (e) => { try { this.wsListeners.forEach(fn => fn(JSON.parse(e.data))); } catch {} };
+    this.ws.onerror = () => {};
     this.ws.onclose = (e) => {
-      console.log('[ws] closed:', e.code, e.reason);
+      this.ws = null;
       if (e.code === 4001) {
         this.wsListeners.forEach(fn => fn({ type: 'account_suspended', reason: e.reason || 'Account suspended' }));
+        return;
       }
-      this.ws = null;
+      if (this._wsManualClose) return;
+      // Auto-reconnect with exponential backoff
+      this._wsReconnectAttempt++;
+      const delay = Math.min(1000 * Math.pow(2, this._wsReconnectAttempt - 1), 30000);
+      this.wsListeners.forEach(fn => fn({ type: 'ws_status', status: delay >= 30000 ? 'disconnected' : 'reconnecting', attempt: this._wsReconnectAttempt }));
+      this._wsReconnectTimer = setTimeout(() => {
+        if (this._wsServerId === sid && !this._wsManualClose) this._doConnect(sid);
+      }, delay);
     };
   }
 
   disconnectWs() {
+    this._wsManualClose = true;
+    if (this._wsReconnectTimer) { clearTimeout(this._wsReconnectTimer); this._wsReconnectTimer = null; }
     if (this.ws) { this.ws.close(); this.ws = null; }
+  }
+
+  /** Force a reconnection attempt (e.g. user clicks Retry). */
+  retryWs() {
+    if (this._wsServerId && !this.ws) {
+      this._wsReconnectAttempt = 0;
+      this.wsListeners.forEach(fn => fn({ type: 'ws_status', status: 'reconnecting', attempt: 0 }));
+      this._doConnect(this._wsServerId);
+    }
   }
 
   onWsEvent(fn: WsListener): () => void {

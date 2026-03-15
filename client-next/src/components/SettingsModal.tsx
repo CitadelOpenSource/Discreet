@@ -3,12 +3,14 @@
  * Tabs: Appearance, Voice & Audio, Video, Streaming, My Profile,
  *       Privacy, Account, Notifications, Accessibility, Keybinds, Advanced, About.
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { T, getInp } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { setLanguage } from '../i18n/i18n';
+import { useTimezone, detectedTimezone } from '../hooks/TimezoneContext';
 import { voice } from '../hooks/useVoice';
+import { previewSound, SOUND_OPTIONS } from '../utils/sounds';
 import { TIER_META } from '../utils/tiers';
 import { OfflineContacts } from './OfflineContacts';
 import type { Tier } from '../utils/tiers';
@@ -618,6 +620,10 @@ function Toggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void;
   return (
     <div
       onClick={disabled ? undefined : onToggle}
+      role="switch"
+      aria-checked={on}
+      tabIndex={disabled ? -1 : 0}
+      onKeyDown={e => { if (!disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onToggle(); } }}
       style={{
         width: 36, height: 20, borderRadius: 10, flexShrink: 0,
         background: on ? T.ac : T.bd,
@@ -1195,6 +1201,7 @@ function ActiveSessions() {
 // ─── Main Component ───────────────────────────────────────
 
 export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap, curServer, onLogout, onUpgrade, platformUser, devTierOverride, onSetDevTierOverride }: SettingsModalProps) {
+  const tzCtx = useTimezone();
   const [s, setS] = useState<UserSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const [tab, setTab] = useState('appearance');
@@ -1204,6 +1211,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   const [showAvatarCreator, setShowAvatarCreator] = useState(false);
   const [settingsSearch, setSettingsSearch] = useState('');
   const [highlightSection, setHighlightSection] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Notification settings state ──────────────────────────
   const [ns, setNs] = useState(() => ({
@@ -1217,8 +1225,10 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     desktopLevel: localStorage.getItem('d_notif_desktop_level') || 'mentions',
     group:        localStorage.getItem('d_notif_group') !== 'false',
     dnd:          localStorage.getItem('d_notif_dnd') === 'true',
+    dndSchedule:  localStorage.getItem('d_notif_dnd_schedule') !== 'false',
     dndStart:     localStorage.getItem('d_notif_dnd_start') || '22:00',
     dndEnd:       localStorage.getItem('d_notif_dnd_end') || '08:00',
+    dndDays:      localStorage.getItem('d_notif_dnd_days') || '0,1,2,3,4,5,6',
     mentionsOnly: localStorage.getItem('d_notif_mentions_only') === 'true',
     vol:          parseFloat(localStorage.getItem('d_notif_vol') || '0.3'),
   }));
@@ -1267,24 +1277,106 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
   };
 
   const SETTINGS_INDEX = useMemo(() => [
-    { tab: 'appearance', section: 'theme',          keywords: 'theme dark light accent color font size compact mode show embeds gifs images videos url preview display density spacing', label: 'Theme & Appearance' },
-    { tab: 'appearance', section: 'display-options', keywords: 'recently used emojis emoji history recent emoji toggle', label: 'Recently Used Emojis' },
-    { tab: 'voice',      section: 'voice',          keywords: 'voice audio microphone speaker input output volume noise gate compressor echo cancellation noise suppression push to talk voice activation sensitivity', label: 'Voice & Audio' },
-    { tab: 'video',      section: 'video',          keywords: 'video camera resolution fps webcam screen share streaming quality', label: 'Video & Streaming' },
-    { tab: 'profile',    section: 'profile',        keywords: 'avatar picture profile photo upload create avatar display name bio about me custom status', label: 'My Profile' },
-    { tab: 'profile',    section: 'avatar-creator',  keywords: 'avatar creation create avatar builder randomize', label: 'Avatar Creator' },
-    { tab: 'privacy',    section: 'privacy',        keywords: 'privacy dm direct message friend request block stranger online status hide activity', label: 'Privacy' },
-    { tab: 'privacy',    section: 'interaction',    keywords: 'hide online status activity block stranger dms require mutual friends', label: 'Interaction Controls' },
-    { tab: 'account',    section: 'security-status', keywords: 'security status score recovery key upgrade guest verified', label: 'Security Status' },
-    { tab: 'account',    section: 'change-email',   keywords: 'email change verify', label: 'Email Address' },
-    { tab: 'account',    section: 'security',       keywords: 'password change two factor 2fa totp authentication', label: 'Security' },
-    { tab: 'account',    section: 'active-devices', keywords: 'sessions devices logout active sign out', label: 'Active Devices' },
-    { tab: 'notifications', section: 'notifications', keywords: 'notification sound alert mention badge desktop browser push', label: 'Notifications' },
-    { tab: 'accessibility', section: 'accessibility', keywords: 'accessibility reduce motion high contrast dyslexia font zoom saturation screen reader', label: 'Accessibility' },
-    { tab: 'keybinds',   section: 'keybinds',      keywords: 'keybinds keyboard shortcuts hotkeys push to talk mute deafen', label: 'Keybinds' },
-    { tab: 'advanced',   section: 'advanced',       keywords: 'advanced developer mode performance overlay cache clear data danger zone delete account', label: 'Advanced' },
-    { tab: 'network',    section: 'network',        keywords: 'network proxy socks5 http vpn connection privacy tor', label: 'Network & Proxy' },
+    { tab: 'appearance', section: 'theme',           label: 'Theme & Colors',       desc: 'Dark mode, light mode, accent color, density, chat font size', keywords: ['theme', 'dark', 'light', 'dark mode', 'accent', 'color', 'font', 'font size', 'compact', 'mode', 'density', 'spacing', 'layout', 'chat width', 'language', 'locale', 'timezone', 'time zone', 'message density', 'comfortable', 'cozy', 'chat font', 'chat font size'] },
+    { tab: 'appearance', section: 'display-options',  label: 'Display Options',      desc: 'Embeds, avatars, timestamps, typing indicators, emoji', keywords: ['display', 'embeds', 'embed', 'link preview', 'avatar', 'timestamp', 'typing', 'indicator', 'emoji', 'animate', 'sticker', 'smooth scroll', 'twemoji', 'recently used emojis', 'emoji history', 'slash', 'suggestions'] },
+    { tab: 'voice',      section: 'voice',           label: 'Voice & Audio',        desc: 'Microphone, speaker, noise suppression, push to talk',  keywords: ['voice', 'audio', 'microphone', 'mic', 'speaker', 'input', 'output', 'volume', 'noise', 'gate', 'compressor', 'echo', 'cancellation', 'noise suppression', 'push to talk', 'ptt', 'voice activation', 'sensitivity'] },
+    { tab: 'video',      section: 'video',           label: 'Video & Streaming',    desc: 'Camera, resolution, FPS, screen sharing',               keywords: ['video', 'camera', 'webcam', 'resolution', 'fps', 'screen share', 'streaming', 'quality'] },
+    { tab: 'profile',    section: 'profile',         label: 'My Profile',           desc: 'Display name, avatar, bio, custom status',              keywords: ['avatar', 'picture', 'profile', 'photo', 'upload', 'display name', 'bio', 'about me', 'custom status', 'name'] },
+    { tab: 'profile',    section: 'avatar-creator',   label: 'Avatar Creator',       desc: 'Create and customize your avatar',                      keywords: ['avatar', 'creation', 'builder', 'randomize', 'create avatar'] },
+    { tab: 'privacy',    section: 'privacy',         label: 'Privacy',              desc: 'DM privacy, friend requests, online status, read receipts, typing', keywords: ['privacy', 'dm', 'direct message', 'friend request', 'block', 'stranger', 'online status', 'hide activity', 'read receipt', 'read receipts', 'typing', 'typing indicator', 'link preview', 'link previews', 'url preview', 'default status', 'invisible', 'visibility', 'appear offline'] },
+    { tab: 'privacy',    section: 'interaction',     label: 'Interaction Controls', desc: 'Online status visibility, stranger DM blocking',        keywords: ['hide online status', 'activity', 'block stranger dms', 'mutual friends', 'interaction'] },
+    { tab: 'account',    section: 'security-status', label: 'Security Status',      desc: 'Security score, recovery key, account verification',    keywords: ['security', 'status', 'score', 'recovery key', 'upgrade', 'guest', 'verified', 'password'] },
+    { tab: 'account',    section: 'change-email',    label: 'Email Address',        desc: 'Change or verify your email address',                   keywords: ['email', 'change email', 'verify'] },
+    { tab: 'account',    section: 'security',        label: 'Security',             desc: 'Password, two-factor authentication, recovery key',     keywords: ['password', 'change password', 'two factor', '2fa', 'mfa', 'totp', 'authentication', 'two-factor', 'multi-factor', 'recovery'] },
+    { tab: 'account',    section: 'active-devices',  label: 'Active Devices',       desc: 'Manage sessions and sign out other devices',            keywords: ['sessions', 'devices', 'logout', 'sign out', 'active', 'revoke'] },
+    { tab: 'notifications', section: 'notifications', label: 'Notifications',       desc: 'Sound customization, desktop alerts, DND schedule, quiet hours', keywords: ['notification', 'notifications', 'sound', 'alert', 'mention', 'badge', 'desktop', 'browser', 'push', 'mute', 'muted', 'do not disturb', 'dnd', 'quiet hours', 'schedule', 'moon', 'chime', 'pop', 'bell', 'ringtone', 'tone'] },
+    { tab: 'accessibility', section: 'accessibility', label: 'Accessibility',       desc: 'Motion, contrast, dyslexia font, zoom, saturation',    keywords: ['accessibility', 'reduce motion', 'high contrast', 'dyslexia', 'font', 'zoom', 'saturation', 'screen reader', 'a11y'] },
+    { tab: 'keybinds',   section: 'keybinds',        label: 'Keybinds',            desc: 'Keyboard shortcuts, quick switcher, mute/deafen, emoji', keywords: ['keybinds', 'keyboard', 'shortcuts', 'hotkeys', 'push to talk', 'mute', 'deafen', 'keybinding', 'ctrl+k', 'quick switcher', 'emoji picker', 'ctrl+e'] },
+    { tab: 'advanced',   section: 'advanced',        label: 'Advanced',            desc: 'Developer mode, performance, cache, danger zone',       keywords: ['advanced', 'developer', 'developer mode', 'performance', 'overlay', 'cache', 'clear data', 'danger zone', 'delete account', 'reset'] },
+    { tab: 'network',    section: 'network',         label: 'Network & Proxy',     desc: 'SOCKS5, HTTP proxy, VPN, Tor connection',               keywords: ['network', 'proxy', 'socks5', 'http', 'vpn', 'connection', 'tor', 'socks'] },
   ], []);
+
+  // Synonym map: common search terms → canonical keywords for matching
+  const SYNONYMS: Record<string, string[]> = useMemo(() => ({
+    'dark mode': ['theme'], 'light mode': ['theme'], 'night mode': ['theme'], 'color scheme': ['theme'],
+    '2fa': ['two factor', '2fa'], 'mfa': ['multi-factor', 'mfa'], 'two-factor': ['two factor'],
+    'timezone': ['timezone'], 'time zone': ['timezone', 'time zone'],
+    'password': ['password', 'change password'], 'passwd': ['password'],
+    'mute': ['mute', 'muted', 'notification'], 'unmute': ['mute'],
+    'font': ['font', 'font size', 'dyslexia'], 'text size': ['font size'],
+    'proxy': ['proxy', 'socks5', 'network'], 'vpn': ['vpn', 'network'],
+    'hotkey': ['hotkeys', 'shortcuts', 'keybinds'], 'shortcut': ['shortcuts', 'keybinds'],
+    'language': ['language', 'locale'], 'locale': ['locale', 'language'],
+    'mic': ['microphone', 'mic'], 'camera': ['camera', 'webcam'],
+    'notifications': ['notification', 'notifications'], 'sound': ['sound', 'notification'],
+    'read receipt': ['read receipt', 'read receipts'], 'typing indicator': ['typing', 'typing indicator'],
+    'link preview': ['link preview', 'link previews', 'url preview'], 'url preview': ['link preview', 'url preview'],
+    'status': ['online status', 'custom status', 'status'],
+    'avatar': ['avatar', 'picture', 'profile'], 'profile pic': ['avatar', 'profile'],
+    'delete': ['delete account', 'danger zone'], 'logout': ['logout', 'sign out'],
+  }), []);
+
+  const searchMatches = useMemo(() => {
+    const q = settingsSearch.trim().toLowerCase();
+    if (!q) return null;
+    const words = [q];
+    // Expand with synonyms
+    for (const [syn, targets] of Object.entries(SYNONYMS)) {
+      if (q.includes(syn) || syn.includes(q)) words.push(...targets);
+    }
+    return SETTINGS_INDEX.filter(si => {
+      const labelMatch = si.label.toLowerCase().includes(q);
+      const descMatch = si.desc.toLowerCase().includes(q);
+      const kwMatch = si.keywords.some(kw => words.some(w => kw.includes(w) || w.includes(kw)));
+      return labelMatch || descMatch || kwMatch;
+    });
+  }, [settingsSearch, SETTINGS_INDEX, SYNONYMS]);
+
+  // Determine which tabs have matches
+  const matchedTabs = useMemo(() => {
+    if (!searchMatches) return null;
+    return new Set(searchMatches.map(m => m.tab));
+  }, [searchMatches]);
+
+  // Determine which sections have matches
+  const matchedSections = useMemo(() => {
+    if (!searchMatches) return null;
+    return new Set(searchMatches.map(m => m.section));
+  }, [searchMatches]);
+
+  // Auto-switch to first matching tab when searching
+  useEffect(() => {
+    if (searchMatches && searchMatches.length > 0 && matchedTabs && !matchedTabs.has(tab)) {
+      setTab(searchMatches[0].tab);
+    }
+  }, [searchMatches, matchedTabs, tab]);
+
+  // Ctrl+F focuses search
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Highlight matched text helper
+  const highlightMatch = useCallback((text: string) => {
+    const q = settingsSearch.trim().toLowerCase();
+    if (!q || q.length < 2) return text;
+    const idx = text.toLowerCase().indexOf(q);
+    if (idx === -1) return text;
+    return <>{text.slice(0, idx)}<mark style={{ background: `${T.ac}33`, color: T.ac, borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + q.length)}</mark>{text.slice(idx + q.length)}</>;
+  }, [settingsSearch]);
+
+  // Section visibility helper — hides sections that don't match during search
+  const sectionVisible = useCallback((section: string) => {
+    if (!matchedSections) return true;
+    return matchedSections.has(section);
+  }, [matchedSections]);
 
   // Scroll + highlight when search jumps to a section
   useEffect(() => {
@@ -1307,6 +1399,21 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
       if (d && typeof d === 'object' && d.user_id) {
         setS(d);
         if (d.locale && d.locale !== 'en') setLanguage(d.locale).catch(() => {});
+        if (d.timezone && d.timezone !== 'UTC') tzCtx.setTimezone(d.timezone);
+        // Sync DND schedule from server
+        if (d.dnd_enabled !== undefined) {
+          setNs(p => ({
+            ...p,
+            dndSchedule: !!d.dnd_enabled,
+            dndStart: d.dnd_start || p.dndStart,
+            dndEnd: d.dnd_end || p.dndEnd,
+            dndDays: d.dnd_days || p.dndDays,
+          }));
+          if (d.dnd_start) localStorage.setItem('d_notif_dnd_start', d.dnd_start);
+          if (d.dnd_end) localStorage.setItem('d_notif_dnd_end', d.dnd_end);
+          if (d.dnd_days) localStorage.setItem('d_notif_dnd_days', d.dnd_days);
+          localStorage.setItem('d_notif_dnd_schedule', String(!!d.dnd_enabled));
+        }
       } else setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'friends', friend_request_privacy: 'friends_of_friends', notification_level: 'all', hide_online_status: true, hide_activity: true, block_stranger_dms: true });
     }).catch(() => setS({ theme: 'dark', font_size: 'medium', compact_mode: false, show_embeds: true, dm_privacy: 'friends', friend_request_privacy: 'friends_of_friends', notification_level: 'all', hide_online_status: true, hide_activity: true, block_stranger_dms: true }));
     api.getMe().then((u: any) => { if (u?.display_name) setDisplayName(u.display_name); else if (u?.username) setDisplayName(u.username); }).catch(() => {});
@@ -1360,39 +1467,49 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
       {!s ? <div style={{ color: T.mt, textAlign: 'center', padding: 20 }}>Loading settings...</div> : (<>
         {/* Settings Search */}
         <div style={{ marginBottom: 10, position: 'relative' }}>
-          <input value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)} placeholder="🔍 Search settings..."
-            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif" }} />
-          {settingsSearch.trim() && (
-            <div style={{ marginTop: 6, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, padding: 4, maxHeight: 200, overflowY: 'auto' }}>
-              {SETTINGS_INDEX.filter(si => {
-                const q = settingsSearch.toLowerCase();
-                return si.keywords.includes(q) || si.label.toLowerCase().includes(q);
-              }).map((result, i) => (
+          <div style={{ position: 'relative' }}>
+            <input ref={searchRef} value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)} placeholder="Search settings... (Ctrl+F)"
+              style={{ width: '100%', padding: '8px 12px 8px 32px', background: T.bg, border: `1px solid ${settingsSearch.trim() ? T.ac : T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif", transition: 'border-color .15s' }} />
+            <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, fontSize: 13, pointerEvents: 'none' }}>🔍</span>
+            {settingsSearch.trim() && <span onClick={() => setSettingsSearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, fontSize: 14, cursor: 'pointer', lineHeight: 1 }}>✕</span>}
+          </div>
+          {searchMatches && searchMatches.length > 0 && (
+            <div style={{ marginTop: 6, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, padding: 4, maxHeight: 220, overflowY: 'auto' }}>
+              {searchMatches.map((result, i) => (
                 <div key={i} onClick={() => { setTab(result.tab); setHighlightSection(result.section); setSettingsSearch(''); }}
-                  style={{ padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.tx, display: 'flex', justifyContent: 'space-between' }}
+                  style={{ padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.tx, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <span>{result.label}</span>
-                  <span style={{ fontSize: 10, color: T.mt, textTransform: 'capitalize' }}>{result.tab}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{highlightMatch(result.label)}</div>
+                    <div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{highlightMatch(result.desc)}</div>
+                  </div>
+                  <span style={{ fontSize: 10, color: T.mt, textTransform: 'capitalize', whiteSpace: 'nowrap', flexShrink: 0 }}>{result.tab}</span>
                 </div>
               ))}
-              {SETTINGS_INDEX.filter(si => { const q = settingsSearch.toLowerCase(); return si.keywords.includes(q) || si.label.toLowerCase().includes(q); }).length === 0 && (
-                <div style={{ padding: '8px 10px', fontSize: 12, color: T.mt, fontStyle: 'italic' }}>No settings found for "{settingsSearch}"</div>
-              )}
+            </div>
+          )}
+          {searchMatches && searchMatches.length === 0 && (
+            <div style={{ marginTop: 6, padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}`, fontSize: 12, color: T.mt, textAlign: 'center' }}>
+              No settings found for &ldquo;{settingsSearch}&rdquo;
             </div>
           )}
         </div>
 
         {/* Tab Bar */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${T.bd}`, paddingBottom: 10, flexWrap: 'wrap' }}>
-          {tabs.map(t => (
-            <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent' }}>{t.label}</div>
-          ))}
+          {tabs.map(t => {
+            const dimmed = matchedTabs && !matchedTabs.has(t.id);
+            return (
+              <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : dimmed ? `${T.mt}44` : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', transition: 'color .15s, opacity .15s' }}>{t.label}</div>
+            );
+          })}
           {onLogout && <div onClick={onLogout} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err, marginLeft: 'auto' }}>Log Out</div>}
         </div>
 
         {/* ── Appearance ── */}
         {tab === 'appearance' && (<>
+          <div style={{ display: sectionVisible('theme') ? undefined : 'none' }}>
           <div data-section="theme" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme & Colors</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Theme</label>
@@ -1420,15 +1537,37 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 <option value="dm-sans">DM Sans (Default)</option><option value="inter">Inter</option><option value="system">System UI</option><option value="mono">JetBrains Mono</option><option value="serif">Georgia (Serif)</option>
               </select>
             </div>
-            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Spacing</label>
-              <select style={sel} value={localStorage.getItem('d_msg_spacing') || 'cozy'} onChange={e => localStorage.setItem('d_msg_spacing', e.target.value)}>
-                <option value="cozy">Cozy</option><option value="compact">Compact</option><option value="roomy">Roomy</option>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Density</label>
+              <select style={sel} value={s.message_density || 'comfortable'} onChange={e => { save('message_density', e.target.value); localStorage.setItem('d_msg_density', e.target.value); }}>
+                <option value="comfortable">Comfortable (default)</option>
+                <option value="compact">Compact</option>
+                <option value="cozy">Cozy</option>
               </select>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>
+                {(s.message_density || 'comfortable') === 'compact' ? '2px gap, 28px avatars, inline timestamp' : (s.message_density || 'comfortable') === 'cozy' ? '12px gap, 44px avatars, spacious layout' : '8px gap, 36px avatars, balanced layout'}
+              </div>
             </div>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Width</label>
               <select style={sel} value={localStorage.getItem('d_chat_width') || 'normal'} onChange={e => localStorage.setItem('d_chat_width', e.target.value)}>
                 <option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option><option value="full">Full Width</option>
               </select>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Font Size: {s.chat_font_size || 14}px</label>
+              <input
+                type="range" min="12" max="20" step="1"
+                value={s.chat_font_size || 14}
+                onChange={e => {
+                  const px = parseInt(e.target.value, 10);
+                  save('chat_font_size', px);
+                  localStorage.setItem('d_chat_font_size', String(px));
+                  document.documentElement.style.setProperty('--chat-font-size', `${px}px`);
+                }}
+                style={{ width: '100%', accentColor: T.ac } as React.CSSProperties}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt, marginTop: 2 }}>
+                <span>12px</span><span>14px</span><span>16px</span><span>18px</span><span>20px</span>
+              </div>
             </div>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Language</label>
               <select style={sel} value={s.locale || 'en'} onChange={e => save('locale', e.target.value)}>
@@ -1446,7 +1585,15 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 <option value="tr">Türkçe</option>
               </select>
             </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Timezone</label>
+              <select style={sel} value={tzCtx.timezone} onChange={e => { const tz = e.target.value; tzCtx.setTimezone(tz); api.saveTimezone(tz).catch(() => {}); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
+                {(() => { try { return Intl.supportedValuesOf('timeZone').map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>); } catch { return [detectedTimezone].map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>); } })()}
+              </select>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Auto-detected: {detectedTimezone.replace(/_/g, ' ')}</div>
+            </div>
           </div>
+          </div>
+          <div style={{ display: sectionVisible('display-options') ? undefined : 'none' }}>
           <div data-section="display-options" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
           {[
             { key: 'compact_mode',       label: 'Compact Mode',                    desc: 'Reduce padding and margins throughout the UI',                          setting: true  },
@@ -1475,6 +1622,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               </div>
             );
           })}
+          </div>
         </>)}
 
         {/* ── Voice & Audio ── */}
@@ -1735,6 +1883,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
         {/* ── Privacy ── */}
         {tab === 'privacy' && (<>
+          <div style={{ display: sectionVisible('privacy') ? undefined : 'none' }}>
           <div data-section="privacy" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Privacy</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
             <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Who can DM me</label>
@@ -1747,6 +1896,14 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 <option value="everyone">Everyone</option><option value="friends_of_friends">Friends of friends</option><option value="nobody">Nobody</option>
               </select>
             </div>
+            <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Default Online Status</label>
+              <select style={sel} value={s.default_status || 'online'} onChange={e => save('default_status', e.target.value)}>
+                <option value="online">Online</option>
+                <option value="idle">Idle</option>
+                <option value="invisible">Invisible</option>
+              </select>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Your status on servers without a per-server override. Right-click a server icon to set per-server appearance.</div>
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
             <div>
@@ -1757,6 +1914,25 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.show_shared_servers === true ? 18 : 2, transition: 'left 0.2s' }} />
             </div>
           </div>
+          {/* ─ Privacy Toggles (privacy-first defaults: all OFF) ─ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Communication Privacy</div>
+          {[
+            { key: 'show_read_receipts',    label: 'Show Read Receipts',    desc: 'Let others know when you\'ve read their messages. When off, you also cannot see others\' read status (mutual).', def: false },
+            { key: 'show_typing_indicator',  label: 'Show Typing Indicator', desc: 'Let others see when you\'re typing. The server will not broadcast your typing events when off.', def: false },
+            { key: 'show_link_previews',     label: 'Link Previews',         desc: 'Show rich previews for URLs in messages. Previews are generated client-side only — URLs are never sent to the server.', def: false },
+          ].map(opt => {
+            const val = s[opt.key] !== undefined ? !!s[opt.key] : opt.def;
+            return (
+              <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+                <div><div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div><div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>{opt.desc}</div></div>
+                <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left 0.2s' }} />
+                </div>
+              </div>
+            );
+          })}
+          </div>
+          <div style={{ display: sectionVisible('interaction') ? undefined : 'none' }}>
           <div data-section="interaction" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Interaction Controls</div>
           {[
             { key: 'hide_online_status',      label: 'Hide Online Status from Non-Friends',        desc: 'Only friends can see when you\'re online, idle, or DND.', def: true },
@@ -1777,12 +1953,14 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           <div style={{ padding: '8px 12px', background: T.bg, borderRadius: 6, fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 8 }}>
             <I.Shield /> Discreet respects your privacy. Shared server info is never publicly exposed.
           </div>
+          </div>
           <OfflineContacts />
         </>)}
 
         {/* ── Account ── */}
         {tab === 'account' && (<>
           {/* ─ Security Status ─ */}
+          <div style={{ display: sectionVisible('security-status') ? undefined : 'none' }}>
           <div data-section="security-status"><SecurityStatus
             platformUser={platformUser}
             onSetupStep={(step) => {
@@ -1802,6 +1980,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               }
             }}
           /></div>
+          </div>
 
           {/* ─ Identity ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
@@ -1812,7 +1991,9 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             </div>
             <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace' }}>ID: {api.userId?.slice(0, 8) || '—'}</div>
           </div>
+          <div style={{ display: sectionVisible('change-email') ? undefined : 'none' }}>
           <div data-section="change-email"><ChangeEmail /></div>
+          </div>
 
           {/* ─ Plan ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Your Plan</div>
@@ -1825,6 +2006,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           </div>
 
           {/* ─ Security ─ */}
+          <div style={{ display: sectionVisible('security') ? undefined : 'none' }}>
           <div data-section="security" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
           <ChangePassword />
           <div data-section="2fa" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
@@ -1836,7 +2018,9 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             <div style={{ fontSize: 10, color: T.ac, fontFamily: 'monospace', letterSpacing: '1px' }}>{api.userId?.slice(0, 16) || '—'}</div>
           </div>
 
+          </div>
           {/* ─ Active Devices ─ */}
+          <div style={{ display: sectionVisible('active-devices') ? undefined : 'none' }}>
           <div data-section="active-devices" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
           <ActiveSessions />
 
@@ -1851,6 +2035,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               Permanently delete your account and <strong style={{ color: T.err }}>ALL</strong> associated data. <strong style={{ color: T.err }}>This action is irreversible.</strong>
             </div>
             <DeleteAccount />
+          </div>
           </div>
         </>)}
 
@@ -1930,6 +2115,36 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                 </div>
               </div>
             ))}
+            {/* ─ Sound customization ─ */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Sound Style</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 6 }}>
+              {([
+                { key: 'sound_dm',      lsKey: 'd_sound_dm',      label: 'DM Sound' },
+                { key: 'sound_server',  lsKey: 'd_sound_server',  label: 'Server Message' },
+                { key: 'sound_mention', lsKey: 'd_sound_mention', label: '@Mention' },
+              ] as const).map(opt => (
+                <div key={opt.key}>
+                  <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>{opt.label}</label>
+                  <select
+                    style={sel}
+                    value={s[opt.key] || 'default'}
+                    onChange={e => {
+                      const v = e.target.value;
+                      save(opt.key, v);
+                      localStorage.setItem(opt.lsKey, v);
+                      previewSound(v as any);
+                    }}
+                  >
+                    {SOUND_OPTIONS.map(so => (
+                      <option key={so.value} value={so.value}>{so.label}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: T.mt, lineHeight: 1.5, padding: '4px 0' }}>
+              Sounds are synthesized locally — no audio files are downloaded.
+            </div>
           </>)}
 
           {/* ─ Desktop notifications ─ */}
@@ -1981,37 +2196,76 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           {/* ─ Do Not Disturb ─ */}
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 20 }}>Do Not Disturb</div>
           <NRow
-            label="Enable DND mode"
-            sub="Suppress all sounds and desktop alerts"
+            label="Manual DND override"
+            sub="Immediately suppress all notifications (overrides schedule)"
             on={ns.dnd}
             onToggle={() => setN('dnd', !ns.dnd, 'd_notif_dnd')}
           />
-          <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: T.tx, marginBottom: 8 }}>Scheduled quiet hours</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Start</label>
-                <input
-                  type="time"
-                  value={ns.dndStart}
-                  onChange={e => setN('dndStart', e.target.value, 'd_notif_dnd_start')}
-                  style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
-                />
-              </div>
-              <div style={{ color: T.mt, fontSize: 13, paddingTop: 18 }}>→</div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>End</label>
-                <input
-                  type="time"
-                  value={ns.dndEnd}
-                  onChange={e => setN('dndEnd', e.target.value, 'd_notif_dnd_end')}
-                  style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
-                />
-              </div>
+          {ns.dnd && (
+            <div style={{ padding: '8px 14px', background: 'rgba(237,66,69,0.08)', borderRadius: 8, border: '1px solid rgba(237,66,69,0.2)', marginBottom: 6, fontSize: 11, color: '#ed4245', display: 'flex', alignItems: 'center', gap: 6 }}>
+              🌙 DND is active — all notifications suppressed except DM @mentions.
             </div>
-            <div style={{ fontSize: 10, color: T.mt, marginTop: 6 }}>
-              DND activates automatically between these local times. Stored in <code>d_notif_dnd_start</code> / <code>d_notif_dnd_end</code>.
+          )}
+          <div style={{ padding: '14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Scheduled quiet hours</div>
+                <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Automatically enable DND during these times. DM @mentions still come through.</div>
+              </div>
+              <Toggle on={ns.dndSchedule} onToggle={() => {
+                const next = !ns.dndSchedule;
+                setN('dndSchedule', next, 'd_notif_dnd_schedule');
+                save('dnd_enabled', next);
+              }} />
             </div>
+
+            {ns.dndSchedule && (<>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Start</label>
+                  <input
+                    type="time"
+                    value={ns.dndStart}
+                    onChange={e => { setN('dndStart', e.target.value, 'd_notif_dnd_start'); save('dnd_start', e.target.value); }}
+                    style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
+                  />
+                </div>
+                <div style={{ color: T.mt, fontSize: 13, paddingTop: 18 }}>→</div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>End</label>
+                  <input
+                    type="time"
+                    value={ns.dndEnd}
+                    onChange={e => { setN('dndEnd', e.target.value, 'd_notif_dnd_end'); save('dnd_end', e.target.value); }}
+                    style={{ ...getInp(), marginBottom: 0, width: '100%', boxSizing: 'border-box' } as React.CSSProperties}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: T.mt, marginBottom: 6 }}>Active on:</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
+                  const activeDays = ns.dndDays.split(',').map(Number);
+                  const isActive = activeDays.includes(i);
+                  return (
+                    <div key={day} onClick={() => {
+                      const next = isActive ? activeDays.filter(d => d !== i) : [...activeDays, i].sort();
+                      const daysStr = next.join(',');
+                      setN('dndDays', daysStr, 'd_notif_dnd_days');
+                      save('dnd_days', daysStr);
+                    }} style={{
+                      padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                      background: isActive ? `${T.ac}22` : T.bg,
+                      color: isActive ? T.ac : T.mt,
+                      border: `1px solid ${isActive ? T.ac : T.bd}`,
+                      transition: 'all .15s',
+                    }}>{day}</div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 8 }}>
+                🌙 {ns.dndStart} — {ns.dndEnd} on selected days. Synced to your account.
+              </div>
+            </>)}
           </div>
 
           {/* ─ Per-server mute ─ */}
@@ -2236,18 +2490,30 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         {tab === 'accessibility' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Accessibility</div>
           {[
-            { key: 'd_reduce_motion', label: 'Reduce Motion',             desc: 'Disable animations and transitions for a calmer experience' },
-            { key: 'd_high_contrast', label: 'High Contrast Mode',        desc: 'Increase contrast between text and background' },
-            { key: 'd_screen_reader', label: 'Screen Reader Optimized',   desc: 'Add ARIA labels and landmarks for screen readers' },
-            { key: 'd_large_click',   label: 'Large Click Targets',       desc: 'Increase button and link sizes for easier interaction' },
-            { key: 'd_focus_rings',   label: 'Focus Indicators',          desc: 'Show visible outlines on keyboard-focused elements' },
-            { key: 'd_dyslexia_font', label: 'Dyslexia-Friendly Font',    desc: 'Use OpenDyslexic font for improved readability' },
+            { key: 'd_reduce_motion', label: 'Reduce Motion',             desc: 'Disable all animations and transitions throughout the UI. Respects your OS preference automatically.' },
+            { key: 'd_high_contrast', label: 'High Contrast Mode',        desc: 'Boost borders and text contrast to meet WCAG AAA standards. Improves readability in all lighting conditions.' },
+            { key: 'd_focus_rings',   label: 'Focus Indicators',          desc: 'Show visible outlines on keyboard-focused elements for navigation without a mouse.' },
+            { key: 'd_screen_reader', label: 'Screen Reader Optimized',   desc: 'Enhanced ARIA labels and landmarks for screen readers.' },
+            { key: 'd_large_click',   label: 'Large Click Targets',       desc: 'Increase button and link sizes for easier interaction.' },
+            { key: 'd_dyslexia_font', label: 'Dyslexia-Friendly Font',    desc: 'Use OpenDyslexic font for improved readability.' },
           ].map(opt => {
             const val = localStorage.getItem(opt.key) === 'true';
             return (
               <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
                 <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
-                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                <div onClick={() => {
+                  const next = !val;
+                  localStorage.setItem(opt.key, String(next));
+                  // Apply immediately via DOM classes
+                  const root = document.querySelector('.chat-root');
+                  if (root) {
+                    if (opt.key === 'd_reduce_motion') root.classList.toggle('reduce-motion', next);
+                    if (opt.key === 'd_high_contrast') { root.classList.toggle('high-contrast', next); (root as HTMLElement).style.background = next ? '#000' : ''; }
+                    if (opt.key === 'd_focus_rings') root.classList.toggle('focus-visible', next);
+                  }
+                  // Force re-render of this component
+                  setS(p => ({ ...p }));
+                }} role="switch" aria-checked={val} aria-label={opt.label} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
                 </div>
               </div>
@@ -2266,6 +2532,30 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         {/* ── Keybinds ── */}
         {tab === 'keybinds' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Keyboard Shortcuts</div>
+          <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Quick Reference</div>
+              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Press <kbd style={{ padding: '1px 6px', borderRadius: 3, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 10, fontFamily: 'monospace', color: T.ac }}>Ctrl</kbd> + <kbd style={{ padding: '1px 6px', borderRadius: 3, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 10, fontFamily: 'monospace', color: T.ac }}>/</kbd> anywhere to view all shortcuts</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Built-in Shortcuts</div>
+          <div style={{ marginBottom: 14 }}>
+            {[
+              { keys: 'Ctrl + K', desc: 'Quick switcher' },
+              { keys: 'Ctrl + /', desc: 'Shortcuts help' },
+              { keys: 'Ctrl + Shift + M', desc: 'Toggle mute' },
+              { keys: 'Ctrl + Shift + D', desc: 'Toggle deafen' },
+              { keys: 'Ctrl + E', desc: 'Emoji picker' },
+              { keys: '↑ (empty input)', desc: 'Edit last message' },
+              { keys: 'Escape', desc: 'Close modal/overlay' },
+            ].map(sc => (
+              <div key={sc.keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: T.sf2, borderRadius: 6, marginBottom: 3, fontSize: 12 }}>
+                <span style={{ color: T.tx }}>{sc.desc}</span>
+                <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.mt }}>{sc.keys}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Custom Keybinds</div>
           <div style={{ fontSize: 12, color: T.mt, marginBottom: 12 }}>Click any key to rebind. Press Escape to cancel, Delete to clear.</div>
           {[
             { key: 'd_kb_ptt',       label: 'Push to Talk',       def: '`'        },
