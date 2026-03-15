@@ -266,9 +266,7 @@ pub async fn register(
 
     // Validate email format if provided.
     if let Some(ref email) = req.email {
-        if !email.contains('@') || email.len() < 5 {
-            return Err(AppError::BadRequest("Invalid email format".into()));
-        }
+        crate::discreet_input_validation::validate_email(email)?;
     }
 
     // Validate date of birth if provided (COPPA: must be 13+).
@@ -889,11 +887,12 @@ pub async fn login(
     // ── Global IP rate limit: 20 login attempts per IP per minute ────────
     {
         let ip_rate_key = format!("login_ip_rate:{}", ip);
-        let ip_count: i64 = redis::cmd("INCR")
-            .arg(&ip_rate_key)
-            .query_async(&mut redis_conn)
-            .await
-            .unwrap_or(1);
+        let ip_count: i64 = crate::citadel_error::redis_or_503(
+            redis::cmd("INCR")
+                .arg(&ip_rate_key)
+                .query_async(&mut redis_conn)
+                .await
+        )?;
         if ip_count == 1 {
             let _: Result<bool, _> = redis::cmd("EXPIRE")
                 .arg(&ip_rate_key)

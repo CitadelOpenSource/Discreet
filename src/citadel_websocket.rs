@@ -121,39 +121,54 @@ pub async fn ws_connect(
             "Missing authentication — use Authorization header or Sec-WebSocket-Protocol".into(),
         ))?;
 
-    let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
-    let validation = Validation::default();
-    let token_data = decode::<Claims>(&token, &key, &validation)
-        .map_err(|e| AppError::Unauthorized(format!("Invalid token: {e}")))?;
+    // 10-second timeout on JWT validation + DB session check.
+    // Drop the connection if auth doesn't complete in time.
+    let auth_result = tokio::time::timeout(
+        Duration::from_secs(10),
+        async {
+            let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
+            let validation = Validation::default();
+            let token_data = decode::<Claims>(&token, &key, &validation)
+                .map_err(|e| AppError::Unauthorized(format!("Invalid token: {e}")))?;
 
-    let user_id = token_data.claims.sub;
-    let session_id = token_data.claims.sid;
+            let user_id = token_data.claims.sub;
+            let session_id = token_data.claims.sid;
 
-    let session_valid = sqlx::query_scalar!(
-        "SELECT EXISTS(
-            SELECT 1 FROM sessions
-            WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > NOW()
-        )",
-        session_id, user_id,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(format!("Session check failed: {e}")))?;
+            let session_valid = sqlx::query_scalar!(
+                "SELECT EXISTS(
+                    SELECT 1 FROM sessions
+                    WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > NOW()
+                )",
+                session_id, user_id,
+            )
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| AppError::Internal(format!("Session check failed: {e}")))?;
 
-    if !session_valid.unwrap_or(false) {
-        return Err(AppError::Unauthorized("Session expired or revoked".into()));
-    }
+            if !session_valid.unwrap_or(false) {
+                return Err(AppError::Unauthorized("Session expired or revoked".into()));
+            }
 
-    let is_member = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2)",
-        params.server_id, user_id,
-    )
-    .fetch_one(&state.db)
-    .await?;
+            let is_member = sqlx::query_scalar!(
+                "SELECT EXISTS(SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2)",
+                params.server_id, user_id,
+            )
+            .fetch_one(&state.db)
+            .await?;
 
-    if !is_member.unwrap_or(false) {
-        return Err(AppError::Forbidden("Not a member of this server".into()));
-    }
+            if !is_member.unwrap_or(false) {
+                return Err(AppError::Forbidden("Not a member of this server".into()));
+            }
+
+            Ok::<(Uuid, Uuid), AppError>((user_id, session_id))
+        }
+    ).await;
+
+    let (user_id, _session_id) = match auth_result {
+        Ok(Ok(ids)) => ids,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => return Err(AppError::Unauthorized("WebSocket authentication timed out".into())),
+    };
 
     // Fetch username and guest status for voice signaling display.
     let user_row = sqlx::query!(

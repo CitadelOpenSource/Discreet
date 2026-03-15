@@ -724,11 +724,12 @@ pub async fn prompt_bot(
     if platform.ai_rate_limit_per_minute > 0 {
         let rl_key = format!("ai_global_rl:{}", auth.user_id);
         let mut redis_conn = state.redis.clone();
-        let count: i64 = redis::cmd("INCR")
-            .arg(&rl_key)
-            .query_async(&mut redis_conn)
-            .await
-            .unwrap_or(1);
+        let count: i64 = crate::citadel_error::redis_or_503(
+            redis::cmd("INCR")
+                .arg(&rl_key)
+                .query_async(&mut redis_conn)
+                .await
+        )?;
         if count == 1 {
             let _: Result<(), _> = redis::cmd("EXPIRE")
                 .arg(&rl_key)

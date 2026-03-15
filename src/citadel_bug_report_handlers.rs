@@ -87,11 +87,12 @@ pub async fn submit_bug_report(
     let rate_key = format!("bug_report_rate:{}", ip);
     let mut redis_conn = state.redis.clone();
 
-    let current: Option<i64> = redis::cmd("GET")
-        .arg(&rate_key)
-        .query_async(&mut redis_conn)
-        .await
-        .ok();
+    let current: Option<i64> = crate::citadel_error::redis_or_503(
+        redis::cmd("GET")
+            .arg(&rate_key)
+            .query_async(&mut redis_conn)
+            .await
+    )?;
 
     if current.unwrap_or(0) >= 5 {
         return Err(AppError::RateLimited(

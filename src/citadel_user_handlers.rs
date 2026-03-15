@@ -122,13 +122,9 @@ pub async fn update_me(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Validate display_name length.
+    // Validate display_name.
     if let Some(ref name) = req.display_name {
-        if name.is_empty() || name.len() > 64 {
-            return Err(AppError::BadRequest(
-                "Display name must be 1-64 characters".into(),
-            ));
-        }
+        crate::discreet_input_validation::validate_display_name(name)?;
     }
 
     // Validate avatar_url length.

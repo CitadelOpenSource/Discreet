@@ -63,6 +63,7 @@ pub mod citadel_websocket;
 pub mod discreet_ack_handlers;
 pub mod discreet_billing_handlers;
 pub mod discreet_bookmark_handlers;
+pub mod discreet_input_validation;
 pub mod discreet_channel_category_handlers;
 pub mod discreet_playbook_handlers;
 pub mod discreet_report_handlers;

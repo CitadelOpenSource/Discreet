@@ -102,9 +102,7 @@ pub async fn create_channel(
 
     // Validate name.
     let name = normalize_channel_name(&req.name);
-    if name.is_empty() || name.len() > 128 {
-        return Err(AppError::BadRequest("Channel name must be 1-128 characters".into()));
-    }
+    crate::discreet_input_validation::validate_channel_name(&name)?;
 
     // Validate channel type.
     let valid_types = ["text", "voice", "announcement"];
@@ -300,9 +298,7 @@ pub async fn update_channel(
 
     if let Some(ref name) = req.name {
         let name = normalize_channel_name(name);
-        if name.is_empty() || name.len() > 128 {
-            return Err(AppError::BadRequest("Channel name must be 1-128 characters".into()));
-        }
+        crate::discreet_input_validation::validate_channel_name(&name)?;
         sqlx::query!(
             "UPDATE channels SET name = $1, updated_at = NOW() WHERE id = $2",
             name, channel_id,

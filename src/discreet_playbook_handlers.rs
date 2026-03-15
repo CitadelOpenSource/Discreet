@@ -94,10 +94,10 @@ async fn load_steps(db: &sqlx::PgPool, playbook_id: Uuid) -> Result<Vec<StepResp
     .fetch_all(db)
     .await?;
 
-    Ok(rows.iter().map(|r| StepResponse {
+    Ok(rows.into_iter().map(|r| StepResponse {
         id: r.id,
         position: r.position,
-        title: r.title.clone(),
+        title: r.title,
         assignee_id: r.assignee_id,
         completed: r.completed,
         completed_at: r.completed_at.map(|ts| ts.to_rfc3339()),
@@ -167,6 +167,9 @@ pub async fn create_playbook(
         return Err(AppError::BadRequest("Playbook name must be 1-200 characters".into()));
     }
     let description = req.description.unwrap_or_default();
+    if description.len() > 2000 {
+        return Err(AppError::BadRequest("Description must be 2,000 characters or fewer".into()));
+    }
 
     let row = sqlx::query!(
         "INSERT INTO playbooks (server_id, name, description, created_by)

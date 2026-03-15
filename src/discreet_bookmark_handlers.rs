@@ -127,11 +127,11 @@ pub async fn list_bookmarks(
         .await?
     };
 
-    let items: Vec<BookmarkResponse> = rows.iter().map(|r| BookmarkResponse {
+    let items: Vec<BookmarkResponse> = rows.into_iter().map(|r| BookmarkResponse {
         message_id: r.message_id,
         channel_id: r.channel_id,
         server_id: r.server_id,
-        note: r.note.clone(),
+        note: r.note,
         created_at: r.created_at.to_rfc3339(),
         message_content: r.message_content.as_ref().map(|b| String::from_utf8_lossy(b).to_string()),
         message_author_id: r.message_author_id,

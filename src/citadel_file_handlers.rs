@@ -93,6 +93,14 @@ pub async fn upload_file_blob(
         return Err(AppError::BadRequest("File blob cannot be empty".into()));
     }
 
+    // Hard limit from config (MAX_UPLOAD_BYTES env, default 25 MB).
+    if blob_bytes.len() > state.config.max_upload_bytes {
+        return Err(AppError::PayloadTooLarge(format!(
+            "File exceeds {}MB upload limit",
+            state.config.max_upload_bytes / (1024 * 1024)
+        )));
+    }
+
     // Tier limit: upload size.
     let uploader_tier = sqlx::query_scalar!(
         "SELECT account_tier FROM users WHERE id = $1",
