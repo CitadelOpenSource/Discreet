@@ -11,7 +11,7 @@ Discreet is a monorepo with four independent platform targets sharing one Rust A
 ```
 Discreet/
 ├── src/                  → Rust/Axum backend (44 modules, 184 routes)
-├── client-next/          → Vite + React web client (29 components)
+├── client/          → Vite + React web client (29 components)
 ├── mobile/               → React Native (Android + iOS)
 ├── desktop/              → Tauri v2 (Windows/macOS/Linux)
 ├── discreet-crypto/      → MLS WASM crypto library
@@ -46,7 +46,7 @@ git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
 docker compose up -d              # Postgres + Redis
 cat migrations/*.sql | docker compose exec -T postgres psql -U citadel -d citadel
-cd client-next && npm install && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 cargo build && cargo run           # Server at localhost:3000
 ```
 
@@ -104,7 +104,7 @@ cargo build
 ```bash
 cargo test                          # Rust unit tests
 ./smoke_test.sh                     # API smoke test (curl-based)
-cd client-next && npm run build     # TypeScript compilation check
+cd client && npm run build     # TypeScript compilation check
 ```
 
 ## Pull Request Process
@@ -119,10 +119,10 @@ cd client-next && npm run build     # TypeScript compilation check
 ## Common Gotchas
 
 1. **sqlx "column does not exist"** — Apply migration to Docker Postgres BEFORE building Rust
-2. **Client changes not showing** — Run `npm run build` in client-next/, then restart cargo
+2. **Client changes not showing** — Run `npm run build` in client/, then restart cargo
 3. **WebSocket auth** — Token sent via query param (browsers can't set WS headers)
 4. **Bracket imbalance** — Use the Node.js bracket-checker script after large client edits
-5. **Desktop build** — Tauri needs `client-next/dist/` to exist for production builds
+5. **Desktop build** — Tauri needs `client/dist/` to exist for production builds
 
 ## Proximity Mesh Architecture
 

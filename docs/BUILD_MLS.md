@@ -65,9 +65,9 @@ The server now has 6 new MLS endpoints:
 
 ## Step 5: Wire WASM into the Client
 
-For the Vite client (`client-next/`):
+For the Vite client (`client/`):
 ```bash
-cd client-next
+cd client
 npm install
 npm run dev
 ```

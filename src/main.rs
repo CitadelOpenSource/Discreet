@@ -702,39 +702,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/manifest.json", axum::routing::get(|| async {
             (
                 [("content-type", "application/manifest+json")],
-                include_str!("../client/manifest.json"),
+                include_str!("../client/public/manifest.json"),
             )
         }))
         .route("/ws", axum::routing::get(citadel_websocket::ws_connect))
         // Payment webhooks (unversioned — called by external services)
         .route("/webhooks/btcpay", axum::routing::post(discreet_billing_handlers::btcpay_webhook))
         .route("/webhooks/stripe", axum::routing::post(discreet_billing_handlers::stripe_webhook))
-        // Legacy client — emergency fallback only.
-        .route(
-            "/legacy/",
-            axum::routing::get(|| async {
-                axum::response::Html(include_str!("../client/index.html"))
-            }),
-        )
         // Versioned API.
         .nest("/api/v1", api_v1)
         // Invite deep-links — serve Vite client so it can handle /invite/:code
         .route(
             "/invite/:code",
             axum::routing::get(|| async {
-                match tokio::fs::read_to_string("client-next/dist/index.html").await {
+                match tokio::fs::read_to_string("client/dist/index.html").await {
                     Ok(html) => axum::response::Html(html).into_response(),
                     Err(_) => axum::response::Redirect::temporary("/app").into_response(),
                 }
             }),
         )
-        // Vite client — serves client-next/dist/ at /app and returns index.html
+        // Vite client — serves client/dist/ at /app and returns index.html
         // for any path that doesn't match a static asset, enabling
         // React Router client-side navigation.
         .nest_service(
             "/app",
-            tower_http::services::ServeDir::new("client-next/dist")
-                .fallback(tower_http::services::ServeFile::new("client-next/dist/index.html")),
+            tower_http::services::ServeDir::new("client/dist")
+                .fallback(tower_http::services::ServeFile::new("client/dist/index.html")),
         )
         // Landing page — static HTML at root.
         .nest_service(

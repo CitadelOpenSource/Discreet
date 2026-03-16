@@ -34,7 +34,7 @@ cargo tauri dev
 ```
 
 ### "frontendDist" path wrong in production build
-Path resolves from `desktop/src-tauri/`. Must be `../../client-next/dist` — two directories up.
+Path resolves from `desktop/src-tauri/`. Must be `../../client/dist` — two directories up.
 
 ### Window close doesn't quit the app
 By design — Discreet minimizes to system tray on close. Right-click the tray icon → Quit.
@@ -46,9 +46,9 @@ cargo tauri dev     # Hot-reload, points at localhost:3000/next/
 cargo tauri build   # Production .msi/.dmg/.AppImage
 ```
 
-Production build requires `client-next/dist/` to exist:
+Production build requires `client/dist/` to exist:
 ```powershell
-cd client-next && npm run build && cd ..
+cd client && npm run build && cd ..
 cd desktop && cargo tauri build
 ```
 

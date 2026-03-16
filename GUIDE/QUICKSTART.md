@@ -32,7 +32,7 @@ cp .env.example .env
 #   JWT_SECRET=$(openssl rand -hex 64)
 
 # Build the Vite client
-cd client-next && npm install && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 
 # Start the server
 cargo run
@@ -54,7 +54,7 @@ Get-ChildItem migrations\*.sql | Sort-Object Name | ForEach-Object {
 Copy-Item .env.example .env
 # Edit .env — set JWT_SECRET to a random 64+ character string
 
-cd client-next; npm install; npm run build; cd ..
+cd client; npm install; npm run build; cd ..
 
 cargo run
 ```
@@ -83,7 +83,7 @@ curl http://localhost:3000/health
 ## Development Mode (Hot Reload)
 
 ```bash
-cd client-next
+cd client
 npm run dev
 # Opens at http://localhost:5173/next/
 # API calls proxied to http://localhost:3000

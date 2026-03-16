@@ -8,7 +8,7 @@ We're building an encrypted community platform — and we want your help.
 git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
 docker compose up -d
-cd client-next && npm install && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 cargo build && cargo run
 ```
 
@@ -18,7 +18,7 @@ Open `http://localhost:3000` and you're running.
 
 **High impact, approachable:**
 - UI polish — the Vite client works but could look better
-- Translation files — we have 12 languages started in `client-next/src/i18n/`, most need native speaker review
+- Translation files — we have 12 languages started in `client/src/i18n/`, most need native speaker review
 - Documentation improvements — typos, clarity, missing examples
 - Test coverage — we have compile-time SQL validation but need more integration tests
 
@@ -39,7 +39,7 @@ Open `http://localhost:3000` and you're running.
 1. Fork the repo
 2. Create a branch: `git checkout -b fix/your-thing`
 3. Make your changes
-4. Test locally: `cargo check && cd client-next && npm run build`
+4. Test locally: `cargo check && cd client && npm run build`
 5. Open a PR with a clear description of what changed and why
 
 ## Code style
@@ -51,7 +51,7 @@ Open `http://localhost:3000` and you're running.
 - No `unwrap()` in handlers. Ever. Use `?` or handle the error.
 
 **TypeScript:**
-- Single-file components in `client-next/src/components/`
+- Single-file components in `client/src/components/`
 - State management via React hooks (useState, useEffect, useRef)
 - Theme constants from `theme.ts` (T.bg, T.sf, T.tx, T.ac)
 - No external state libraries — keep it simple
@@ -66,7 +66,7 @@ Open `http://localhost:3000` and you're running.
 ```
 Discreet/
 ├── src/                  → Rust/Axum backend (44 modules, 184+ routes)
-├── client-next/          → Vite + React web client
+├── client/          → Vite + React web client
 ├── mobile/               → React Native (Android + iOS)
 ├── desktop/              → Tauri v2 (Windows/macOS/Linux)
 ├── discreet-crypto/      → MLS + SFrame WASM crypto library

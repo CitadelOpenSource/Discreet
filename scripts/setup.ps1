@@ -207,7 +207,7 @@ Write-Host ""
 Write-Host "[8/8] Building..." -ForegroundColor Yellow
 
 Write-Host "  → Installing client dependencies..."
-Push-Location client-next
+Push-Location client
 npm ci --silent
 Write-Host "  → Building client..."
 npm run build

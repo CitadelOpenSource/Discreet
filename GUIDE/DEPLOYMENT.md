@@ -118,7 +118,7 @@ for f in migrations/*.sql; do
   cat "$f" | docker compose exec -T postgres psql -U citadel -d citadel
 done
 
-cd client-next && npm install && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 cargo build --release
 ```
 
@@ -246,7 +246,7 @@ sudo journalctl -u discreet -f
 # Update
 cd /home/ubuntu/Discreet
 git pull
-cd client-next && npm run build && cd ..
+cd client && npm run build && cd ..
 cargo build --release
 sudo systemctl restart discreet
 ```

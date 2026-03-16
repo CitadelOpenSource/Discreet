@@ -6,7 +6,7 @@
 //   Content-Security-Policy:
 //     default-src 'self'
 //     script-src  'self' https://challenges.cloudflare.com
-//     style-src   'self' 'unsafe-inline'
+//     style-src   'self'
 //     img-src     'self' data: https:
 //     connect-src 'self' wss: https://api.discreetai.net
 //     frame-src   https://challenges.cloudflare.com
@@ -80,35 +80,23 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     );
 
     // ── Content-Security-Policy ─────────────────────────────────────────────
-    // Strict CSP for all responses. Cloudflare Turnstile requires script-src
-    // and frame-src allowances. connect-src allows the API and WSS.
-    let csp = if path.starts_with("/legacy") {
-        // Legacy client needs 'unsafe-inline' for in-browser Babel/JSX.
-        "default-src 'self'; \
-         script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; \
-         style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data: https:; \
-         connect-src 'self' wss: https://api.discreetai.net; \
-         frame-src https://challenges.cloudflare.com; \
-         font-src 'self'; \
-         object-src 'none'; \
-         base-uri 'self'; \
-         frame-ancestors 'none'"
-    } else {
-        "default-src 'self'; \
-         script-src 'self' https://challenges.cloudflare.com; \
-         style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data: https:; \
-         connect-src 'self' wss: https://api.discreetai.net; \
-         frame-src https://challenges.cloudflare.com; \
-         font-src 'self'; \
-         object-src 'none'; \
-         base-uri 'self'; \
-         frame-ancestors 'none'"
-    };
+    // Strict CSP for all responses. No unsafe-inline anywhere.
+    // Cloudflare Turnstile requires script-src and frame-src allowances.
+    // connect-src allows the API and WSS.
     h.insert(
         "Content-Security-Policy",
-        HeaderValue::from_str(csp).expect("valid CSP string"),
+        HeaderValue::from_static(
+            "default-src 'self'; \
+             script-src 'self' https://challenges.cloudflare.com; \
+             style-src 'self'; \
+             img-src 'self' data: https:; \
+             connect-src 'self' wss: https://api.discreetai.net; \
+             frame-src https://challenges.cloudflare.com; \
+             font-src 'self'; \
+             object-src 'none'; \
+             base-uri 'self'; \
+             frame-ancestors 'none'",
+        ),
     );
 
     // ── Strict-Transport-Security ────────────────────────────────────────────

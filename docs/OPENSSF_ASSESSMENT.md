@@ -74,7 +74,7 @@ Dependabot is configured for all package ecosystems.
 **Current state:**
 - `.github/dependabot.yml` configured for:
   - Cargo (Rust) — weekly, Monday
-  - npm (client-next) — weekly, Monday
+  - npm (client) — weekly, Monday
   - npm (mobile) — weekly, Monday
   - GitHub Actions — weekly, Monday
 - PRs auto-labeled by ecosystem (`dependencies`, `rust`, `frontend`, `mobile`, `ci`)

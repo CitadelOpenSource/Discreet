@@ -45,10 +45,10 @@ No API keys, passwords, tokens, or credentials in source files.
 All secrets come from environment variables or encrypted DB columns.
 If you see a secret in code, STOP and flag it immediately.
 
-### 5. Never modify the legacy client
-`client/` is the legacy monolith. It is SOURCE OF TRUTH for crypto
-parameters only. Never modify it. Never add features to it.
-All new work goes in `client-next/` (Vite React app).
+### 5. Never modify the archived legacy client
+`archive/legacy-client/` is the legacy monolith. It is SOURCE OF TRUTH
+for crypto parameters only. Never modify it. Never add features to it.
+All new work goes in `client/` (Vite React app).
 
 ### 6. Never commit with warnings
 `cargo clippy -- -D warnings` must pass before every commit.
@@ -91,7 +91,7 @@ WebSocket messages, query parameters, path parameters, JSON bodies.
 - Public functions have doc comments explaining purpose
 - Match arms are exhaustive — no `_ =>` catch-all unless justified
 
-### React Frontend (client-next/)
+### React Frontend (client/)
 - TypeScript strict mode — no `any` types unless interfacing with JS libs
 - Components are functional with hooks (no class components)
 - API calls use try/catch with user-visible error handling
@@ -164,8 +164,8 @@ NEVER degrade to a less-secure mode silently.
 ### File Structure:
 ```
 src/                    # Rust backend (44 modules)
-client-next/src/        # React/Vite frontend (active development)
-client/                 # Legacy client (NEVER MODIFY — reference only)
+client/src/             # React/Vite frontend (active development)
+archive/legacy-client/  # Legacy client (NEVER MODIFY — reference only)
 mobile/                 # React Native app
 desktop/                # Tauri desktop shell
 discreet-crypto/        # WASM MLS module
@@ -177,8 +177,8 @@ docs/internal/          # Private docs (gitignored)
 
 ### What Goes Where:
 - New backend module → `src/discreet_*.rs` + register in `src/lib.rs`
-- New React page → `client-next/src/pages/`
-- New React component → `client-next/src/components/`
+- New React page → `client/src/pages/`
+- New React component → `client/src/components/`
 - New migration → `migrations/NNN_*.sql` (next number in sequence)
 - New documentation → `docs/` (public) or `docs/internal/` (private)
 
@@ -192,7 +192,7 @@ cargo sqlx prepare          # Regenerate query cache
 cargo check                 # Compile check
 cargo test --lib            # Run unit tests (must be 68+ passing)
 cargo clippy -- -D warnings # Zero warnings
-cd client-next && npm run build && cd ..  # Frontend builds clean
+cd client && npm run build && cd ..  # Frontend builds clean
 ```
 
 ### What to Test:
@@ -280,8 +280,8 @@ These have happened in past sessions. Don't repeat them:
    available migration number. Conflicts break deployment.
    Current: check `migrations/` for the highest number.
 
-7. **Importing from legacy client** — `client/` is dead code for reference.
-   Never import from it. Never link to it. Never add to it.
+7. **Importing from legacy client** — `archive/legacy-client/` is dead code
+   for reference. Never import from it. Never link to it. Never add to it.
 
 8. **Console.log left in production** — Remove all console.log before commit.
    Use proper error boundaries and user-facing error messages instead.

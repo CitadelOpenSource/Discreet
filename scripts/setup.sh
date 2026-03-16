@@ -262,10 +262,10 @@ echo ""
 echo "[8/8] Building..."
 
 echo "  → Installing client dependencies..."
-(cd client-next && npm ci --silent)
+(cd client && npm ci --silent)
 
 echo "  → Building client..."
-(cd client-next && npm run build)
+(cd client && npm run build)
 
 echo ""
 echo "  → Building Rust server (release mode)..."
