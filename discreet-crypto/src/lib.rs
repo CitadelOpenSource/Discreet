@@ -110,4 +110,57 @@ mod tests {
         println!("   - Message encrypt/decrypt: ✅");
         println!("   - Key rotation (PCS): ✅");
     }
+
+    #[test]
+    fn test_mls_group_roundtrip() {
+        // 1) Create providers (each user needs independent storage)
+        let alice_provider = OpenMlsRustCrypto::default();
+        let bob_provider = OpenMlsRustCrypto::default();
+
+        // 2) Generate identity for Alice
+        let (alice_signer, alice_cred) =
+            identity::generate_identity(&alice_provider, "alice-id", "alice")
+                .expect("Alice identity failed");
+
+        // 3) Alice creates an MLS group
+        let mut alice_group = group::create_group(
+            &alice_provider, &alice_signer, &alice_cred, b"roundtrip-channel",
+        ).expect("Group creation failed");
+        assert_eq!(group::member_count(&alice_group), 1);
+
+        // 4) Generate identity for Bob
+        let (bob_signer, bob_cred) =
+            identity::generate_identity(&bob_provider, "bob-id", "bob")
+                .expect("Bob identity failed");
+
+        // 5) Bob creates a KeyPackage
+        let bob_kps = keypackage::generate_key_packages(
+            &bob_provider, &bob_cred, &bob_signer, 1,
+        ).expect("Bob KP generation failed");
+        let bob_kp = keypackage::deserialize_key_package(&bob_kps[0])
+            .expect("Bob KP deserialize failed");
+
+        // 6) Alice adds Bob → (commit, welcome)
+        let (_commit, welcome) = group::add_member(
+            &mut alice_group, &alice_provider, &alice_signer, bob_kp,
+        ).expect("Add Bob failed");
+        assert_eq!(group::member_count(&alice_group), 2);
+
+        // 7) Bob joins from welcome
+        let mut bob_group = group::join_from_welcome(&bob_provider, &welcome)
+            .expect("Bob join failed");
+        assert_eq!(group::member_count(&bob_group), 2);
+        assert_eq!(group::current_epoch(&bob_group), group::current_epoch(&alice_group));
+
+        // 8) Alice encrypts "Hello MLS"
+        let ciphertext = message::encrypt_text(
+            &mut alice_group, &alice_provider, &alice_signer, "Hello MLS",
+        ).expect("Encrypt failed");
+
+        // 9) Bob decrypts, assert eq
+        let decrypted = message::decrypt_text(
+            &mut bob_group, &bob_provider, &ciphertext,
+        ).expect("Decrypt failed");
+        assert_eq!(decrypted, "Hello MLS");
+    }
 }

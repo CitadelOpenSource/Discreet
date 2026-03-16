@@ -51,7 +51,7 @@ fn b64_decode(s: &str) -> Result<Vec<u8>, JsValue> {
 
 // ── Exported Functions ────────────────────────────────────────────────────
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "generate_identity")]
 pub fn init_identity(user_id: &str, username: &str) -> Result<String, JsValue> {
     let provider = &*PROVIDER;
     let (signer, credential) = identity::generate_identity(provider, user_id, username)
@@ -123,14 +123,8 @@ pub fn add_member(channel_id: &str, key_package_b64: &str) -> Result<String, JsV
         .map_err(|e| JsValue::from_str(&e))?;
 
     let provider = &*PROVIDER;
-    let (commit, welcome) = group::add_member(mls_group, provider, signer, kp_in)
+    let (commit_bytes, welcome_bytes) = group::add_member(mls_group, provider, signer, kp_in)
         .map_err(|e| JsValue::from_str(&e))?;
-
-    use openmls::prelude::tls_codec::Serialize as TlsSerialize;
-    let commit_bytes = commit.tls_serialize_detached()
-        .map_err(|e| JsValue::from_str(&format!("Commit serialize: {e}")))?;
-    let welcome_bytes = welcome.tls_serialize_detached()
-        .map_err(|e| JsValue::from_str(&format!("Welcome serialize: {e}")))?;
 
     Ok(serde_json::json!({
         "commit": b64_encode(&commit_bytes),
@@ -211,12 +205,8 @@ pub fn self_update(channel_id: &str) -> Result<String, JsValue> {
         .ok_or_else(|| JsValue::from_str(&format!("Group not found: {channel_id}")))?;
 
     let provider = &*PROVIDER;
-    let commit = group::self_update(mls_group, provider, signer)
+    let commit_bytes = group::self_update(mls_group, provider, signer)
         .map_err(|e| JsValue::from_str(&e))?;
-
-    use openmls::prelude::tls_codec::Serialize as TlsSerialize;
-    let commit_bytes = commit.tls_serialize_detached()
-        .map_err(|e| JsValue::from_str(&format!("Commit serialize: {e}")))?;
 
     Ok(b64_encode(&commit_bytes))
 }
