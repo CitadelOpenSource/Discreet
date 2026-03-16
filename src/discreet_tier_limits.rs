@@ -63,7 +63,7 @@ pub async fn check_server_create(
     db: &sqlx::PgPool,
     user_id: Uuid,
     tier: &str,
-) -> Result<(), crate::citadel_error::AppError> {
+) -> Result<(), crate::discreet_error::AppError> {
     let limits = get_limits(tier);
     let count = sqlx::query_scalar!(
         r#"SELECT COUNT(*) as "count!" FROM servers WHERE owner_id = $1"#,
@@ -73,7 +73,7 @@ pub async fn check_server_create(
     .await?;
 
     if count >= limits.max_servers {
-        return Err(crate::citadel_error::AppError::TierLimit(
+        return Err(crate::discreet_error::AppError::TierLimit(
             tier_limit_error("server", limits.max_servers, tier),
         ));
     }
@@ -85,7 +85,7 @@ pub async fn check_member_join(
     db: &sqlx::PgPool,
     server_id: Uuid,
     owner_tier: &str,
-) -> Result<(), crate::citadel_error::AppError> {
+) -> Result<(), crate::discreet_error::AppError> {
     let limits = get_limits(owner_tier);
     let count = sqlx::query_scalar!(
         r#"SELECT COUNT(*) as "count!" FROM server_members WHERE server_id = $1"#,
@@ -95,7 +95,7 @@ pub async fn check_member_join(
     .await?;
 
     if count >= limits.max_members_per_server {
-        return Err(crate::citadel_error::AppError::TierLimit(
+        return Err(crate::discreet_error::AppError::TierLimit(
             tier_limit_error("members per server", limits.max_members_per_server, owner_tier),
         ));
     }
@@ -106,11 +106,11 @@ pub async fn check_member_join(
 pub fn check_upload_size(
     bytes: usize,
     tier: &str,
-) -> Result<(), crate::citadel_error::AppError> {
+) -> Result<(), crate::discreet_error::AppError> {
     let limits = get_limits(tier);
     let max_bytes = limits.max_upload_mb as usize * 1024 * 1024;
     if bytes > max_bytes {
-        return Err(crate::citadel_error::AppError::TierLimit(
+        return Err(crate::discreet_error::AppError::TierLimit(
             tier_limit_error("upload size MB", limits.max_upload_mb, tier),
         ));
     }
@@ -122,7 +122,7 @@ pub async fn check_agent_create(
     db: &sqlx::PgPool,
     server_id: Uuid,
     owner_tier: &str,
-) -> Result<(), crate::citadel_error::AppError> {
+) -> Result<(), crate::discreet_error::AppError> {
     let limits = get_limits(owner_tier);
     let count = sqlx::query_scalar!(
         r#"SELECT COUNT(*) as "count!" FROM bot_configs WHERE server_id = $1"#,
@@ -132,7 +132,7 @@ pub async fn check_agent_create(
     .await?;
 
     if count >= limits.max_agents {
-        return Err(crate::citadel_error::AppError::TierLimit(
+        return Err(crate::discreet_error::AppError::TierLimit(
             tier_limit_error("agents per server", limits.max_agents, owner_tier),
         ));
     }

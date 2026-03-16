@@ -9,9 +9,9 @@ use axum::{extract::{Path, Query, State, Json}, http::StatusCode, response::Into
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
-use crate::citadel_platform_permissions::PlatformUser;
-use crate::citadel_platform_admin_handlers::require_staff_role;
+use crate::{discreet_auth::AuthUser, discreet_error::AppError, discreet_state::AppState};
+use crate::discreet_platform_permissions::PlatformUser;
+use crate::discreet_platform_admin_handlers::require_staff_role;
 
 const VALID_REASONS: &[&str] = &["spam", "harassment", "illegal_content", "other"];
 

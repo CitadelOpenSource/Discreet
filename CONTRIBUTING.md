@@ -1,98 +1,144 @@
 # Contributing to Discreet
 
-We're building an encrypted community platform — and we want your help.
+Thank you for your interest in contributing to Discreet. This project is an
+end-to-end encrypted community platform licensed under AGPL-3.0-or-later.
+Every contribution — code, documentation, bug reports, security research —
+makes the platform stronger for everyone.
 
-## Quick start
+We do not require a Contributor License Agreement (CLA). Your contributions
+are licensed under the same AGPL-3.0-or-later terms as the project.
+
+## Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Rust | 1.85+ | Backend server, WASM crypto module |
+| Node.js | 20+ | Vite frontend build |
+| Docker | Latest | PostgreSQL 16 and Redis 7 (via Compose) |
+| PostgreSQL | 16 | Primary database (runs in Docker) |
+| Redis | 7 | Rate limiting, caching, presence (runs in Docker) |
+
+Optional:
+- `wasm-pack` — for building the MLS crypto WASM module
+- `cargo-audit` — for dependency vulnerability scanning
+- `cargo-sqlx` — for offline query metadata (`cargo sqlx prepare`)
+
+## Getting Started
 
 ```bash
+# Clone the repository
 git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
+
+# Start PostgreSQL and Redis
 docker compose up -d
-cd client && npm install && npm run build && cd ..
-cargo build && cargo run
+
+# Apply database migrations
+for f in migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+
+# Build and run the backend
+cp .env.example .env   # Edit with your local settings
+cargo build
+cargo run
+
+# In a separate terminal — build the frontend
+cd client
+npm install
+npm run build
 ```
 
-Open `http://localhost:3000` and you're running.
+The server starts at `http://localhost:3000`. The Vite client is served at `/app`.
 
-## What we need help with
+## Branch Workflow
 
-**High impact, approachable:**
-- UI polish — the Vite client works but could look better
-- Translation files — we have 12 languages started in `client/src/i18n/`, most need native speaker review
-- Documentation improvements — typos, clarity, missing examples
-- Test coverage — we have compile-time SQL validation but need more integration tests
+Create a branch from `main` with a descriptive prefix:
 
-**Medium complexity:**
-- Desktop builds — Tauri is configured but needs production testing on macOS and Linux
-- Mobile polish — React Native app works on Android, needs iOS testing
-- Voice quality — WebRTC + SFrame E2EE works but could use optimization
-- Accessibility — screen reader support, keyboard navigation, ARIA labels
+| Prefix | Use case | Example |
+|--------|----------|---------|
+| `feat/` | New features | `feat/voice-noise-gate` |
+| `fix/` | Bug fixes | `fix/websocket-reconnect` |
+| `security/` | Security improvements | `security/input-validation` |
+| `docs/` | Documentation only | `docs/threat-model-update` |
+| `deps/` | Dependency updates | `deps/openmls-0.8` |
+| `quality/` | Refactoring, cleanup | `quality/extract-message-list` |
 
-**Deep work (experienced contributors):**
-- MLS integration — wiring OpenMLS for real key exchange (currently using PBKDF2 fallback)
-- Post-quantum crypto — ML-KEM and ML-DSA types are defined, need implementation
-- Federation — types exist, protocol needs design
-- Proximity mesh — BLE + Wi-Fi Direct encrypted communication (P1-P8 in roadmap)
-
-## How to contribute
-
-1. Fork the repo
-2. Create a branch: `git checkout -b fix/your-thing`
-3. Make your changes
-4. Test locally: `cargo check && cd client && npm run build`
-5. Open a PR with a clear description of what changed and why
-
-## Code style
-
-**Rust:**
-- All files are prefixed `citadel_` (historical, we're keeping it)
-- Handlers return `Result<impl IntoResponse, AppError>`
-- SQL uses `sqlx::query!` compile-time macros — your database must be running for `cargo check`
-- No `unwrap()` in handlers. Ever. Use `?` or handle the error.
-
-**TypeScript:**
-- Single-file components in `client/src/components/`
-- State management via React hooks (useState, useEffect, useRef)
-- Theme constants from `theme.ts` (T.bg, T.sf, T.tx, T.ac)
-- No external state libraries — keep it simple
-
-**Commits:**
-- One logical change per commit
-- Prefix: `feat:`, `fix:`, `security:`, `docs:`, `refactor:`, `deps:`
-- Example: `feat: add Korean translation file`
-
-## Architecture overview
-
+Commit messages follow `type: description` format:
 ```
-Discreet/
-├── src/                  → Rust/Axum backend (44 modules, 184+ routes)
-├── client/          → Vite + React web client
-├── mobile/               → React Native (Android + iOS)
-├── desktop/              → Tauri v2 (Windows/macOS/Linux)
-├── discreet-crypto/      → MLS + SFrame WASM crypto library
-└── migrations/           → PostgreSQL schema (33+ migrations)
+feat: notification inbox with unread count
+fix: timezone rendering in event reminders
+security: input validation on all auth endpoints
+deps: redis 1.0 + audit exception for rsa
 ```
 
-The server stores only ciphertext. It cannot decrypt messages, files, or AI agent conversations.
+## Code Standards
 
-## Security
+### Rust Backend
 
-If you find a vulnerability, **do not open a public issue.** Email security@discreetai.net. We take this seriously — see SECURITY.md for details.
+- All handlers return `Result<impl IntoResponse, AppError>`
+- All database queries use `sqlx::query!` or `sqlx::query_as!` macros (compile-time validated)
+- No `.unwrap()` in handler code — use `?` with proper error types
+- No `.unwrap_or_default()` to silence type mismatches — fix the root cause
+- Errors logged with `tracing::{error, warn, info, debug}` — no `println!`
+- `cargo clippy -- -D warnings` must pass with zero warnings
 
-When contributing crypto-related code:
-- Never introduce new encryption without discussing in an issue first
-- Don't weaken existing encryption parameters
-- Document any trust boundary changes
-- The legacy client (`client/index.html`) is the source of truth for encryption constants — don't change them
+### Cryptography
 
-## Developer accounts
+- All key derivation uses HKDF-SHA256 — no raw SHA-256 hashing for key material
+- All AES-256-GCM ciphertexts include a 32-byte key commitment tag
+- Commitment info string: append `:commit` to the HKDF info parameter
+- Wire format: `[commitment(32) | iv(12) | ciphertext+tag]`
+- No custom cryptographic primitives — use audited libraries only
+- WASM crypto module: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`
 
-If you need a developer account for testing, reach out to the maintainers. Dev accounts have wrench badges and access to debug panels.
+### React Frontend (client/)
+
+- TypeScript strict mode — no `any` types unless interfacing with JS libraries
+- Functional components with hooks (no class components)
+- API calls wrapped in try/catch with user-visible error handling
+- Loading states for every async operation
+- No `console.log` in committed code
+
+### CSS / Styling
+
+- Use existing CSS variables and theme system (`T.ac`, `T.bg`, `T.sf`, etc.)
+- Dark theme is default — test all changes in dark mode first
+
+## Testing
+
+### Before Every Pull Request
+
+```bash
+# Backend
+cargo sqlx prepare          # Regenerate query cache
+cargo check                 # Compile check
+cargo test --lib            # Unit tests
+cargo clippy -- -D warnings # Zero warnings
+
+# Frontend
+cd client && npm run build  # Must complete with zero errors
+```
+
+### What to Test
+
+- Every crypto function: encrypt/decrypt roundtrip, wrong key rejection
+- Every input validator: valid input passes, invalid input rejected
+- Every new module: at minimum 3 unit tests (happy path, error path, edge case)
+- Rate limiters: verify they fail-closed when Redis is unavailable
+
+## Security Reporting
+
+If you discover a security vulnerability, please report it responsibly:
+
+- **Email:** security@discreetai.net
+- **PGP key:** Available at https://discreetai.net/.well-known/pgp-key.txt
+- **Do not** open a public GitHub issue for security vulnerabilities
+- We aim to acknowledge reports within 48 hours and provide a fix within 7 days
+
+See [SECURITY.md](SECURITY.md) for our full disclosure policy.
 
 ## License
 
-AGPL-3.0-or-later. By contributing, you agree that your contributions will be licensed under the same terms.
+Discreet is licensed under [AGPL-3.0-or-later](LICENSE). By contributing,
+you agree that your contributions will be licensed under the same terms.
 
-## Questions?
-
-Open a discussion on GitHub or reach out to the maintainers. We're friendly.
+Copyright (C) 2026 Citadel Open Source LLC.

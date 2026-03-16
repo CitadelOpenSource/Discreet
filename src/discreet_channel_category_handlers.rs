@@ -12,7 +12,7 @@ use axum::{extract::{Path, State, Json}, http::StatusCode, response::IntoRespons
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
+use crate::{discreet_auth::AuthUser, discreet_error::AppError, discreet_state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCategoryRequest {
