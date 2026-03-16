@@ -25,14 +25,20 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     target: 'esnext',
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 500,
     rollupOptions: {
       external: ['discreet-crypto'],
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-icons': ['lucide-react'],
-          'crypto': ['./src/crypto/mls.ts'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router'))
+              return 'vendor-react';
+            if (id.includes('lucide') || id.includes('react-icons'))
+              return 'vendor-icons';
+            if (id.includes('i18n'))
+              return 'vendor-i18n';
+            return 'vendor';
+          }
         },
       },
     },
