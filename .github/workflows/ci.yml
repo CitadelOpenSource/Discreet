@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: citadel
-          POSTGRES_PASSWORD: citadel
-          POSTGRES_DB: citadel
+          POSTGRES_USER: discreet
+          POSTGRES_PASSWORD: discreet
+          POSTGRES_DB: discreet
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U citadel -d citadel"
+          --health-cmd "pg_isready -U discreet -d discreet"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -40,7 +40,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgres://citadel:citadel@localhost:5432/citadel
+      DATABASE_URL: postgres://discreet:discreet@localhost:5432/discreet
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-test-secret-at-least-32-bytes-long-for-jwt-hmac
       SQLX_OFFLINE: "true"

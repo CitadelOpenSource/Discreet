@@ -4,7 +4,12 @@
 -- drag channels into them. These are per-user and per-server —
 -- each user sees their own category organization.
 
-CREATE TABLE IF NOT EXISTS channel_categories (
+-- Drop existing tables (base schema creates channel_categories without user_id).
+-- Drop items first due to foreign key constraint on channel_categories.
+DROP TABLE IF EXISTS channel_category_items CASCADE;
+DROP TABLE IF EXISTS channel_categories CASCADE;
+
+CREATE TABLE channel_categories (
     id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     server_id   UUID    NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
