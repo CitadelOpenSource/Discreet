@@ -45,11 +45,14 @@ import { ThreadView, type ParentMsg } from './components/ThreadView';
 import { DiscoverPanel } from './components/DiscoverPanel';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EventsPanel } from './components/EventsPanel';
+import { VoicePanel } from './components/VoicePanel';
+import { MessageList } from './components/MessageList';
+import { MessageInput } from './components/MessageInput';
 import { LeaderboardPanel, RankBadge } from './components/Gamification';
 import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { useVoice } from './hooks/useVoice';
 import { useTimezone, detectedTimezone } from './hooks/TimezoneContext';
-import { SlashSuggestions, processSlashCommand, type SlashContext } from './hooks/useSlashCommands';
+import { processSlashCommand, type SlashContext } from './hooks/useSlashCommands';
 import { filterMessage, getProfanityLevel } from './utils/profanityFilter';
 import { playNotifSound } from './utils/sounds';
 import { sanitizeInput, validateMessageLength, rateLimitCheck } from './utils/security';
@@ -2098,65 +2101,26 @@ export default function App() {
         </div>
         {/* Voice Panel */}
         {voiceChannel && (
-          <div style={{ padding: '8px 10px', borderTop: `1px solid ${T.bd}`, background: T.bg }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: vc.speaking ? '#43b581' : T.ac, boxShadow: vc.speaking ? '0 0 0 2px #43b581, 0 0 8px rgba(67,181,129,0.6)' : 'none', transition: 'box-shadow .2s, background .2s' }} />
-              <span style={{ fontSize: 11, color: T.ac, fontWeight: 600 }}>Voice Connected</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: T.mt, marginBottom: 6 }}>
-              <span># {voiceChannel.name}</span>
-              {vc.sframeActive ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(67,181,129,0.15)', color: '#43b581', fontWeight: 700 }}>
-                  <I.ShieldCheck s={9} /> E2EE Voice
-                </span>
-              ) : (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#faa61a', fontWeight: 700 }}>
-                  <I.ShieldAlert s={9} /> Encrypted
-                </span>
-              )}
-              {vc.latencyMs > 0 && (
-                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: vc.latencyMs > 150 ? 'rgba(255,71,87,0.15)' : vc.latencyMs > 80 ? 'rgba(250,166,26,0.15)' : 'rgba(67,181,129,0.15)', color: vc.latencyMs > 150 ? '#ff4757' : vc.latencyMs > 80 ? '#faa61a' : '#43b581', fontWeight: 700 }}>
-                  {vc.latencyMs}ms
-                </span>
-              )}
-              {vc.serverMuted && (
-                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,71,87,0.15)', color: '#ff4757', fontWeight: 700 }}>
-                  Server Muted
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <div onClick={() => vc.toggleMute()} style={{ flex: 1, padding: '5px 0', textAlign: 'center', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: vc.muted ? 'rgba(255,71,87,0.15)' : T.sf2, color: vc.muted ? T.err : T.mt, border: `1px solid ${vc.muted ? 'rgba(255,71,87,0.3)' : T.bd}` }}>
-                {vc.muted ? '🔇 Muted' : '🎤 Mic'}
-              </div>
-              <div onClick={() => vc.toggleDeafen()} style={{ flex: 1, padding: '5px 0', textAlign: 'center', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: vc.deafened ? 'rgba(255,71,87,0.15)' : T.sf2, color: vc.deafened ? T.err : T.mt, border: `1px solid ${vc.deafened ? 'rgba(255,71,87,0.3)' : T.bd}` }}>
-                {vc.deafened ? '🔇 Deaf' : '🎧 Audio'}
-              </div>
-              <div onClick={() => vc.videoEnabled ? vc.stopVideo() : vc.startVideo()} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: vc.videoEnabled ? `${T.ac}22` : T.sf2, color: vc.videoEnabled ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
-                {vc.videoEnabled ? '📹 Cam' : '📹 Cam'}
-              </div>
-              <div onClick={() => vc.screenSharing ? vc.stopScreenShare() : vc.startScreenShare()} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: vc.screenSharing ? `${T.ac}22` : T.sf2, color: vc.screenSharing ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
-                {vc.screenSharing ? '🖥️ Live' : '🖥️ Share'}
-              </div>
-              {/* Go Live / Stop Streaming */}
-              {myStreamChannelId === voiceChannel?.id ? (
-                <div onClick={stopGoLive} title="Stop streaming" style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 700, background: 'rgba(255,71,87,0.2)', color: T.err, border: '1px solid rgba(255,71,87,0.4)' }}>
-                  ⏹ Stop
-                </div>
-              ) : (
-                <div onClick={startGoLive} title="Go Live (RTMP to OBS)" style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 700, background: 'rgba(255,71,87,0.08)', color: '#ff4757', border: '1px solid rgba(255,71,87,0.3)' }}>
-                  🔴 Live
-                </div>
-              )}
-              <div onClick={leaveVoice} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.3)' }}>
-                ✕
-              </div>
-            </div>
-            {/* Audio level bar */}
-            <div style={{ marginTop: 4, height: 3, background: T.sf2, borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(vc.audioLevel * 500, 100)}%`, background: vc.speaking ? T.ac : T.mt, transition: 'width 0.1s', borderRadius: 2 }} />
-            </div>
-          </div>
+          <VoicePanel
+            channelName={voiceChannel.name}
+            speaking={vc.speaking}
+            muted={vc.muted}
+            deafened={vc.deafened}
+            videoEnabled={vc.videoEnabled}
+            screenSharing={vc.screenSharing}
+            sframeActive={vc.sframeActive}
+            latencyMs={vc.latencyMs}
+            audioLevel={vc.audioLevel}
+            serverMuted={vc.serverMuted}
+            isStreaming={myStreamChannelId === voiceChannel?.id}
+            onToggleMute={() => vc.toggleMute()}
+            onToggleDeafen={() => vc.toggleDeafen()}
+            onToggleVideo={() => vc.videoEnabled ? vc.stopVideo() : vc.startVideo()}
+            onToggleScreenShare={() => vc.screenSharing ? vc.stopScreenShare() : vc.startScreenShare()}
+            onStartGoLive={startGoLive}
+            onStopGoLive={stopGoLive}
+            onLeave={leaveVoice}
+          />
         )}
 
         {/* User Bar */}
@@ -2825,422 +2789,113 @@ export default function App() {
               peers={Array.from(vc.streams.keys()).map(id => ({ id, name: getName(id), speaking: false }))}
             />
           )}
-          {(() => {
-            const MSG_H = msgDensity === 'compact' ? 38 : msgDensity === 'cozy' ? 64 : 52;
-            const BUFFER = 20;
-            const containerH = msgScrollRef.current?.clientHeight || 600;
-            const startIdx = Math.max(0, Math.floor(msgScrollTop / MSG_H) - BUFFER);
-            const endIdx = Math.min(messages.length, Math.ceil((msgScrollTop + containerH) / MSG_H) + BUFFER);
-            const visibleMessages = messages.slice(startIdx, endIdx);
-            return (
-            <div ref={msgScrollRef} onScroll={async (e) => {
-              const el = e.currentTarget;
-              setMsgScrollTop(el.scrollTop);
-              if (el.scrollTop < 50 && messages.length >= 50 && curChannel && !loadingMore) {
-                setLoadingMore(true);
-                try {
-                  const older = await api.getMessagesBatch(curChannel.id, 50, messages[0]?.id);
-                  if (Array.isArray(older) && older.length > 0) {
-                    const prevH = el.scrollHeight;
-                    const decOlder = await Promise.all(older.map(async (m: any) => ({ ...m, text: await dec(curChannel.id, m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' })));
-                    setMessages(prev => [...decOlder.reverse(), ...prev]);
-                    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight - prevH; });
-                  }
-                } catch {} setLoadingMore(false);
+          <MessageList
+            messages={messages}
+            currentUserId={api.userId || ''}
+            channelId={curChannel.id}
+            channelName={curChannel.name}
+            serverId={curServer?.id}
+            isReadOnly={!!curChannel.read_only}
+            msgDensity={msgDensity}
+            chatFontSize={chatFontSize}
+            showLinkPreviews={privacyPrefs.show_link_previews}
+            highlightedMsg={highlightedMsg}
+            failedMessages={failedMessages}
+            bookmarkedIds={bookmarkedIds}
+            reactions={reactions}
+            ackCounts={ackCounts}
+            pollVotes={pollVotes}
+            serverEmoji={serverEmoji}
+            joinedServerIds={servers.map(s => s.id)}
+            agentDisclosure={curChannel && agentDisclosures[curChannel.id] ? agentDisclosures[curChannel.id].disclosure_text : null}
+            loadingMessages={loadingMessages}
+            showMessagesSkeleton={showMessagesSkeleton}
+            loadingMore={loadingMore}
+            getName={getName}
+            getRawUsername={(uid) => rawUsernameMap[uid] || ''}
+            renderPlatformBadge={renderPlatformBadge}
+            getMembers={() => members.map((m: any) => ({ user_id: m.user_id, username: m.username, display_name: m.display_name }))}
+            getProfanityServerId={() => curServer?.id || null}
+            onScroll={setMsgScrollTop}
+            onLoadMore={async () => {
+              if (!curChannel || loadingMore) return;
+              setLoadingMore(true);
+              try {
+                const older = await api.getMessagesBatch(curChannel.id, 50, messages[0]?.id);
+                if (Array.isArray(older) && older.length > 0) {
+                  const decOlder = await Promise.all(older.map(async (m: any) => ({ ...m, text: await dec(curChannel.id, m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' })));
+                  setMessages(prev => [...decOlder.reverse(), ...prev]);
+                }
+              } catch {} setLoadingMore(false);
+            }}
+            onContextMenu={(e, m) => openMsgCtx(e, m)}
+            onProfileClick={(userId, pos) => setProfileCard({ userId, pos })}
+            onReply={(m) => { setReplyTo(m); inputRef.current?.focus(); }}
+            onReact={(msgId, emoji) => addReaction(msgId, emoji)}
+            onToggleReaction={(msgId, emoji) => toggleReaction(msgId, emoji)}
+            onEmojiTarget={(msgId) => setEmojiTarget(msgId)}
+            onPin={async (msgId) => { if (curServer && curChannel) { try { await api.pinMessage(curServer.id, curChannel.id, msgId); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } } }}
+            onBookmark={(m) => toggleBookmark(m)}
+            onReport={(m) => setReportTarget(m)}
+            onRetryFailed={(id) => retryFailedMessage(id)}
+            onAck={async (msgId) => { try { const res = await api.ackMessage(msgId); setAckCounts(p => ({ ...p, [msgId]: { ack: res.ack_count, total: res.member_count, myAck: true } })); } catch {} }}
+            onVotePoll={(pollId, idx, prev) => { setPollVotes(p => ({ ...p, [pollId]: prev === idx ? null : idx })); api.votePoll(pollId, idx).catch(() => setPollVotes(p => ({ ...p, [pollId]: prev }))); }}
+            onOpenThread={async (m) => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const d = await Promise.all((r as any[]).map(async (rm: any) => { try { rm.text = await (window as any).__decryptMsg?.(curChannel!.id, rm.content_ciphertext) ?? rm.content_ciphertext; } catch { rm.text = rm.content_ciphertext; } return rm; })); setThreadReplies(d); } catch { setThreadReplies([]); } }}
+            onDismissDisclosure={() => { if (curChannel) setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; }); }}
+            onJoinedServer={loadServers}
+            msgEndRef={msgEndRef}
+          />
+
+          <MessageInput
+            value={msgInput}
+            onChange={setMsgInput}
+            onSend={sendMessage}
+            onFileUpload={async (file) => {
+              if (!tierLimits.canUpload) { if (me?.is_guest) { setUpgradeFeature('upload files'); } else { setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); } return; }
+              if (!checkStorageLimit(me, file.size)) {
+                const usedMB = Math.round(parseInt(localStorage.getItem('d_storage_used_bytes') || '0', 10) / 1024 / 1024);
+                setToast(`Storage limit reached (${usedMB} MB / ${tierLimits.maxStorageMB} MB used). Upgrade to upload more files.`);
+                setTimeout(() => setToast(''), 5000); return;
               }
-            }} className={`density-${msgDensity}`} role="log" aria-live="polite" aria-label="Message history" style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {loadingMore && (
-              <div style={{ padding: '4px 0' }}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 16px' }}>
-                    <SkeletonCircle size={36} />
-                    <div style={{ flex: 1, paddingTop: 2 }}>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                        <SkeletonBar w={`${50 + (i * 19) % 50}px`} h={12} mb={0} />
-                      </div>
-                      <SkeletonBar w={`${30 + (i * 23) % 50}%`} h={13} mb={0} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {curChannel && agentDisclosures[curChannel.id] && (
-              <div style={{ background: '#1a1a2e', borderLeft: '3px solid #f0b232', borderRadius: 12, padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <span style={{ fontSize: 14, flexShrink: 0 }}>🛡️</span>
-                <span style={{ flex: 1, fontSize: 13, color: '#e0e0e0', lineHeight: 1.5 }}>
-                  {agentDisclosures[curChannel.id].disclosure_text}
-                </span>
-                <span
-                  onClick={() => setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; })}
-                  title="Dismiss"
-                  style={{ cursor: 'pointer', color: '#888', fontSize: 15, flexShrink: 0, lineHeight: 1, paddingTop: 1 }}
-                >✕</span>
-              </div>
-            )}
-            {showMessagesSkeleton && messages.length === 0 && <MessageSkeleton count={8} />}
-            {!loadingMessages && !showMessagesSkeleton && messages.length === 0 && (
-              <div key={channelFadeKey} style={{ textAlign: 'center', padding: '60px 20px', color: T.mt, animation: 'fadeIn 0.25s ease' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Hash s={28} /></div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Welcome to #{curChannel?.name}</div>
-                <div style={{ fontSize: 13, color: T.mt, marginTop: 6, lineHeight: 1.5 }}>
-                  This is the start of <strong style={{ color: T.tx }}>#{curChannel?.name}</strong>. Send the first message!
-                </div>
-                <div style={{ fontSize: 11, color: T.mt, marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><I.Lock s={10} /> Messages are end-to-end encrypted</div>
-              </div>
-            )}
-            {messages.length > 0 && <div style={{ height: startIdx * MSG_H }} />}
-            {visibleMessages.map((m, vi) => {
-              const idx = startIdx + vi;
-              // Date separator
-              const prevMsg = idx > 0 ? messages[idx - 1] : null;
-              const curDateKey = tzCtx.formatDate(m.created_at);
-              const showDateSep = !prevMsg || tzCtx.formatDate(prevMsg.created_at) !== curDateKey;
-
-              // Profanity filter (per-server, level from localStorage)
-              const profanityLevel = curServer ? getProfanityLevel(curServer.id) : 'off';
-              const msgText = filterMessage(m.text || m.content_ciphertext, profanityLevel);
-
-              // Mention handlers for Markdown component
-              const onMention = (username: string, e: React.MouseEvent) => {
-                const mentioned = members.find(u => u.username === username || u.display_name === username);
-                if (mentioned) setProfileCard({ userId: mentioned.user_id, pos: { x: e.clientX, y: e.clientY } });
-              };
-              const mentionStyle = (username: string): React.CSSProperties => {
-                const mentioned = members.find(u => u.username === username || u.display_name === username);
-                const isSelf = mentioned?.user_id === api.userId;
-                return { background: isSelf ? 'rgba(0,212,170,0.2)' : 'rgba(88,101,242,0.2)', color: isSelf ? T.ac : '#5865F2', padding: '0 3px', borderRadius: 3, cursor: 'pointer', fontWeight: 600 };
-              };
-
-              // Auto-reply system message — gray italic, no avatar
-              if (m.is_auto_reply) {
-                return (
-                  <div key={m.id} style={{ padding: '2px 16px 2px 62px', fontSize: 13, color: T.mt, fontStyle: 'italic' }}>
-                    {m.authorName || getName(m.author_id)} is away: {m.text}
-                  </div>
-                );
+              try { await api.uploadFile(curChannel.id, file); addStorageUsedBytes(file.size); await loadMessages(curChannel); } catch {}
+            }}
+            onTyping={() => {
+              if (privacyPrefs.show_typing_indicator && Date.now() - typingRef.current > 3000 && curServer && curChannel) {
+                typingRef.current = Date.now();
+                api.startTyping(curServer.id, curChannel.id).catch(() => {});
               }
-
-              return (
-                <React.Fragment key={m.id}>
-                {showDateSep && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', margin: '4px 0' }}>
-                    <div style={{ flex: 1, height: 1, background: T.bd }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: T.mt }}>{tzCtx.dateDividerLabel(m.created_at)}</span>
-                    <div style={{ flex: 1, height: 1, background: T.bd }} />
-                  </div>
-                )}
-                <div className="msg-row" data-msg-id={m.id} onContextMenu={e => openMsgCtx(e, m)} style={{ display: 'flex', gap: msgDensity === 'compact' ? 6 : msgDensity === 'cozy' ? 12 : 10, padding: msgDensity === 'compact' ? '1px 16px' : msgDensity === 'cozy' ? '6px 16px' : '4px 16px', position: 'relative', background: m.priority === 'urgent' ? 'rgba(255,107,53,0.08)' : m.priority === 'important' ? 'rgba(250,166,26,0.06)' : highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(api.userId) ? 'rgba(0,212,170,0.06)' : 'transparent'), transition: 'background .15s ease', borderLeft: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === api.userId ? `2px solid ${T.ac}44` : '2px solid transparent' }}
-                  onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
-                  onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}>
-                <div className="msg-avatar" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer', flexShrink: 0 }}>
-                  <Av name={getName(m.author_id)} size={msgDensity === 'compact' ? 28 : msgDensity === 'cozy' ? 44 : 36} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Reply reference */}
-                  {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingLeft: 12, borderLeft: `2px solid ${T.bd}` }}>↩ replying to a message</div>}
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span className="msg-name" onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} title={rawUsernameMap[m.author_id] || ''} style={{ fontWeight: 600, fontSize: msgDensity === 'compact' ? 12 : 14, color: m.author_id === api.userId ? T.ac : T.tx, cursor: 'pointer' }}>{getName(m.author_id)}</span>
-                    {renderPlatformBadge(m.author_id)}
-                    {m.priority === 'urgent' && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,107,53,0.2)', color: '#ff6b35' }}>URGENT</span>}
-                    {m.priority === 'important' && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.2)', color: '#faa61a' }}>IMPORTANT</span>}
-                    {msgDensity === 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 9, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
-                    <span style={{ flex: 1 }} />
-                    {msgDensity !== 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
-                  </div>
-                  <div className="msg-text" style={{ fontSize: chatFontSize, lineHeight: msgDensity === 'compact' ? 1.3 : msgDensity === 'cozy' ? 1.6 : 1.5, wordBreak: 'break-word', opacity: failedMessages[m.id] ? 0.5 : 1 }}><Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} /></div>
-                  {failedMessages[m.id] && (
-                    <div onClick={() => retryFailedMessage(m.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', color: T.err, fontSize: 11, cursor: 'pointer', fontWeight: 600 }} title="Click to retry sending">
-                      ⚠ Failed — click to retry
-                    </div>
-                  )}
-                  {/* Urgent message acknowledge bar */}
-                  {m.priority === 'urgent' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.2)' }}>
-                      {ackCounts[m.id] ? (
-                        <span style={{ fontSize: 11, color: '#ff6b35', fontWeight: 600 }}>
-                          {ackCounts[m.id].ack}/{ackCounts[m.id].total} acknowledged
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: T.mt }}>Acknowledgement required</span>
-                      )}
-                      <span style={{ flex: 1 }} />
-                      {(!ackCounts[m.id] || !ackCounts[m.id].myAck) && m.author_id !== api.userId && (
-                        <button onClick={async () => {
-                          try {
-                            const res = await api.ackMessage(m.id);
-                            setAckCounts(p => ({ ...p, [m.id]: { ack: res.ack_count, total: res.member_count, myAck: true } }));
-                          } catch {}
-                        }} style={{ padding: '3px 12px', borderRadius: 5, border: 'none', background: '#ff6b35', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Acknowledge</button>
-                      )}
-                      {ackCounts[m.id]?.myAck && <span style={{ fontSize: 10, color: '#3ba55d' }}>✓ Acknowledged</span>}
-                    </div>
-                  )}
-                  {/* Important message indicator */}
-                  {m.priority === 'important' && (
-                    <div style={{ fontSize: 10, color: '#faa61a', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      ⚠ Important message
-                    </div>
-                  )}
-                  {/* Invite previews */}
-                  {(msgText.match(/https?:\/\/[^\s<>]*\/invite\/[A-Za-z0-9]+\/?/g) || []).map((invUrl: string, i: number) => (
-                    <InvitePreview key={`inv-${m.id}-${i}`} url={invUrl} joinedServerIds={servers.map(s => s.id)} onJoined={loadServers} />
-                  ))}
-                  {/* Attachments */}
-                  {(m as any).attachments?.map((a: any) => (
-                    <div key={a.id || a.url} style={{ marginTop: 4 }}>
-                      {a.content_type?.startsWith('image/') ? (
-                        <img src={a.url} alt={a.filename} style={{ maxWidth: 300, maxHeight: 200, borderRadius: 8 }} />
-                      ) : (
-                        <a href={a.url} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: T.sf2, borderRadius: 6, border: `1px solid ${T.bd}`, color: T.ac, fontSize: 12, textDecoration: 'none' }}>
-                          <I.Download /> {a.filename || 'Download'} {a.size ? `(${(a.size / 1024).toFixed(0)}KB)` : ''}
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                  {/* Poll */}
-                  {(m as any).poll && (() => {
-                    const poll = (m as any).poll;
-                    const opts: string[] = poll.options || [];
-                    const serverCounts: number[] = poll.votes || poll.vote_counts || opts.map(() => 0);
-                    const myVote: number | null = poll.id in pollVotes ? pollVotes[poll.id] : (poll.my_vote ?? poll.user_vote ?? null);
-                    // Optimistically adjust counts when local vote differs from server
-                    const counts = serverCounts.map((c, i) => {
-                      const serverVote = poll.my_vote ?? poll.user_vote ?? null;
-                      let adj = c;
-                      if (poll.id in pollVotes) {
-                        if (serverVote === i && myVote !== i) adj -= 1;       // removed vote from this option
-                        if (serverVote !== i && myVote === i) adj += 1;       // added vote to this option
-                      }
-                      return Math.max(0, adj);
-                    });
-                    const total = counts.reduce((a, b) => a + b, 0);
-                    return (
-                      <div style={{ marginTop: 8, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, padding: 12, maxWidth: 380 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 10 }}>📊 {poll.question}</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {opts.map((opt: string, i: number) => {
-                            const count = counts[i] || 0;
-                            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                            const isVoted = myVote === i;
-                            return (
-                              <div key={i} onClick={async () => {
-                                const prev = myVote;
-                                const next = isVoted ? null : i;
-                                setPollVotes(p => ({ ...p, [poll.id]: next }));
-                                try { await api.votePoll(poll.id, i); } catch { setPollVotes(p => ({ ...p, [poll.id]: prev })); }
-                              }} style={{ cursor: 'pointer', borderRadius: 6, border: `1px solid ${isVoted ? T.ac : T.bd}`, padding: '7px 10px', position: 'relative', overflow: 'hidden', transition: 'border-color .15s' }}
-                                onMouseEnter={e => { if (!isVoted) e.currentTarget.style.borderColor = `${T.ac}88`; }}
-                                onMouseLeave={e => { if (!isVoted) e.currentTarget.style.borderColor = T.bd; }}>
-                                {/* Progress bar fill */}
-                                <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pct}%`, background: isVoted ? `${T.ac}22` : `${T.mt}18`, borderRadius: 6, transition: 'width .4s ease' }} />
-                                <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                                  <span style={{ fontSize: 13, color: isVoted ? T.ac : T.tx, fontWeight: isVoted ? 600 : 400 }}>
-                                    {isVoted && <span style={{ marginRight: 4 }}>✓</span>}{opt}
-                                  </span>
-                                  <span style={{ fontSize: 11, color: T.mt, whiteSpace: 'nowrap' }}>{count} · {pct}%</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{ fontSize: 10, color: T.mt, marginTop: 8 }}>
-                          {total} vote{total !== 1 ? 's' : ''}
-                          {poll.expires_at ? ` · ends ${tzCtx.formatDate(poll.expires_at, { month: 'short', day: 'numeric' })}` : ''}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {/* URL Previews */}
-                  {privacyPrefs.show_link_previews && m.text && <LinkPreview text={msgText} />}
-                  {/* Reactions */}
-                  {reactions[m.id]?.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-                      {Object.entries(reactions[m.id].reduce((acc: any, r: any) => { acc[r.emoji] = (acc[r.emoji] || 0) + 1; return acc; }, {})).map(([emoji, count]) => {
-                        const mine = (reactions[m.id] || []).some(r => r.emoji === emoji && r.user_id === api.userId);
-                        return (
-                          <span key={emoji} onClick={() => toggleReaction(m.id, emoji)} title={mine ? 'Remove reaction' : 'Add reaction'} style={{ padding: '1px 6px', background: mine ? `${T.ac}22` : T.sf2, borderRadius: 4, fontSize: 12, cursor: 'pointer', border: `1px solid ${mine ? T.ac : T.bd}`, color: mine ? T.ac : T.tx, fontWeight: mine ? 600 : 400, transition: 'background .1s, border-color .1s' }}>
-                            {emoji} {count as number}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Thread reply count badge */}
-                  {(m.reply_count ?? 0) > 0 && (
-                    <div onClick={async () => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const dec = await Promise.all((r as any[]).map(async (rm: any) => { try { rm.text = await (window as any).__decryptMsg?.(curChannel!.id, rm.content_ciphertext) ?? rm.content_ciphertext; } catch { rm.text = rm.content_ciphertext; } return rm; })); setThreadReplies(dec); } catch { setThreadReplies([]); } }}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 8px', background: `${T.ac}14`, borderRadius: 8, cursor: 'pointer', fontSize: 11, color: T.ac, fontWeight: 600, border: `1px solid ${T.ac}22`, transition: 'background .15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = `${T.ac}22`}
-                      onMouseLeave={e => e.currentTarget.style.background = `${T.ac}14`}>
-                      <I.Reply /> {m.reply_count} {m.reply_count === 1 ? 'reply' : 'replies'}
-                    </div>
-                  )}
-                </div>
-                {/* Quick react bar on hover */}
-                <div className="msg-actions" style={{ position: 'absolute', top: -4, right: 16, display: 'none', gap: 2, background: T.sf, borderRadius: 4, border: `1px solid ${T.bd}`, padding: 2, zIndex: 10 }}>
-                  {getQuickReact().map(em => (
-                    <span key={em} onClick={() => addReaction(m.id, em)} style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 14 }} title={em}>{em}</span>
-                  ))}
-                  <span onClick={() => setEmojiTarget(m.id)} style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 12, color: T.mt }} title="More reactions">＋</span>
-                  <span style={{ width: 1, background: T.bd, margin: '0 2px' }} />
-                  <span onClick={() => { setReplyTo(m); inputRef.current?.focus(); }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Reply"><I.Reply /></span>
-                  {curServer && curChannel && <span onClick={async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } }} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Pin">📌</span>}
-                  <span onClick={() => toggleBookmark(m)} style={{ cursor: 'pointer', padding: '2px 4px', color: bookmarkedIds.has(m.id) ? T.ac : T.mt, fontSize: 12 }} title={bookmarkedIds.has(m.id) ? 'Remove bookmark' : 'Bookmark'}><I.Bookmark /></span>
-                  {m.author_id !== api.userId && <span onClick={() => setReportTarget(m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="Report message"><I.Flag /></span>}
-                  <span onClick={e => openMsgCtx(e, m)} style={{ cursor: 'pointer', padding: '2px 4px', color: T.mt, fontSize: 12 }} title="More">⋯</span>
-                </div>
-              </div>
-              </React.Fragment>
-              );
-            })}
-            {messages.length > 0 && <div style={{ height: (messages.length - endIdx) * MSG_H }} />}
-            <div ref={msgEndRef} />
-          </div>
-            );
-          })()}
-
-          {/* Typing indicator */}
-          {Object.keys(typingUsers).length > 0 && (() => {
-            const uids  = Object.keys(typingUsers);
-            const names = uids.map(uid => getName(uid));
-            const label = uids.length === 1
-              ? `${names[0]} is typing`
-              : uids.length === 2
-                ? `${names[0]} and ${names[1]} are typing`
-                : `${names[0]} and ${uids.length - 1} others are typing`;
-            return (
-              <div style={{ padding: '2px 16px 4px', minHeight: 22, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 12, color: T.mt, fontStyle: 'italic' }}>{label}</span>
-                <span aria-hidden="true">
-                  <span className="typing-dot" style={{ color: T.ac }}>.</span>
-                  <span className="typing-dot" style={{ color: T.ac }}>.</span>
-                  <span className="typing-dot" style={{ color: T.ac }}>.</span>
-                </span>
-              </div>
-            );
-          })()}
-
-          {/* Reply/Edit bar */}
-          {(replyTo || editMsg) && (
-            <div style={{ padding: '6px 16px', background: T.sf2, borderTop: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-              <span style={{ color: T.ac }}>{editMsg ? '✏️ Editing' : '↩ Replying to'}</span>
-              <span style={{ color: T.mt, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editMsg?.text || replyTo?.text}</span>
-              <span onClick={() => { setReplyTo(null); setEditMsg(null); setMsgInput(''); }} style={{ cursor: 'pointer', color: T.mt }}>✕</span>
-            </div>
-          )}
-
-          {/* Input area with slash suggestions + @mention autocomplete */}
-          <div className="input-bar" style={{ position: 'relative' }}>
-            {/* Slash command suggestions */}
-            {msgInput.startsWith('/') && (
-              <SlashSuggestions input={msgInput} members={members} roles={roles} isGuest={!!me?.is_guest} onSet={setMsgInput} />
-            )}
-            {/* @mention autocomplete */}
-            {(() => {
-              const atMatch = msgInput.match(/@(\w*)$/);
-              if (!atMatch) return null;
-              const query = atMatch[1].toLowerCase();
-              const matches = members.filter(m => (m.username?.toLowerCase().includes(query) || m.display_name?.toLowerCase().includes(query) || m.nickname?.toLowerCase().includes(query))).slice(0, 6);
-              if (matches.length === 0) return null;
-              return (
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, padding: 4, marginBottom: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.3)', maxHeight: 200, overflowY: 'auto', zIndex: 100 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, padding: '4px 8px', textTransform: 'uppercase' }}>Members</div>
-                  {matches.map(m => (
-                    <div key={m.user_id} onClick={() => setMsgInput(prev => prev.replace(/@\w*$/, `@${m.nickname || m.display_name || m.username} `))} title={m.username} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4, cursor: 'pointer' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,170,0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <Av name={m.nickname || m.display_name || m.username} size={24} />
-                      <span style={{ fontSize: 13 }}>{m.nickname || m.display_name || m.username}</span>
-                      {m.nickname && <span style={{ fontSize: 10, color: T.mt }}>({m.username})</span>}
-                      {m.user_id === curServer?.owner_id && <span style={{ fontSize: 9, color: '#faa61a' }}>👑</span>}
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* Slash tool overlays */}
-            {slashTool && (
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', bottom: 0, left: 16, right: 16, zIndex: 50 }}>
-                  <div style={{ width: 280, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>
-                        {slashTool === 'calc' ? 'Calculator' : slashTool === 'convert' ? 'Unit Converter' : 'Color Picker'}
-                      </span>
-                      <span onClick={() => setSlashTool(null)} style={{ cursor: 'pointer', color: T.mt, fontSize: 16, lineHeight: 1 }} title="Close (Esc)">✕</span>
-                    </div>
-
-                    {slashTool === 'calc' && <CalcTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
-                    {slashTool === 'convert' && <ConvertTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
-                    {slashTool === 'color' && <ColorTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Archived banner */}
-            {curServer?.is_archived && (
-              <div style={{ padding: '10px 16px', background: 'rgba(255,165,0,0.08)', borderTop: '1px solid rgba(255,165,0,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13 }}>📦</span>
-                <span style={{ fontSize: 12, color: '#ffa500', fontWeight: 600 }}>This server is archived and read-only.</span>
-                {curServer.scheduled_deletion_at && (
-                  <span style={{ fontSize: 11, color: T.err, marginLeft: 4 }}>
-                    Scheduled for deletion on {tzCtx.formatDate(curServer.scheduled_deletion_at)}.
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Input */}
-            {curChannel.read_only && !hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR) ? (
-              <div style={{ padding: '14px 16px', borderTop: `1px solid ${T.bd}`, textAlign: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: T.mt, fontSize: 13 }}>
-                  <span style={{ fontSize: 16 }}>📣</span> This is a read-only channel.
-                </div>
-              </div>
-            ) : (
-            <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Attach file">
-                <I.Paperclip />
-                <input type="file" style={{ display: 'none' }} onChange={async (e) => {
-                  const file = e.target.files?.[0]; if (!file || !curChannel) return;
-                  if (!tierLimits.canUpload) { if (me?.is_guest) { setUpgradeFeature('upload files'); } else { setToast('Verify your email to unlock this feature'); setTimeout(() => setToast(''), 4000); } e.target.value = ''; return; }
-                  if (!checkStorageLimit(me, file.size)) {
-                    const usedMB = Math.round(parseInt(localStorage.getItem('d_storage_used_bytes') || '0', 10) / 1024 / 1024);
-                    setToast(`Storage limit reached (${usedMB} MB / ${tierLimits.maxStorageMB} MB used). Upgrade to upload more files.`);
-                    setTimeout(() => setToast(''), 5000); e.target.value = ''; return;
-                  }
-                  try { await api.uploadFile(curChannel.id, file); addStorageUsedBytes(file.size); await loadMessages(curChannel); } catch {}
-                  e.target.value = '';
-                }} />
-              </label>
-              <input ref={inputRef} value={msgInput}
-                onChange={e => { setMsgInput(e.target.value); if (privacyPrefs.show_typing_indicator && Date.now() - typingRef.current > 3000 && curServer && curChannel) { typingRef.current = Date.now(); api.startTyping(curServer.id, curChannel.id).catch(() => {}); } }}
-                onKeyDown={e => {
-                  if (e.key === 'Escape') { setSlashTool(null); }
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-                  // Up arrow in empty input → edit last own message
-                  if (e.key === 'ArrowUp' && !msgInput.trim()) {
-                    const lastOwn = [...messages].reverse().find(m => m.author_id === api.userId && !failedMessages[m.id]);
-                    if (lastOwn) { e.preventDefault(); setEditMsg(lastOwn); setMsgInput(lastOwn.text || ''); }
-                  }
-                  // Ctrl+E → emoji picker
-                  if ((e.ctrlKey || e.metaKey) && e.key === 'e') { e.preventDefault(); setShowEmojiPicker(p => !p); }
-                }}
-                placeholder={editMsg ? 'Edit message...' : `Message #${curChannel.name} (encrypted)`}
-                style={{ flex: 1, padding: '10px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 12, color: T.tx, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-              <div onClick={() => setMsgPriority(p => p === 'normal' ? 'important' : p === 'important' ? 'urgent' : 'normal')} title={`Priority: ${msgPriority} (click to cycle)`} style={{ cursor: 'pointer', padding: 4, fontSize: 13, color: msgPriority === 'urgent' ? '#ff6b35' : msgPriority === 'important' ? '#faa61a' : T.mt }}>
-                {msgPriority === 'urgent' ? '🔴' : msgPriority === 'important' ? '🟡' : '⚪'}
-              </div>
-              <div onClick={() => setShowEmojiPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
-              <div onClick={() => { setPollQuestion(''); setPollOptions(['', '']); setModal('create-poll'); }} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
-              <div onClick={() => setShowGifPicker(p => !p)} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
-              <div onClick={sendMessage} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
-            </div>
-          </div>
-          )}
-          </div>{/* close positioned wrapper */}
+            }}
+            channelName={curChannel.name}
+            disabled={!!curChannel.read_only && !hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR)}
+            isEditing={!!editMsg}
+            replyTo={replyTo}
+            editMsg={editMsg}
+            onCancelReplyEdit={() => { setReplyTo(null); setEditMsg(null); setMsgInput(''); }}
+            priority={msgPriority}
+            onCyclePriority={() => setMsgPriority(p => p === 'normal' ? 'important' : p === 'important' ? 'urgent' : 'normal')}
+            onEmojiPicker={() => setShowEmojiPicker(p => !p)}
+            onPollCreate={() => { setPollQuestion(''); setPollOptions(['', '']); setModal('create-poll'); }}
+            onGifPicker={() => setShowGifPicker(p => !p)}
+            members={members}
+            serverOwnerId={curServer?.owner_id}
+            roles={roles}
+            isGuest={!!me?.is_guest}
+            typingNames={Object.keys(typingUsers).map(uid => getName(uid))}
+            onEditLastMessage={() => {
+              const lastOwn = [...messages].reverse().find(m => m.author_id === api.userId && !failedMessages[m.id]);
+              if (lastOwn) { setEditMsg(lastOwn); setMsgInput(lastOwn.text || ''); }
+            }}
+            slashTool={slashTool}
+            onSlashToolClose={() => setSlashTool(null)}
+            slashToolContent={<>
+              {slashTool === 'calc' && <CalcTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+              {slashTool === 'convert' && <ConvertTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+              {slashTool === 'color' && <ColorTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
+            </>}
+            isArchived={!!curServer?.is_archived}
+            archivedDeletionDate={curServer?.scheduled_deletion_at ? tzCtx.formatDate(curServer.scheduled_deletion_at) : null}
+            inputRef={inputRef}
+          />
         </div>)}
 
         {view === 'server' && !curChannel && (
