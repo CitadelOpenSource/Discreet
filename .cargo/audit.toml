@@ -4,15 +4,14 @@
 
 [advisories]
 ignore = [
-    # vodozemac unmaintained advisory — transitive dep from openmls.
-    # No CVE, no security impact. Monitoring for replacement.
+    # vodozemac unmaintained — transitive from openmls.
+    # No CVE. Monitoring for replacement.
     "RUSTSEC-2024-0436",
-    # rustls-pemfile unmaintained — transitive from sqlx-core and reqwest.
-    # No CVE filed. PEM parsing only used at startup for TLS cert loading.
-    # Monitoring for fork or replacement.
+    # rustls-pemfile unmaintained — transitive from sqlx-core.
+    # No CVE. PEM parsing runs once at startup on trusted input.
     "RUSTSEC-2025-0134",
     # rsa pulled transitively via sqlx-mysql compile-time dep.
     # We use PostgreSQL only. RSA code never executes. No upstream fix.
-    # Re-evaluate when rsa ships constant-time release.
+    # Re-evaluate quarterly.
     "RUSTSEC-2023-0071",
 ]

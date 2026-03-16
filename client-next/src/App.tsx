@@ -588,7 +588,7 @@ export default function App() {
   const [voicePresence,  setVoicePresence]  = useState<Record<string, string[]>>({});
   const [streamStatus,    setStreamStatus]    = useState<Record<string, { active: boolean; viewerCount: number; viewerUrl?: string }>>({});
   const [myStreamChannelId, setMyStreamChannelId] = useState<string | null>(null);
-  const [obsModal,  setObsModal]  = useState<{ rtmpUrl: string; streamKey: string } | null>(null);
+  const [streamSetupModal,  setStreamSetupModal]  = useState<{ rtmpUrl: string; streamKey: string } | null>(null);
   const [watchModal, setWatchModal] = useState<{ channelId: string; name: string; viewerUrl: string } | null>(null);
 
   // ── Voice ───────────────────────────────────────────────
@@ -622,7 +622,7 @@ export default function App() {
     if (data?.rtmpUrl && data?.streamKey) {
       setMyStreamChannelId(voiceChannel.id);
       setStreamStatus(p => ({ ...p, [voiceChannel.id]: { active: true, viewerCount: 0, viewerUrl: data.viewerUrl } }));
-      setObsModal({ rtmpUrl: data.rtmpUrl, streamKey: data.streamKey });
+      setStreamSetupModal({ rtmpUrl: data.rtmpUrl, streamKey: data.streamKey });
     } else {
       setToast('Failed to start stream — check server settings');
       setTimeout(() => setToast(''), 4000);
@@ -633,7 +633,7 @@ export default function App() {
     await api.stopStream(myStreamChannelId);
     setStreamStatus(p => ({ ...p, [myStreamChannelId]: { active: false, viewerCount: 0 } }));
     setMyStreamChannelId(null);
-    setObsModal(null);
+    setStreamSetupModal(null);
   };
 
   // ── Selection ───────────────────────────────────────────
@@ -4058,37 +4058,37 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* ── OBS Setup Modal ── */}
-      {obsModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15000 }} onClick={() => setObsModal(null)}>
+      {/* ── Stream Setup Modal ── */}
+      {streamSetupModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15000 }} onClick={() => setStreamSetupModal(null)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '90vw', background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 28, boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <span style={{ fontSize: 18 }}>🔴</span>
-              <span style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>You're Live — OBS Setup</span>
-              <div onClick={() => setObsModal(null)} style={{ marginLeft: 'auto', cursor: 'pointer', color: T.mt, fontSize: 20, lineHeight: 1 }}>×</div>
+              <span style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>You're Live — Stream Setup</span>
+              <div onClick={() => setStreamSetupModal(null)} style={{ marginLeft: 'auto', cursor: 'pointer', color: T.mt, fontSize: 20, lineHeight: 1 }}>×</div>
             </div>
             <p style={{ fontSize: 12, color: T.mt, marginBottom: 18, lineHeight: 1.6 }}>
-              In OBS → Settings → Stream, set <strong style={{ color: T.tx }}>Service</strong> to "Custom…" then paste the values below.
+              In your streaming software (Settings → Stream), set <strong style={{ color: T.tx }}>Service</strong> to "Custom…" then paste the values below.
             </p>
             {/* RTMP URL */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Server (RTMP URL)</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input readOnly value={obsModal.rtmpUrl} style={{ flex: 1, padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                <div onClick={() => { navigator.clipboard?.writeText(obsModal.rtmpUrl); setToast('Copied!'); setTimeout(() => setToast(''), 1500); }} style={{ padding: '8px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.mt, whiteSpace: 'nowrap' }}>Copy</div>
+                <input readOnly value={streamSetupModal.rtmpUrl} style={{ flex: 1, padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                <div onClick={() => { navigator.clipboard?.writeText(streamSetupModal.rtmpUrl); setToast('Copied!'); setTimeout(() => setToast(''), 1500); }} style={{ padding: '8px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.mt, whiteSpace: 'nowrap' }}>Copy</div>
               </div>
             </div>
             {/* Stream Key */}
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Stream Key</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input readOnly value={obsModal.streamKey} type="password" style={{ flex: 1, padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                <div onClick={() => { navigator.clipboard?.writeText(obsModal.streamKey); setToast('Copied!'); setTimeout(() => setToast(''), 1500); }} style={{ padding: '8px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.mt, whiteSpace: 'nowrap' }}>Copy</div>
+                <input readOnly value={streamSetupModal.streamKey} type="password" style={{ flex: 1, padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                <div onClick={() => { navigator.clipboard?.writeText(streamSetupModal.streamKey); setToast('Copied!'); setTimeout(() => setToast(''), 1500); }} style={{ padding: '8px 14px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, cursor: 'pointer', fontSize: 12, color: T.mt, whiteSpace: 'nowrap' }}>Copy</div>
               </div>
               <div style={{ fontSize: 11, color: T.mt, marginTop: 6 }}>Keep this secret — anyone with it can stream to your channel.</div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <div onClick={() => setObsModal(null)} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>Done</div>
+              <div onClick={() => setStreamSetupModal(null)} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>Done</div>
               <div onClick={stopGoLive} style={{ flex: 1, padding: '10px 0', textAlign: 'center', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'rgba(255,71,87,0.15)', color: T.err, border: '1px solid rgba(255,71,87,0.35)' }}>Stop Streaming</div>
             </div>
           </div>
