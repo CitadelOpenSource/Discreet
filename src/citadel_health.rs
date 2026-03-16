@@ -28,7 +28,7 @@ pub async fn server_info(
     let redis_ok = {
         let mut conn = state.redis.clone();
         redis::cmd("PING")
-            .query_async::<_, String>(&mut conn)
+            .query_async::<String>(&mut conn)
             .await
             .is_ok()
     };

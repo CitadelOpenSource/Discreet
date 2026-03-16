@@ -986,7 +986,7 @@ pub async fn login(
 
     let attempts: i64 = redis::cmd("GET")
         .arg(&lockout_key)
-        .query_async::<_, Option<String>>(&mut redis_conn)
+        .query_async::<Option<String>>(&mut redis_conn)
         .await
         .unwrap_or(None)
         .and_then(|s| s.parse().ok())

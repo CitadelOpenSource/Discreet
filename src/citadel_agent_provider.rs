@@ -1061,7 +1061,7 @@ pub async fn check_agent_rate_limit(
     let count: i64 = match crate::citadel_error::redis_or_503(
         redis::cmd("INCR")
             .arg(&key)
-            .query_async::<_, Option<i64>>(redis)
+            .query_async::<Option<i64>>(redis)
             .await
     ) {
         Ok(v) => v.unwrap_or(1),
@@ -1073,7 +1073,7 @@ pub async fn check_agent_rate_limit(
         let _: Result<bool, _> = redis::cmd("EXPIRE")
             .arg(&key)
             .arg(3600_i64)
-            .query_async::<_, bool>(redis)
+            .query_async::<bool>(redis)
             .await;
     }
 
