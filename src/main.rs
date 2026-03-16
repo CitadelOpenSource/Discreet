@@ -106,7 +106,7 @@ async fn maintenance_middleware(
     let mut redis = state.redis.clone();
     let cached: Option<serde_json::Value> = redis::cmd("GET")
         .arg("platform_settings")
-        .query_async::<_, Option<String>>(&mut redis)
+        .query_async::<Option<String>>(&mut redis)
         .await
         .ok()
         .flatten()
@@ -277,7 +277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut r = redis.clone();
                     let cached: Option<String> = redis::cmd("GET")
                         .arg("platform_settings")
-                        .query_async::<_, Option<String>>(&mut r)
+                        .query_async::<Option<String>>(&mut r)
                         .await
                         .ok()
                         .flatten();

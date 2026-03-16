@@ -296,7 +296,7 @@ pub async fn resend_verification(
     let count: i64 = crate::citadel_error::redis_or_503(
         redis::cmd("INCR")
             .arg(&rate_key)
-            .query_async::<_, Option<i64>>(&mut redis_conn)
+            .query_async::<Option<i64>>(&mut redis_conn)
             .await
     )?.unwrap_or(1);
 

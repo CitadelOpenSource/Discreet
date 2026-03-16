@@ -176,7 +176,7 @@ impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
             let is_revoked: i32 = redis::cmd("SISMEMBER")
                 .arg(&revoked_key)
                 .arg(&sid_str)
-                .query_async::<_, Option<i32>>(&mut redis_conn)
+                .query_async::<Option<i32>>(&mut redis_conn)
                 .await
                 .unwrap_or(None)
                 .unwrap_or(0);
@@ -213,7 +213,7 @@ impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
             let mut rc = state.redis.clone();
             let already: bool = redis::cmd("GET")
                 .arg(&throttle_key)
-                .query_async::<_, Option<String>>(&mut rc)
+                .query_async::<Option<String>>(&mut rc)
                 .await
                 .unwrap_or(None)
                 .is_some();
