@@ -15,5 +15,5 @@ This generates:
 - `icon.icns` (macOS)
 - `32x32.png`, `128x128.png`, `128x128@2x.png` (Linux)
 
-The SVG source for the Discreet logo lives at client-next/src/assets/ (if
+The SVG source for the Discreet logo lives at client/src/assets/ (if
 present) or can be exported from the UI design files.

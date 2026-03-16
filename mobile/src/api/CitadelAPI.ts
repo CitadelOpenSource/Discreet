@@ -1,7 +1,7 @@
 /**
  * CitadelAPI — React Native edition.
  *
- * Adapted from client-next/src/api/CitadelAPI.ts:
+ * Adapted from client/src/api/CitadelAPI.ts:
  *  - localStorage  → AsyncStorage
  *  - document.cookie CSRF → AsyncStorage-based CSRF token cache
  *  - window.location / WS_BASE → SERVER_URL constant

@@ -32,7 +32,7 @@ src/citadel_rate_limit.rs      — Per-IP sliding window rate limiter
 src/citadel_websocket.rs       — WebSocket auth, voice presence
 .env.example                   — Configuration template
 migrations/*.sql               — Database schema (26 files)
-client-next/src/               — React TypeScript client
+client/src/               — React TypeScript client
 discreet-crypto/               — MLS RFC 9420 WASM bindings
 Cargo.toml                     — Rust dependencies
 docker-compose.yml             — PostgreSQL + Redis

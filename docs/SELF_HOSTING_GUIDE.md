@@ -452,7 +452,7 @@ cd Discreet
 git pull
 
 # Rebuild the client
-cd client-next && npm ci && npm run build && cd ..
+cd client && npm ci && npm run build && cd ..
 
 # Rebuild the server
 cargo build --release
@@ -541,7 +541,7 @@ cargo build --release
 ### "npm ci fails"
 ```bash
 # Clear npm cache and retry:
-cd client-next
+cd client
 rm -rf node_modules
 npm cache clean --force
 npm ci

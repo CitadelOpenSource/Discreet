@@ -290,7 +290,7 @@ gunzip -c /tmp/latest.sql.gz | \
   docker compose exec -T postgres psql -U citadel -d citadel
 
 # 8. BUILD AND START THE APPLICATION
-cd client-next && npm install && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 cargo build --release
 # Or if using Docker: docker compose up -d app
 

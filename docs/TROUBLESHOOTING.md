@@ -529,7 +529,7 @@ tauri-plugin-shell = "2"                     # This handles it
 Start the Rust server first (`cargo run` in project root), then `cargo tauri dev` in `desktop/`.
 
 ### frontendDist path
-Resolves from `desktop/src-tauri/`. Must be `../../client-next/dist` (two levels up).
+Resolves from `desktop/src-tauri/`. Must be `../../client/dist` (two levels up).
 
 ### Window close doesn't quit
 By design — it hides to system tray. Right-click tray icon → Quit.

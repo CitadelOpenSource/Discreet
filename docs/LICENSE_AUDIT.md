@@ -110,7 +110,7 @@ NOT compatible:
 
 ---
 
-## JavaScript Dependencies (client-next/package.json)
+## JavaScript Dependencies (client/package.json)
 
 ### Production Dependencies
 
@@ -200,7 +200,7 @@ bundled with the application and do NOT affect license compliance:
 ## Audit Process
 
 1. Reviewed `Cargo.toml` direct dependencies and their published licenses on crates.io
-2. Reviewed `client-next/package.json` production and dev dependencies
+2. Reviewed `client/package.json` production and dev dependencies
 3. Verified no SSPL, Commons Clause, or proprietary licenses in the dependency tree
 4. Confirmed all cryptographic libraries use standard permissive licenses
 5. Verified no third-party analytics, tracking, or telemetry dependencies

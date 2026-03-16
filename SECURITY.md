@@ -139,7 +139,7 @@ Dependency management is a critical attack surface for any open-source project. 
 
 ### Automated auditing
 
-- **Dependabot** (`.github/dependabot.yml`): weekly PRs for Cargo, npm (client-next), npm (mobile), and GitHub Actions updates.
+- **Dependabot** (`.github/dependabot.yml`): weekly PRs for Cargo, npm (client), npm (mobile), and GitHub Actions updates.
 - **Security audit CI** (`.github/workflows/security-audit.yml`): runs `cargo audit` and `npm audit --audit-level=high` on every push to main, every PR, and on a weekly Monday cron schedule.
 - **`cargo audit`** must show zero unresolved advisories. Known exceptions are documented in `.cargo/audit.toml` with written justification.
 
@@ -161,7 +161,7 @@ cargo audit
 cargo tree --duplicates
 
 # JavaScript
-cd client-next && npm audit
+cd client && npm audit
 cd mobile && npm audit
 ```
 

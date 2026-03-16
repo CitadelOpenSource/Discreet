@@ -14,7 +14,7 @@
 | Directory | Contents |
 |-----------|----------|
 | `src/` | Rust backend (44 files, 14,500+ lines) |
-| `client-next/src/` | Vite/React client (46 files, 18,500+ lines) |
+| `client/src/` | Vite/React client (46 files, 18,500+ lines) |
 | `mobile/src/` | React Native mobile (16 files, 5,000+ lines) |
 | `desktop/src-tauri/` | Tauri desktop wrapper |
 | `discreet-crypto/` | WASM MLS crypto module |
@@ -41,5 +41,5 @@
 | `.env.example` | Template for server environment variables |
 | `docker-compose.yml` | Postgres + Redis containers |
 | `Cargo.toml` | Rust dependencies and features |
-| `client-next/package.json` | Client dependencies |
+| `client/package.json` | Client dependencies |
 | `.gitignore` | Tracked/untracked file rules |

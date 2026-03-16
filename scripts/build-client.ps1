@@ -4,7 +4,7 @@
 Write-Host "Building Discreet Vite client..." -ForegroundColor Cyan
 
 # Step 1: Install npm deps
-Push-Location client-next
+Push-Location client
 if (-not (Test-Path "node_modules")) {
     Write-Host "Installing dependencies..." -ForegroundColor Yellow
     npm install
@@ -31,6 +31,6 @@ npx vite build
 Pop-Location
 
 Write-Host ""
-Write-Host "Client built! Output: client-next\dist\" -ForegroundColor Green
+Write-Host "Client built! Output: client\dist\" -ForegroundColor Green
 Write-Host "  Served at: http://localhost:3000/next/" -ForegroundColor Cyan
 Write-Host "  (Production client still at http://localhost:3000/)" -ForegroundColor Gray

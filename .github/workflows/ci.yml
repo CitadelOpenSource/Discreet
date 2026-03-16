@@ -55,7 +55,7 @@ jobs:
           node-version: 20
 
       - name: Build client
-        working-directory: client-next
+        working-directory: client
         run: npm ci && npm run build
 
       - name: Install system dependencies
