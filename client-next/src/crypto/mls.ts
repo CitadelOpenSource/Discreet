@@ -4,7 +4,7 @@
  * Imports the WASM module as a local npm dependency (file:../discreet-crypto/pkg).
  * Vite handles WASM loading natively via vite-plugin-wasm.
  * 
- * If WASM isn't built yet, falls back to PBKDF2 encryption.
+ * If WASM isn't built yet, falls back to HKDF-SHA256 encryption.
  */
 
 let wasmModule: typeof import('discreet-crypto') | null = null;
@@ -27,13 +27,13 @@ export async function initCrypto(): Promise<void> {
     initialized = true;
     console.log('[crypto] MLS WASM module loaded — RFC 9420 active');
   } catch (e) {
-    console.warn('[crypto] WASM not available, using PBKDF2 fallback:', (e as Error)?.message);
+    console.warn('[crypto] WASM not available, using HKDF fallback:', (e as Error)?.message);
   }
 }
 
 /**
  * Check if real MLS crypto is available (WASM loaded).
- * If false, the client operates in legacy PBKDF2 mode.
+ * If false, the client operates in HKDF-SHA256 fallback mode.
  */
 export function isMlsAvailable(): boolean {
   return initialized && wasmModule !== null;
@@ -72,7 +72,7 @@ export async function createGroup(channelId: string): Promise<string> {
  */
 export async function encryptMessage(groupId: string, plaintext: string): Promise<string> {
   if (!isMlsAvailable()) {
-    // Fallback: legacy PBKDF2 encryption
+    // Fallback: HKDF-SHA256 encryption
     return legacyEncrypt(groupId, plaintext);
   }
   return wasmModule.encrypt_message(groupId, plaintext);
@@ -84,16 +84,44 @@ export async function encryptMessage(groupId: string, plaintext: string): Promis
  */
 export async function decryptMessage(groupId: string, ciphertext: string): Promise<string> {
   if (!isMlsAvailable()) {
-    // Fallback: legacy PBKDF2 decryption
+    // Fallback: HKDF-SHA256 decryption
     return legacyDecrypt(groupId, ciphertext);
   }
   return wasmModule.decrypt_message(groupId, ciphertext);
 }
 
-// ── Legacy PBKDF2 fallback (matches current client/index.html crypto) ──
+// ── HKDF-SHA256 fallback (symmetric channel encryption) ──
+
+/** Constant-time comparison of two byte arrays. */
+function ctEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+/** Derive 32-byte key commitment tag for a channel (info suffix ":commit"). */
+async function deriveChannelCommitment(channelId: string): Promise<Uint8Array> {
+  const salt = new TextEncoder().encode('discreet-mls-v1');
+  const info = new TextEncoder().encode(`discreet:${channelId}:0:commit`);
+  const km = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(`discreet:${channelId}:0`),
+    'HKDF',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
+    km,
+    256,
+  );
+  return new Uint8Array(bits);
+}
 
 async function legacyEncrypt(channelId: string, plaintext: string): Promise<string> {
   const key = await deriveChannelKey(channelId);
+  const commitment = await deriveChannelCommitment(channelId);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt(
@@ -101,18 +129,23 @@ async function legacyEncrypt(channelId: string, plaintext: string): Promise<stri
     key,
     encoded,
   );
-  // Prepend IV to ciphertext
-  const combined = new Uint8Array(iv.length + new Uint8Array(ciphertext).length);
-  combined.set(iv);
-  combined.set(new Uint8Array(ciphertext), iv.length);
+  // Output: [commitment(32) | iv(12) | ciphertext]
+  const combined = new Uint8Array(32 + iv.length + new Uint8Array(ciphertext).length);
+  combined.set(commitment);
+  combined.set(iv, 32);
+  combined.set(new Uint8Array(ciphertext), 32 + iv.length);
   return btoa(String.fromCharCode(...combined));
 }
 
 async function legacyDecrypt(channelId: string, b64: string): Promise<string> {
   try {
     const combined = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const iv = combined.slice(0, 12);
-    const ciphertext = combined.slice(12);
+    if (combined.length < 32 + 12) throw new Error('Key commitment failed');
+    const storedCommit = combined.slice(0, 32);
+    const expectedCommit = await deriveChannelCommitment(channelId);
+    if (!ctEqual(storedCommit, expectedCommit)) throw new Error('Key commitment failed');
+    const iv = combined.slice(32, 44);
+    const ciphertext = combined.slice(44);
     const key = await deriveChannelKey(channelId);
     const plaintext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv },
@@ -127,20 +160,20 @@ async function legacyDecrypt(channelId: string, b64: string): Promise<string> {
 
 /**
  * Derive raw 32-byte key material for a channel (used by SFrame voice encryption).
- * Same PBKDF2 derivation as text encryption but exports raw bytes.
+ * Same HKDF-SHA256 derivation as text encryption but exports raw bytes.
  */
 export async function deriveChannelKeyBytes(channelId: string): Promise<Uint8Array> {
-  const password = `citadel:${channelId}:0`;
-  const salt = new TextEncoder().encode('mls-group-secret');
+  const salt = new TextEncoder().encode('discreet-mls-v1');
+  const info = new TextEncoder().encode(`discreet:${channelId}:0`);
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
+    new TextEncoder().encode(`discreet:${channelId}:0`),
+    'HKDF',
     false,
     ['deriveBits'],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
     keyMaterial,
     256,
   );
@@ -148,17 +181,17 @@ export async function deriveChannelKeyBytes(channelId: string): Promise<Uint8Arr
 }
 
 async function deriveChannelKey(channelId: string): Promise<CryptoKey> {
-  const password = `citadel:${channelId}:0`;
-  const salt = new TextEncoder().encode('mls-group-secret');
+  const salt = new TextEncoder().encode('discreet-mls-v1');
+  const info = new TextEncoder().encode(`discreet:${channelId}:0`);
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
+    new TextEncoder().encode(`discreet:${channelId}:0`),
+    'HKDF',
     false,
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,

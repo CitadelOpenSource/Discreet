@@ -3,6 +3,9 @@
 //! Wraps the `sframe` crate to provide per-channel frame encryption
 //! using AES-256-GCM (SHA-512 key schedule, 128-bit tag) with
 //! HKDF-SHA256 key derivation from MLS epoch secrets.
+//!
+//! All key derivation in the discreet-crypto WASM crate uses HKDF-SHA256.
+//! No PBKDF2 is used anywhere in this crate.
 
 use hkdf::Hkdf;
 use sha2::Sha256;

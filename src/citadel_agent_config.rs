@@ -35,7 +35,8 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use rand::RngCore;
-use sha2::{Digest, Sha256};
+use hkdf::Hkdf;
+use sha2::Sha256;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -143,24 +144,39 @@ fn default_model(provider: &ProviderType) -> &'static str {
 
 /// Derive a per-agent AES-256 key from the server master secret.
 ///
-/// `key = SHA-256(master_secret || ":" || agent_id_bytes)`
+/// `key = HKDF-SHA256(salt="discreet-agent-v1", ikm=master_secret, info=agent_id)`
 ///
 /// This ensures each agent has a unique encryption key. If one row leaks,
 /// other rows remain secure. The master secret provides the entropy.
+/// HKDF provides proper domain separation and is the standard KDF for
+/// deriving multiple keys from a single master secret.
 fn derive_agent_key(master_secret: &[u8], agent_id: &Uuid) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(master_secret);
-    hasher.update(b":");
-    hasher.update(agent_id.as_bytes());
-    let result = hasher.finalize();
+    let hk = Hkdf::<Sha256>::new(Some(b"discreet-agent-v1"), master_secret);
     let mut key = [0u8; 32];
-    key.copy_from_slice(&result);
+    hk.expand(agent_id.as_bytes(), &mut key)
+        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
     key
+}
+
+/// Derive a 32-byte key commitment tag for AES-GCM ciphertexts.
+///
+/// Uses the same HKDF as `derive_agent_key` but with info suffix `:commit`.
+/// The commitment is prepended to ciphertext and verified before decryption,
+/// providing key-committing AEAD (prevents key multi-collision attacks).
+fn derive_agent_commitment(master_secret: &[u8], agent_id: &Uuid) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(Some(b"discreet-agent-v1"), master_secret);
+    let mut commit = [0u8; 32];
+    let info = [agent_id.as_bytes(), b":commit".as_slice()].concat();
+    hk.expand(&info, &mut commit)
+        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
+    commit
 }
 
 /// Encrypt an API key for storage in the database.
 ///
 /// Returns (ciphertext, nonce) — both must be stored.
+/// The ciphertext is prefixed with a 32-byte key commitment tag:
+/// `[commitment(32) | AES-GCM ciphertext]`.
 /// The nonce is 12 bytes (96 bits) as required by AES-256-GCM.
 pub fn encrypt_api_key(
     plaintext_key: &str,
@@ -168,6 +184,7 @@ pub fn encrypt_api_key(
     agent_id: &Uuid,
 ) -> Result<(Vec<u8>, Vec<u8>), AgentError> {
     let aes_key = derive_agent_key(master_secret, agent_id);
+    let commitment = derive_agent_commitment(master_secret, agent_id);
     let cipher = Aes256Gcm::new_from_slice(&aes_key)
         .map_err(|e| AgentError::Internal(format!("AES key init failed: {e}")))?;
 
@@ -179,13 +196,21 @@ pub fn encrypt_api_key(
         .encrypt(nonce, plaintext_key.as_bytes())
         .map_err(|e| AgentError::Internal(format!("API key encryption failed: {e}")))?;
 
-    Ok((ciphertext, nonce_bytes.to_vec()))
+    // Prepend commitment tag: [commitment(32) | ciphertext]
+    let mut output = Vec::with_capacity(32 + ciphertext.len());
+    output.extend_from_slice(&commitment);
+    output.extend_from_slice(&ciphertext);
+
+    Ok((output, nonce_bytes.to_vec()))
 }
 
 /// Decrypt an API key from the database.
 ///
 /// Returns the plaintext key string. This value must NEVER be logged,
 /// returned to any client, or persisted outside the in-memory provider call.
+///
+/// Expects ciphertext format: `[commitment(32) | AES-GCM ciphertext]`.
+/// The commitment tag is verified in constant time before decryption.
 pub fn decrypt_api_key(
     ciphertext: &[u8],
     nonce_bytes: &[u8],
@@ -199,6 +224,25 @@ pub fn decrypt_api_key(
         )));
     }
 
+    if ciphertext.len() < 32 {
+        return Err(AgentError::Internal(
+            "Ciphertext too short for commitment tag".into(),
+        ));
+    }
+
+    // Extract and verify key commitment (constant-time comparison)
+    let (stored_commit, actual_ciphertext) = ciphertext.split_at(32);
+    let expected_commit = derive_agent_commitment(master_secret, agent_id);
+    let mismatch = stored_commit
+        .iter()
+        .zip(expected_commit.iter())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b));
+    if mismatch != 0 {
+        return Err(AgentError::Internal(
+            "Key commitment verification failed".into(),
+        ));
+    }
+
     let aes_key = derive_agent_key(master_secret, agent_id);
     let cipher = Aes256Gcm::new_from_slice(&aes_key)
         .map_err(|e| AgentError::Internal(format!("AES key init failed: {e}")))?;
@@ -206,7 +250,7 @@ pub fn decrypt_api_key(
     let nonce = Nonce::from_slice(nonce_bytes);
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(nonce, actual_ciphertext)
         .map_err(|_| {
             // Intentionally vague error — do not leak crypto details
             AgentError::Internal("API key decryption failed — key may be corrupted".into())
