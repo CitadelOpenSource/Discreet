@@ -10,7 +10,7 @@
 //   - Email: basic structural check, not full RFC 5322
 //   - All lengths are measured in chars, not bytes (Unicode safe)
 
-use crate::citadel_error::AppError;
+use crate::discreet_error::AppError;
 
 /// Check that a string contains no ASCII control characters.
 fn has_control_chars(s: &str) -> bool {

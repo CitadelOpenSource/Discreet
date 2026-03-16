@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::citadel_state::AppState;
+use crate::discreet_state::AppState;
 
 /// Trigger phrases that indicate an action item.
 const ACTION_PHRASES: &[&str] = &[
@@ -362,10 +362,10 @@ async fn execute_inactive_alert(
     );
 
     // Send as a notification to the task creator
-    let _ = crate::citadel_notification_handlers::create_notification(
+    let _ = crate::discreet_notification_handlers::create_notification(
         db,
         state,
-        crate::citadel_notification_handlers::CreateNotification {
+        crate::discreet_notification_handlers::CreateNotification {
             user_id: created_by,
             notification_type: "channel_inactive".to_string(),
             title: format!("#{channel_name} is inactive"),

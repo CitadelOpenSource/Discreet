@@ -6,8 +6,8 @@
 // Middleware stack (outermost → innermost, i.e. request processing order):
 //   Request
 //     → CORS                 (tower_http::cors::CorsLayer)
-//     → Rate Limit           (citadel_rate_limit)
-//     → Security Headers     (citadel_security_headers — CSP, HSTS, X-Frame-Options, …)
+//     → Rate Limit           (discreet_rate_limit)
+//     → Security Headers     (discreet_security_headers — CSP, HSTS, X-Frame-Options, …)
 //     → Request ID           (request_id_middleware — UUID span + X-Request-ID header)
 //     → Tracing              (tower_http::trace::TraceLayer)
 //     → Compression          (tower_http::compression::CompressionLayer)
@@ -34,57 +34,57 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use citadel_server::citadel_agent_handlers;
-use citadel_server::citadel_audit;
-use citadel_server::citadel_automod;
-use citadel_server::citadel_auth_handlers;
-use citadel_server::citadel_ban_handlers;
-use citadel_server::citadel_bot_spawn_handlers;
-use citadel_server::citadel_bug_report_handlers;
-use citadel_server::citadel_channel_handlers;
-use citadel_server::citadel_category_handlers;
-use citadel_server::citadel_config::Config;
-use citadel_server::citadel_csrf;
-use citadel_server::citadel_discovery_handlers;
-use citadel_server::citadel_dm_handlers;
-use citadel_server::citadel_mls_handlers;
-use citadel_server::citadel_email_handlers;
-use citadel_server::citadel_emoji_handlers;
-use citadel_server::citadel_event_handlers;
-use citadel_server::citadel_file_handlers;
-use citadel_server::citadel_forum_handlers;
-use citadel_server::citadel_friend_handlers;
-use citadel_server::citadel_group_dm_handlers;
-use citadel_server::citadel_health;
-use citadel_server::citadel_meeting_handlers;
-use citadel_server::citadel_message_handlers;
-use citadel_server::citadel_notification_handlers;
-use citadel_server::citadel_pin_handlers;
-use citadel_server::citadel_poll_handlers;
-use citadel_server::citadel_rate_limit;
-use citadel_server::citadel_reaction_handlers;
-use citadel_server::citadel_role_handlers;
-use citadel_server::citadel_security_headers;
-use citadel_server::citadel_server_handlers;
-use citadel_server::citadel_settings_handlers;
-use citadel_server::citadel_soundboard_handlers;
-use citadel_server::citadel_stream_handlers;
-use citadel_server::citadel_state::AppState;
-use citadel_server::citadel_typing;
-use citadel_server::citadel_user_handlers;
-use citadel_server::citadel_dev_token_handlers;
-use citadel_server::citadel_platform_admin_handlers;
-use citadel_server::citadel_premium;
-use citadel_server::citadel_platform_settings;
-use citadel_server::citadel_waitlist;
-use citadel_server::citadel_websocket;
-use citadel_server::discreet_ack_handlers;
-use citadel_server::discreet_billing_handlers;
-use citadel_server::discreet_bookmark_handlers;
-use citadel_server::discreet_channel_category_handlers;
-use citadel_server::discreet_playbook_handlers;
-use citadel_server::discreet_report_handlers;
-use citadel_server::discreet_scheduled_task_handlers;
+use discreet_server::discreet_agent_handlers;
+use discreet_server::discreet_audit;
+use discreet_server::discreet_automod;
+use discreet_server::discreet_auth_handlers;
+use discreet_server::discreet_ban_handlers;
+use discreet_server::discreet_bot_spawn_handlers;
+use discreet_server::discreet_bug_report_handlers;
+use discreet_server::discreet_channel_handlers;
+use discreet_server::discreet_category_handlers;
+use discreet_server::discreet_config::Config;
+use discreet_server::discreet_csrf;
+use discreet_server::discreet_discovery_handlers;
+use discreet_server::discreet_dm_handlers;
+use discreet_server::discreet_mls_handlers;
+use discreet_server::discreet_email_handlers;
+use discreet_server::discreet_emoji_handlers;
+use discreet_server::discreet_event_handlers;
+use discreet_server::discreet_file_handlers;
+use discreet_server::discreet_forum_handlers;
+use discreet_server::discreet_friend_handlers;
+use discreet_server::discreet_group_dm_handlers;
+use discreet_server::discreet_health;
+use discreet_server::discreet_meeting_handlers;
+use discreet_server::discreet_message_handlers;
+use discreet_server::discreet_notification_handlers;
+use discreet_server::discreet_pin_handlers;
+use discreet_server::discreet_poll_handlers;
+use discreet_server::discreet_rate_limit;
+use discreet_server::discreet_reaction_handlers;
+use discreet_server::discreet_role_handlers;
+use discreet_server::discreet_security_headers;
+use discreet_server::discreet_server_handlers;
+use discreet_server::discreet_settings_handlers;
+use discreet_server::discreet_soundboard_handlers;
+use discreet_server::discreet_stream_handlers;
+use discreet_server::discreet_state::AppState;
+use discreet_server::discreet_typing;
+use discreet_server::discreet_user_handlers;
+use discreet_server::discreet_dev_token_handlers;
+use discreet_server::discreet_platform_admin_handlers;
+use discreet_server::discreet_premium;
+use discreet_server::discreet_platform_settings;
+use discreet_server::discreet_waitlist;
+use discreet_server::discreet_websocket;
+use discreet_server::discreet_ack_handlers;
+use discreet_server::discreet_billing_handlers;
+use discreet_server::discreet_bookmark_handlers;
+use discreet_server::discreet_channel_category_handlers;
+use discreet_server::discreet_playbook_handlers;
+use discreet_server::discreet_report_handlers;
+use discreet_server::discreet_scheduled_task_handlers;
 
 /// Middleware: maintenance mode gate.
 /// If maintenance_mode is enabled in platform_settings (cached in Redis),
@@ -165,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // LOG_FORMAT=json → machine-readable JSON lines (for SIEM / log aggregators).
     // LOG_FORMAT=pretty (default) → human-readable colored output.
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "citadel_server=debug,tower_http=debug".into());
+        .unwrap_or_else(|_| "discreet_server=debug,tower_http=debug".into());
 
     let log_format = std::env::var("LOG_FORMAT").unwrap_or_default();
     if log_format.eq_ignore_ascii_case("json") {
@@ -373,9 +373,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tracing::info!(server_id = %server.id, name = %server.name, "Executing scheduled server deletion");
 
                     // Insert audit tombstone before deletion.
-                    let _ = citadel_audit::log_action(
+                    let _ = discreet_audit::log_action(
                         &db,
-                        citadel_audit::AuditEntry {
+                        discreet_audit::AuditEntry {
                             server_id: server.id,
                             actor_id: server.owner_id,
                             action: "SERVER_DELETED_SCHEDULED",
@@ -403,14 +403,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let db = state.db.clone();
         let st = state.clone();
-        tokio::spawn(citadel_event_handlers::reminder_dispatcher(db, st));
+        tokio::spawn(discreet_event_handlers::reminder_dispatcher(db, st));
     }
 
     // Background task: execute scheduled tasks (channel monitors, announcements, etc.) every 60 seconds.
     {
         let db = state.db.clone();
         let st = state.clone();
-        tokio::spawn(citadel_server::discreet_task_executor::task_executor_loop(db, st));
+        tokio::spawn(discreet_server::discreet_task_executor::task_executor_loop(db, st));
     }
 
     // Build the versioned API sub-router.
@@ -418,68 +418,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // with overlapping path prefixes (e.g. /servers/:id + /servers/:id/channels).
     let api_v1 = axum::Router::new()
         // ── Auth ──
-        .route("/auth/register", axum::routing::post(citadel_auth_handlers::register))
-        .route("/auth/guest", axum::routing::post(citadel_auth_handlers::register_guest))
-        .route("/auth/login", axum::routing::post(citadel_auth_handlers::login))
-        .route("/auth/upgrade", axum::routing::post(citadel_auth_handlers::upgrade_account))
-        .route("/auth/recover-account", axum::routing::post(citadel_auth_handlers::recover_account))
+        .route("/auth/register", axum::routing::post(discreet_auth_handlers::register))
+        .route("/auth/guest", axum::routing::post(discreet_auth_handlers::register_guest))
+        .route("/auth/login", axum::routing::post(discreet_auth_handlers::login))
+        .route("/auth/upgrade", axum::routing::post(discreet_auth_handlers::upgrade_account))
+        .route("/auth/recover-account", axum::routing::post(discreet_auth_handlers::recover_account))
         // Email verification & password reset
-        .route("/auth/verify-email/send", axum::routing::post(citadel_email_handlers::send_verification))
-        .route("/auth/verify-email/confirm", axum::routing::post(citadel_email_handlers::confirm_email))
+        .route("/auth/verify-email/send", axum::routing::post(discreet_email_handlers::send_verification))
+        .route("/auth/verify-email/confirm", axum::routing::post(discreet_email_handlers::confirm_email))
         // Link-based verification (GET with ?token=... — no JWT needed, used from emails)
-        .route("/auth/verify-email", axum::routing::get(citadel_email_handlers::verify_email_by_token))
+        .route("/auth/verify-email", axum::routing::get(discreet_email_handlers::verify_email_by_token))
         // Resend verification email (JWT required, max 3/hour)
-        .route("/auth/resend-verification", axum::routing::post(citadel_email_handlers::resend_verification))
+        .route("/auth/resend-verification", axum::routing::post(discreet_email_handlers::resend_verification))
         // 6-digit code verification (JWT required)
-        .route("/auth/verify-code", axum::routing::post(citadel_auth_handlers::verify_registration_code))
-        .route("/auth/resend-code", axum::routing::post(citadel_auth_handlers::resend_registration_code))
-        .route("/auth/forgot-password", axum::routing::post(citadel_email_handlers::forgot_password))
-        .route("/auth/reset-password", axum::routing::post(citadel_email_handlers::reset_password))
+        .route("/auth/verify-code", axum::routing::post(discreet_auth_handlers::verify_registration_code))
+        .route("/auth/resend-code", axum::routing::post(discreet_auth_handlers::resend_registration_code))
+        .route("/auth/forgot-password", axum::routing::post(discreet_email_handlers::forgot_password))
+        .route("/auth/reset-password", axum::routing::post(discreet_email_handlers::reset_password))
         // Server discovery
-        .route("/discover", axum::routing::get(citadel_discovery_handlers::discover_servers))
-        .route("/servers/:server_id/publish", axum::routing::post(citadel_discovery_handlers::publish_server))
-        .route("/servers/:server_id/unpublish", axum::routing::post(citadel_discovery_handlers::unpublish_server))
-        .route("/auth/refresh", axum::routing::post(citadel_auth_handlers::refresh))
-        .route("/auth/me/refresh", axum::routing::get(citadel_auth_handlers::refresh_claims))
-        .route("/auth/logout", axum::routing::post(citadel_auth_handlers::logout))
-        .route("/auth/verify-password", axum::routing::post(citadel_auth_handlers::verify_password_endpoint))
-        .route("/auth/sessions", axum::routing::get(citadel_auth_handlers::list_sessions))
-        .route("/auth/sessions/all-others", axum::routing::delete(citadel_auth_handlers::revoke_all_other_sessions))
-        .route("/auth/sessions/:id", axum::routing::delete(citadel_auth_handlers::revoke_session))
-        .route("/auth/sessions/:id/verify", axum::routing::post(citadel_auth_handlers::initiate_verify))
-        .route("/auth/sessions/:id/confirm", axum::routing::post(citadel_auth_handlers::confirm_verify))
+        .route("/discover", axum::routing::get(discreet_discovery_handlers::discover_servers))
+        .route("/servers/:server_id/publish", axum::routing::post(discreet_discovery_handlers::publish_server))
+        .route("/servers/:server_id/unpublish", axum::routing::post(discreet_discovery_handlers::unpublish_server))
+        .route("/auth/refresh", axum::routing::post(discreet_auth_handlers::refresh))
+        .route("/auth/me/refresh", axum::routing::get(discreet_auth_handlers::refresh_claims))
+        .route("/auth/logout", axum::routing::post(discreet_auth_handlers::logout))
+        .route("/auth/verify-password", axum::routing::post(discreet_auth_handlers::verify_password_endpoint))
+        .route("/auth/sessions", axum::routing::get(discreet_auth_handlers::list_sessions))
+        .route("/auth/sessions/all-others", axum::routing::delete(discreet_auth_handlers::revoke_all_other_sessions))
+        .route("/auth/sessions/:id", axum::routing::delete(discreet_auth_handlers::revoke_session))
+        .route("/auth/sessions/:id/verify", axum::routing::post(discreet_auth_handlers::initiate_verify))
+        .route("/auth/sessions/:id/confirm", axum::routing::post(discreet_auth_handlers::confirm_verify))
         // ── 2FA (login completion — no JWT required) ──
-        .route("/auth/2fa/verify", axum::routing::post(citadel_auth_handlers::complete_2fa_login))
+        .route("/auth/2fa/verify", axum::routing::post(discreet_auth_handlers::complete_2fa_login))
         // ── 2FA management (JWT required) ──
-        .route("/users/@me/2fa/setup", axum::routing::post(citadel_auth_handlers::setup_2fa))
-        .route("/users/@me/2fa/verify", axum::routing::post(citadel_auth_handlers::verify_2fa))
-        .route("/users/@me/2fa/disable", axum::routing::post(citadel_auth_handlers::disable_2fa))
+        .route("/users/@me/2fa/setup", axum::routing::post(discreet_auth_handlers::setup_2fa))
+        .route("/users/@me/2fa/verify", axum::routing::post(discreet_auth_handlers::verify_2fa))
+        .route("/users/@me/2fa/disable", axum::routing::post(discreet_auth_handlers::disable_2fa))
         // ── Servers ──
-        .route("/servers", axum::routing::post(citadel_server_handlers::create_server).get(citadel_server_handlers::list_servers))
-        .route("/servers/:server_id", axum::routing::get(citadel_server_handlers::get_server).patch(citadel_server_handlers::update_server).delete(citadel_server_handlers::delete_server))
-        .route("/servers/:server_id/join", axum::routing::post(citadel_server_handlers::join_server))
-        .route("/servers/:server_id/leave", axum::routing::post(citadel_server_handlers::leave_server))
-        .route("/servers/:server_id/members", axum::routing::get(citadel_server_handlers::list_members))
-        .route("/servers/:server_id/invites", axum::routing::post(citadel_server_handlers::create_invite).get(citadel_server_handlers::list_invites))
-        .route("/servers/:server_id/vanity", axum::routing::post(citadel_server_handlers::set_server_vanity))
-        .route("/invites/:code", axum::routing::get(citadel_server_handlers::resolve_invite_code))
-        .route("/servers/:server_id/audit-log", axum::routing::get(citadel_audit::list_audit_log))
-        .route("/servers/:server_id/audit-log/verify", axum::routing::get(citadel_audit::verify_audit_chain))
-        .route("/servers/:server_id/audit-log/:entry_id", axum::routing::get(citadel_audit::get_audit_entry))
+        .route("/servers", axum::routing::post(discreet_server_handlers::create_server).get(discreet_server_handlers::list_servers))
+        .route("/servers/:server_id", axum::routing::get(discreet_server_handlers::get_server).patch(discreet_server_handlers::update_server).delete(discreet_server_handlers::delete_server))
+        .route("/servers/:server_id/join", axum::routing::post(discreet_server_handlers::join_server))
+        .route("/servers/:server_id/leave", axum::routing::post(discreet_server_handlers::leave_server))
+        .route("/servers/:server_id/members", axum::routing::get(discreet_server_handlers::list_members))
+        .route("/servers/:server_id/invites", axum::routing::post(discreet_server_handlers::create_invite).get(discreet_server_handlers::list_invites))
+        .route("/servers/:server_id/vanity", axum::routing::post(discreet_server_handlers::set_server_vanity))
+        .route("/invites/:code", axum::routing::get(discreet_server_handlers::resolve_invite_code))
+        .route("/servers/:server_id/audit-log", axum::routing::get(discreet_audit::list_audit_log))
+        .route("/servers/:server_id/audit-log/verify", axum::routing::get(discreet_audit::verify_audit_chain))
+        .route("/servers/:server_id/audit-log/:entry_id", axum::routing::get(discreet_audit::get_audit_entry))
         // Custom emoji
-        .route("/servers/:server_id/emojis", axum::routing::get(citadel_emoji_handlers::list_emojis).post(citadel_emoji_handlers::upload_emoji))
-        .route("/servers/:server_id/emojis/:id", axum::routing::delete(citadel_emoji_handlers::delete_emoji))
+        .route("/servers/:server_id/emojis", axum::routing::get(discreet_emoji_handlers::list_emojis).post(discreet_emoji_handlers::upload_emoji))
+        .route("/servers/:server_id/emojis/:id", axum::routing::delete(discreet_emoji_handlers::delete_emoji))
         // Events
-        .route("/servers/:server_id/events", axum::routing::get(citadel_event_handlers::list_events).post(citadel_event_handlers::create_event))
-        .route("/events/:event_id", axum::routing::put(citadel_event_handlers::update_event).delete(citadel_event_handlers::delete_event))
-        .route("/events/:event_id/rsvp", axum::routing::post(citadel_event_handlers::rsvp_event))
-        .route("/events/:event_id/rsvps", axum::routing::get(citadel_event_handlers::list_rsvps))
-        .route("/events/:event_id/remind", axum::routing::post(citadel_event_handlers::remind_event))
+        .route("/servers/:server_id/events", axum::routing::get(discreet_event_handlers::list_events).post(discreet_event_handlers::create_event))
+        .route("/events/:event_id", axum::routing::put(discreet_event_handlers::update_event).delete(discreet_event_handlers::delete_event))
+        .route("/events/:event_id/rsvp", axum::routing::post(discreet_event_handlers::rsvp_event))
+        .route("/events/:event_id/rsvps", axum::routing::get(discreet_event_handlers::list_rsvps))
+        .route("/events/:event_id/remind", axum::routing::post(discreet_event_handlers::remind_event))
         // Notifications
-        .route("/notifications", axum::routing::get(citadel_notification_handlers::list_notifications))
-        .route("/notifications/unread-count", axum::routing::get(citadel_notification_handlers::unread_count))
-        .route("/notifications/read-all", axum::routing::post(citadel_notification_handlers::mark_all_read))
-        .route("/notifications/:notification_id/read", axum::routing::patch(citadel_notification_handlers::mark_read))
+        .route("/notifications", axum::routing::get(discreet_notification_handlers::list_notifications))
+        .route("/notifications/unread-count", axum::routing::get(discreet_notification_handlers::unread_count))
+        .route("/notifications/read-all", axum::routing::post(discreet_notification_handlers::mark_all_read))
+        .route("/notifications/:notification_id/read", axum::routing::patch(discreet_notification_handlers::mark_read))
         // Bookmarks
         .route("/bookmarks", axum::routing::post(discreet_bookmark_handlers::create_bookmark).get(discreet_bookmark_handlers::list_bookmarks))
         .route("/bookmarks/:message_id", axum::routing::delete(discreet_bookmark_handlers::delete_bookmark))
@@ -497,153 +497,153 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/tasks/:task_id", axum::routing::delete(discreet_scheduled_task_handlers::delete_task))
         .route("/tasks/:task_id/toggle", axum::routing::patch(discreet_scheduled_task_handlers::toggle_task))
         // Soundboard
-        .route("/servers/:server_id/automod", axum::routing::get(citadel_automod::get_automod_config).put(citadel_automod::update_automod_config))
-        .route("/servers/:server_id/soundboard", axum::routing::get(citadel_soundboard_handlers::list_clips).post(citadel_soundboard_handlers::upload_clip))
-        .route("/servers/:server_id/soundboard/:id", axum::routing::delete(citadel_soundboard_handlers::delete_clip))
-        .route("/servers/:server_id/soundboard/:id/play", axum::routing::post(citadel_soundboard_handlers::play_clip))
+        .route("/servers/:server_id/automod", axum::routing::get(discreet_automod::get_automod_config).put(discreet_automod::update_automod_config))
+        .route("/servers/:server_id/soundboard", axum::routing::get(discreet_soundboard_handlers::list_clips).post(discreet_soundboard_handlers::upload_clip))
+        .route("/servers/:server_id/soundboard/:id", axum::routing::delete(discreet_soundboard_handlers::delete_clip))
+        .route("/servers/:server_id/soundboard/:id/play", axum::routing::post(discreet_soundboard_handlers::play_clip))
         // AI Bot Spawn (Patent-Pending)
-        .route("/bots/personas", axum::routing::get(citadel_bot_spawn_handlers::list_personas))
-        .route("/bots/spawn", axum::routing::post(citadel_bot_spawn_handlers::spawn_bot_channel))
-        .route("/bots/channels", axum::routing::get(citadel_bot_spawn_handlers::list_bot_channels))
-        .route("/bots/channels/:id", axum::routing::delete(citadel_bot_spawn_handlers::close_bot_channel))
-        .route("/servers/:server_id/ai-bots", axum::routing::get(citadel_bot_spawn_handlers::list_server_bots).post(citadel_bot_spawn_handlers::add_bot_to_server))
-        .route("/servers/:server_id/ai-bots/:bot_id", axum::routing::patch(citadel_bot_spawn_handlers::update_bot_config).delete(citadel_bot_spawn_handlers::remove_bot_from_server))
-        .route("/servers/:server_id/ai-bots/:bot_id/prompt", axum::routing::post(citadel_bot_spawn_handlers::prompt_bot))
-        .route("/servers/:server_id/ai-bots/:bot_id/config", axum::routing::get(citadel_bot_spawn_handlers::get_agent_config).put(citadel_bot_spawn_handlers::update_agent_config))
-        .route("/servers/:server_id/ai-bots/:bot_id/memory", axum::routing::delete(citadel_bot_spawn_handlers::delete_agent_memory))
+        .route("/bots/personas", axum::routing::get(discreet_bot_spawn_handlers::list_personas))
+        .route("/bots/spawn", axum::routing::post(discreet_bot_spawn_handlers::spawn_bot_channel))
+        .route("/bots/channels", axum::routing::get(discreet_bot_spawn_handlers::list_bot_channels))
+        .route("/bots/channels/:id", axum::routing::delete(discreet_bot_spawn_handlers::close_bot_channel))
+        .route("/servers/:server_id/ai-bots", axum::routing::get(discreet_bot_spawn_handlers::list_server_bots).post(discreet_bot_spawn_handlers::add_bot_to_server))
+        .route("/servers/:server_id/ai-bots/:bot_id", axum::routing::patch(discreet_bot_spawn_handlers::update_bot_config).delete(discreet_bot_spawn_handlers::remove_bot_from_server))
+        .route("/servers/:server_id/ai-bots/:bot_id/prompt", axum::routing::post(discreet_bot_spawn_handlers::prompt_bot))
+        .route("/servers/:server_id/ai-bots/:bot_id/config", axum::routing::get(discreet_bot_spawn_handlers::get_agent_config).put(discreet_bot_spawn_handlers::update_agent_config))
+        .route("/servers/:server_id/ai-bots/:bot_id/memory", axum::routing::delete(discreet_bot_spawn_handlers::delete_agent_memory))
         // Meetings (Zoom-style)
-        .route("/meetings", axum::routing::post(citadel_meeting_handlers::create_meeting).get(citadel_meeting_handlers::list_my_meetings))
-        .route("/meetings/:code", axum::routing::get(citadel_meeting_handlers::get_meeting_info).delete(citadel_meeting_handlers::end_meeting))
-        .route("/meetings/:code/join", axum::routing::post(citadel_meeting_handlers::join_meeting))
+        .route("/meetings", axum::routing::post(discreet_meeting_handlers::create_meeting).get(discreet_meeting_handlers::list_my_meetings))
+        .route("/meetings/:code", axum::routing::get(discreet_meeting_handlers::get_meeting_info).delete(discreet_meeting_handlers::end_meeting))
+        .route("/meetings/:code/join", axum::routing::post(discreet_meeting_handlers::join_meeting))
         // Polls
-        .route("/channels/:channel_id/polls", axum::routing::post(citadel_poll_handlers::create_poll).get(citadel_poll_handlers::list_polls))
-        .route("/polls/:poll_id", axum::routing::get(citadel_poll_handlers::get_poll).delete(citadel_poll_handlers::delete_poll))
-        .route("/polls/:poll_id/vote", axum::routing::post(citadel_poll_handlers::vote_poll))
+        .route("/channels/:channel_id/polls", axum::routing::post(discreet_poll_handlers::create_poll).get(discreet_poll_handlers::list_polls))
+        .route("/polls/:poll_id", axum::routing::get(discreet_poll_handlers::get_poll).delete(discreet_poll_handlers::delete_poll))
+        .route("/polls/:poll_id/vote", axum::routing::post(discreet_poll_handlers::vote_poll))
         // ── Categories ──
-        .route("/servers/:server_id/categories", axum::routing::post(citadel_category_handlers::create_category).get(citadel_category_handlers::list_categories))
-        .route("/servers/:server_id/categories/:id", axum::routing::patch(citadel_category_handlers::update_category).delete(citadel_category_handlers::delete_category))
-        .route("/servers/:server_id/channels/:id/move", axum::routing::patch(citadel_category_handlers::move_channel_to_category))
+        .route("/servers/:server_id/categories", axum::routing::post(discreet_category_handlers::create_category).get(discreet_category_handlers::list_categories))
+        .route("/servers/:server_id/categories/:id", axum::routing::patch(discreet_category_handlers::update_category).delete(discreet_category_handlers::delete_category))
+        .route("/servers/:server_id/channels/:id/move", axum::routing::patch(discreet_category_handlers::move_channel_to_category))
         // ── Channels ──
-        .route("/servers/:server_id/channels", axum::routing::post(citadel_channel_handlers::create_channel).get(citadel_channel_handlers::list_channels))
-        .route("/channels/:channel_id", axum::routing::get(citadel_channel_handlers::get_channel).patch(citadel_channel_handlers::update_channel).delete(citadel_channel_handlers::delete_channel))
+        .route("/servers/:server_id/channels", axum::routing::post(discreet_channel_handlers::create_channel).get(discreet_channel_handlers::list_channels))
+        .route("/channels/:channel_id", axum::routing::get(discreet_channel_handlers::get_channel).patch(discreet_channel_handlers::update_channel).delete(discreet_channel_handlers::delete_channel))
         // ── Messages ──
-        .route("/channels/:channel_id/messages", axum::routing::post(citadel_message_handlers::send_message).get(citadel_message_handlers::get_messages))
-        .route("/channels/:channel_id/messages/search", axum::routing::get(citadel_message_handlers::search_messages))
-        .route("/messages/:id", axum::routing::patch(citadel_message_handlers::edit_message).delete(citadel_message_handlers::delete_message))
+        .route("/channels/:channel_id/messages", axum::routing::post(discreet_message_handlers::send_message).get(discreet_message_handlers::get_messages))
+        .route("/channels/:channel_id/messages/search", axum::routing::get(discreet_message_handlers::search_messages))
+        .route("/messages/:id", axum::routing::patch(discreet_message_handlers::edit_message).delete(discreet_message_handlers::delete_message))
         .route("/messages/:id/ack", axum::routing::post(discreet_ack_handlers::ack_message))
         .route("/messages/:id/acks", axum::routing::get(discreet_ack_handlers::get_acks))
         // ── Pins ──
-        .route("/servers/:server_id/channels/:channel_id/pins/:message_id", axum::routing::post(citadel_pin_handlers::pin_message).delete(citadel_pin_handlers::unpin_message))
-        .route("/servers/:server_id/channels/:channel_id/pins", axum::routing::get(citadel_pin_handlers::list_pinned_messages))
+        .route("/servers/:server_id/channels/:channel_id/pins/:message_id", axum::routing::post(discreet_pin_handlers::pin_message).delete(discreet_pin_handlers::unpin_message))
+        .route("/servers/:server_id/channels/:channel_id/pins", axum::routing::get(discreet_pin_handlers::list_pinned_messages))
         // ── Reactions ──
-        .route("/channels/:channel_id/messages/:msg_id/reactions/:emoji", axum::routing::put(citadel_reaction_handlers::add_reaction).delete(citadel_reaction_handlers::remove_reaction))
-        .route("/channels/:channel_id/messages/:msg_id/reactions", axum::routing::get(citadel_reaction_handlers::list_reactions))
+        .route("/channels/:channel_id/messages/:msg_id/reactions/:emoji", axum::routing::put(discreet_reaction_handlers::add_reaction).delete(discreet_reaction_handlers::remove_reaction))
+        .route("/channels/:channel_id/messages/:msg_id/reactions", axum::routing::get(discreet_reaction_handlers::list_reactions))
         // ── Typing ──
-        .route("/channels/:channel_id/typing", axum::routing::post(citadel_typing::start_typing))
+        .route("/channels/:channel_id/typing", axum::routing::post(discreet_typing::start_typing))
         // ── Files ──
-        .route("/channels/:channel_id/files", axum::routing::post(citadel_file_handlers::upload_file_blob))
-        .route("/files/:id", axum::routing::get(citadel_file_handlers::download_file_blob))
+        .route("/channels/:channel_id/files", axum::routing::post(discreet_file_handlers::upload_file_blob))
+        .route("/files/:id", axum::routing::get(discreet_file_handlers::download_file_blob))
         // ── Roles ──
-        .route("/servers/:server_id/roles", axum::routing::post(citadel_role_handlers::create_role).get(citadel_role_handlers::list_roles))
-        .route("/roles/:role_id", axum::routing::patch(citadel_role_handlers::update_role).delete(citadel_role_handlers::delete_role))
-        .route("/servers/:server_id/members/:user_id/nickname", axum::routing::put(citadel_server_handlers::set_nickname))
-        .route("/servers/:server_id/members/:user_id/roles/:role_id", axum::routing::put(citadel_role_handlers::assign_role).delete(citadel_role_handlers::unassign_role))
-        .route("/servers/:server_id/members/:user_id/roles", axum::routing::get(citadel_role_handlers::list_member_roles))
+        .route("/servers/:server_id/roles", axum::routing::post(discreet_role_handlers::create_role).get(discreet_role_handlers::list_roles))
+        .route("/roles/:role_id", axum::routing::patch(discreet_role_handlers::update_role).delete(discreet_role_handlers::delete_role))
+        .route("/servers/:server_id/members/:user_id/nickname", axum::routing::put(discreet_server_handlers::set_nickname))
+        .route("/servers/:server_id/members/:user_id/roles/:role_id", axum::routing::put(discreet_role_handlers::assign_role).delete(discreet_role_handlers::unassign_role))
+        .route("/servers/:server_id/members/:user_id/roles", axum::routing::get(discreet_role_handlers::list_member_roles))
         // ── Bans ──
-        .route("/servers/:server_id/bans", axum::routing::post(citadel_ban_handlers::ban_member).get(citadel_ban_handlers::list_bans))
-        .route("/servers/:server_id/bans/:user_id", axum::routing::delete(citadel_ban_handlers::unban_member))
+        .route("/servers/:server_id/bans", axum::routing::post(discreet_ban_handlers::ban_member).get(discreet_ban_handlers::list_bans))
+        .route("/servers/:server_id/bans/:user_id", axum::routing::delete(discreet_ban_handlers::unban_member))
         // ── Agents ──
-        .route("/agents/search", axum::routing::post(citadel_agent_handlers::search_or_spawn))
-        .route("/agents/spawn/:id/status", axum::routing::get(citadel_agent_handlers::get_spawn_status))
-        .route("/servers/:server_id/agents", axum::routing::get(citadel_agent_handlers::list_agents))
+        .route("/agents/search", axum::routing::post(discreet_agent_handlers::search_or_spawn))
+        .route("/agents/spawn/:id/status", axum::routing::get(discreet_agent_handlers::get_spawn_status))
+        .route("/servers/:server_id/agents", axum::routing::get(discreet_agent_handlers::list_agents))
         // ── Bots ──
-        .route("/servers/:server_id/bots", axum::routing::post(citadel_server_handlers::create_bot).get(citadel_server_handlers::list_bots))
-        .route("/servers/:server_id/archive", axum::routing::post(citadel_server_handlers::archive_server))
-        .route("/servers/:server_id/schedule-deletion", axum::routing::post(citadel_server_handlers::schedule_server_deletion))
+        .route("/servers/:server_id/bots", axum::routing::post(discreet_server_handlers::create_bot).get(discreet_server_handlers::list_bots))
+        .route("/servers/:server_id/archive", axum::routing::post(discreet_server_handlers::archive_server))
+        .route("/servers/:server_id/schedule-deletion", axum::routing::post(discreet_server_handlers::schedule_server_deletion))
         // ── Users ──
-        .route("/users/@me", axum::routing::get(citadel_user_handlers::get_me).patch(citadel_user_handlers::update_me).delete(citadel_user_handlers::delete_account))
-        .route("/users/@me/servers", axum::routing::get(citadel_user_handlers::list_my_servers))
-        .route("/users/@me/export", axum::routing::get(citadel_user_handlers::export_my_data))
-        .route("/users/@me/status", axum::routing::put(citadel_user_handlers::update_status))
-        .route("/users/@me/settings", axum::routing::get(citadel_settings_handlers::get_my_settings).patch(citadel_settings_handlers::patch_my_settings))
-        .route("/settings/timezone", axum::routing::post(citadel_settings_handlers::set_timezone))
-        .route("/servers/:server_id/notification-settings", axum::routing::get(citadel_settings_handlers::get_server_notification_settings).patch(citadel_settings_handlers::patch_server_notification_settings))
-        .route("/servers/:server_id/notification-level", axum::routing::patch(citadel_server_handlers::set_notification_level))
-        .route("/servers/:server_id/visibility", axum::routing::patch(citadel_server_handlers::set_visibility_override))
-        .route("/users/search", axum::routing::get(citadel_friend_handlers::search_users))
-        .route("/users/:id", axum::routing::get(citadel_user_handlers::get_user))
-        .route("/users/:id/block", axum::routing::post(citadel_friend_handlers::block_user).delete(citadel_friend_handlers::unblock_user))
+        .route("/users/@me", axum::routing::get(discreet_user_handlers::get_me).patch(discreet_user_handlers::update_me).delete(discreet_user_handlers::delete_account))
+        .route("/users/@me/servers", axum::routing::get(discreet_user_handlers::list_my_servers))
+        .route("/users/@me/export", axum::routing::get(discreet_user_handlers::export_my_data))
+        .route("/users/@me/status", axum::routing::put(discreet_user_handlers::update_status))
+        .route("/users/@me/settings", axum::routing::get(discreet_settings_handlers::get_my_settings).patch(discreet_settings_handlers::patch_my_settings))
+        .route("/settings/timezone", axum::routing::post(discreet_settings_handlers::set_timezone))
+        .route("/servers/:server_id/notification-settings", axum::routing::get(discreet_settings_handlers::get_server_notification_settings).patch(discreet_settings_handlers::patch_server_notification_settings))
+        .route("/servers/:server_id/notification-level", axum::routing::patch(discreet_server_handlers::set_notification_level))
+        .route("/servers/:server_id/visibility", axum::routing::patch(discreet_server_handlers::set_visibility_override))
+        .route("/users/search", axum::routing::get(discreet_friend_handlers::search_users))
+        .route("/users/:id", axum::routing::get(discreet_user_handlers::get_user))
+        .route("/users/:id/block", axum::routing::post(discreet_friend_handlers::block_user).delete(discreet_friend_handlers::unblock_user))
         // ── Friends ──
-        .route("/friends", axum::routing::get(citadel_friend_handlers::list_friends))
-        .route("/friends/request", axum::routing::post(citadel_friend_handlers::send_friend_request))
-        .route("/friends/requests", axum::routing::get(citadel_friend_handlers::list_incoming_requests))
-        .route("/friends/outgoing", axum::routing::get(citadel_friend_handlers::list_outgoing_requests))
-        .route("/friends/:id/accept", axum::routing::post(citadel_friend_handlers::accept_friend_request))
-        .route("/friends/:id/decline", axum::routing::post(citadel_friend_handlers::decline_friend_request))
-        .route("/friends/:id", axum::routing::delete(citadel_friend_handlers::remove_friend))
+        .route("/friends", axum::routing::get(discreet_friend_handlers::list_friends))
+        .route("/friends/request", axum::routing::post(discreet_friend_handlers::send_friend_request))
+        .route("/friends/requests", axum::routing::get(discreet_friend_handlers::list_incoming_requests))
+        .route("/friends/outgoing", axum::routing::get(discreet_friend_handlers::list_outgoing_requests))
+        .route("/friends/:id/accept", axum::routing::post(discreet_friend_handlers::accept_friend_request))
+        .route("/friends/:id/decline", axum::routing::post(discreet_friend_handlers::decline_friend_request))
+        .route("/friends/:id", axum::routing::delete(discreet_friend_handlers::remove_friend))
         // ── DMs ──
-        .route("/dms", axum::routing::post(citadel_dm_handlers::create_dm).get(citadel_dm_handlers::list_dms))
-        .route("/dms/:id/messages", axum::routing::post(citadel_dm_handlers::send_dm).get(citadel_dm_handlers::get_dm_messages))
+        .route("/dms", axum::routing::post(discreet_dm_handlers::create_dm).get(discreet_dm_handlers::list_dms))
+        .route("/dms/:id/messages", axum::routing::post(discreet_dm_handlers::send_dm).get(discreet_dm_handlers::get_dm_messages))
         // Group DMs
-        .route("/group-dms", axum::routing::post(citadel_group_dm_handlers::create_group_dm).get(citadel_group_dm_handlers::list_group_dms))
-        .route("/group-dms/:id", axum::routing::patch(citadel_group_dm_handlers::update_group_dm))
-        .route("/group-dms/:id/messages", axum::routing::post(citadel_group_dm_handlers::send_group_dm).get(citadel_group_dm_handlers::get_group_dm_messages))
-        .route("/group-dms/:id/members", axum::routing::post(citadel_group_dm_handlers::add_group_dm_member))
-        .route("/group-dms/:id/members/:uid", axum::routing::delete(citadel_group_dm_handlers::remove_group_dm_member))
+        .route("/group-dms", axum::routing::post(discreet_group_dm_handlers::create_group_dm).get(discreet_group_dm_handlers::list_group_dms))
+        .route("/group-dms/:id", axum::routing::patch(discreet_group_dm_handlers::update_group_dm))
+        .route("/group-dms/:id/messages", axum::routing::post(discreet_group_dm_handlers::send_group_dm).get(discreet_group_dm_handlers::get_group_dm_messages))
+        .route("/group-dms/:id/members", axum::routing::post(discreet_group_dm_handlers::add_group_dm_member))
+        .route("/group-dms/:id/members/:uid", axum::routing::delete(discreet_group_dm_handlers::remove_group_dm_member))
         // Streaming (Patent-Pending: Encrypted RTMP within MLS groups)
-        .route("/channels/:channel_id/stream/start", axum::routing::post(citadel_stream_handlers::start_stream))
-        .route("/channels/:channel_id/stream", axum::routing::delete(citadel_stream_handlers::stop_stream).get(citadel_stream_handlers::stream_status))
+        .route("/channels/:channel_id/stream/start", axum::routing::post(discreet_stream_handlers::start_stream))
+        .route("/channels/:channel_id/stream", axum::routing::delete(discreet_stream_handlers::stop_stream).get(discreet_stream_handlers::stream_status))
         // Forum channels
-        .route("/channels/:channel_id/threads", axum::routing::get(citadel_forum_handlers::list_threads).post(citadel_forum_handlers::create_thread))
-        .route("/threads/:thread_id", axum::routing::get(citadel_forum_handlers::get_thread).patch(citadel_forum_handlers::update_thread).delete(citadel_forum_handlers::delete_thread))
-        .route("/threads/:thread_id/messages", axum::routing::get(citadel_forum_handlers::list_thread_messages).post(citadel_forum_handlers::post_thread_message))
+        .route("/channels/:channel_id/threads", axum::routing::get(discreet_forum_handlers::list_threads).post(discreet_forum_handlers::create_thread))
+        .route("/threads/:thread_id", axum::routing::get(discreet_forum_handlers::get_thread).patch(discreet_forum_handlers::update_thread).delete(discreet_forum_handlers::delete_thread))
+        .route("/threads/:thread_id/messages", axum::routing::get(discreet_forum_handlers::list_thread_messages).post(discreet_forum_handlers::post_thread_message))
         // ── MLS Key Distribution (RFC 9420) ──
-        .route("/key-packages", axum::routing::post(citadel_mls_handlers::upload_key_packages))
-        .route("/key-packages/:user_id", axum::routing::get(citadel_mls_handlers::claim_key_package))
-        .route("/channels/:channel_id/mls/commit", axum::routing::post(citadel_mls_handlers::submit_commit))
-        .route("/channels/:channel_id/mls/welcome", axum::routing::post(citadel_mls_handlers::relay_welcome))
-        .route("/channels/:channel_id/mls/info", axum::routing::get(citadel_mls_handlers::mls_channel_info))
-        .route("/identity-keys", axum::routing::post(citadel_mls_handlers::upload_identity_key))
+        .route("/key-packages", axum::routing::post(discreet_mls_handlers::upload_key_packages))
+        .route("/key-packages/:user_id", axum::routing::get(discreet_mls_handlers::claim_key_package))
+        .route("/channels/:channel_id/mls/commit", axum::routing::post(discreet_mls_handlers::submit_commit))
+        .route("/channels/:channel_id/mls/welcome", axum::routing::post(discreet_mls_handlers::relay_welcome))
+        .route("/channels/:channel_id/mls/info", axum::routing::get(discreet_mls_handlers::mls_channel_info))
+        .route("/identity-keys", axum::routing::post(discreet_mls_handlers::upload_identity_key))
         // ── Info ──
-        .route("/info", axum::routing::get(citadel_health::server_info))
+        .route("/info", axum::routing::get(discreet_health::server_info))
         // ── Premium / Subscription ──
-        .route("/subscription", axum::routing::get(citadel_premium::get_subscription)
-            .post(citadel_premium::create_subscription)
-            .delete(citadel_premium::cancel_subscription))
+        .route("/subscription", axum::routing::get(discreet_premium::get_subscription)
+            .post(discreet_premium::create_subscription)
+            .delete(discreet_premium::cancel_subscription))
         // ── Billing ──
         .route("/billing/status", axum::routing::get(discreet_billing_handlers::billing_status))
         .route("/billing/create-checkout", axum::routing::post(discreet_billing_handlers::create_checkout))
         // ── Waitlist ──
-        .route("/waitlist", axum::routing::post(citadel_waitlist::join_waitlist))
+        .route("/waitlist", axum::routing::post(discreet_waitlist::join_waitlist))
         // ── Developer API Tokens ──
-        .route("/dev/tokens", axum::routing::post(citadel_dev_token_handlers::create_token)
-            .get(citadel_dev_token_handlers::list_tokens))
-        .route("/dev/tokens/:id", axum::routing::delete(citadel_dev_token_handlers::revoke_token))
+        .route("/dev/tokens", axum::routing::post(discreet_dev_token_handlers::create_token)
+            .get(discreet_dev_token_handlers::list_tokens))
+        .route("/dev/tokens/:id", axum::routing::delete(discreet_dev_token_handlers::revoke_token))
         // ── Platform identity & admin ──
         // /platform/*       — any authenticated user
         // /admin/* /dev/*   — require platform_role = 'admin' or 'dev'
         //                     (enforced inside each handler via require_staff_role)
-        .route("/platform/me", axum::routing::get(citadel_platform_admin_handlers::platform_me))
-        .route("/admin/stats", axum::routing::get(citadel_platform_admin_handlers::admin_stats))
-        .route("/admin/users", axum::routing::get(citadel_platform_admin_handlers::list_users))
-        .route("/admin/users/:user_id/role", axum::routing::post(citadel_platform_admin_handlers::set_user_role))
-        .route("/admin/registrations", axum::routing::get(citadel_platform_admin_handlers::registration_trend))
-        .route("/admin/generate-dev-accounts", axum::routing::post(citadel_platform_admin_handlers::generate_dev_accounts))
-        .route("/admin/users/:user_id/ban", axum::routing::post(citadel_platform_admin_handlers::ban_user)
-            .delete(citadel_platform_admin_handlers::unban_user))
+        .route("/platform/me", axum::routing::get(discreet_platform_admin_handlers::platform_me))
+        .route("/admin/stats", axum::routing::get(discreet_platform_admin_handlers::admin_stats))
+        .route("/admin/users", axum::routing::get(discreet_platform_admin_handlers::list_users))
+        .route("/admin/users/:user_id/role", axum::routing::post(discreet_platform_admin_handlers::set_user_role))
+        .route("/admin/registrations", axum::routing::get(discreet_platform_admin_handlers::registration_trend))
+        .route("/admin/generate-dev-accounts", axum::routing::post(discreet_platform_admin_handlers::generate_dev_accounts))
+        .route("/admin/users/:user_id/ban", axum::routing::post(discreet_platform_admin_handlers::ban_user)
+            .delete(discreet_platform_admin_handlers::unban_user))
         // ── Bug Reports ──
-        .route("/bug-reports", axum::routing::post(citadel_bug_report_handlers::submit_bug_report))
-        .route("/admin/bug-reports", axum::routing::get(citadel_bug_report_handlers::list_bug_reports))
+        .route("/bug-reports", axum::routing::post(discreet_bug_report_handlers::submit_bug_report))
+        .route("/admin/bug-reports", axum::routing::get(discreet_bug_report_handlers::list_bug_reports))
         // ── Platform settings (kill switches) ──
         // Content reports
         .route("/reports", axum::routing::post(discreet_report_handlers::create_report))
         .route("/admin/reports", axum::routing::get(discreet_report_handlers::list_reports))
         .route("/admin/reports/:report_id", axum::routing::patch(discreet_report_handlers::resolve_report))
-        .route("/admin/export", axum::routing::post(citadel_platform_admin_handlers::compliance_export))
-        .route("/admin/settings", axum::routing::get(citadel_platform_settings::get_settings)
-            .put(citadel_platform_settings::update_settings))
+        .route("/admin/export", axum::routing::post(discreet_platform_admin_handlers::compliance_export))
+        .route("/admin/settings", axum::routing::get(discreet_platform_settings::get_settings)
+            .put(discreet_platform_settings::update_settings))
         // ── Server lifecycle admin ──
-        .merge(citadel_server_handlers::server_admin_routes())
+        .merge(discreet_server_handlers::server_admin_routes())
         // ── API 404 fallback — consistent JSON for unknown routes ──
         .fallback(|| async {
             (
@@ -705,7 +705,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 include_str!("../client/public/manifest.json"),
             )
         }))
-        .route("/ws", axum::routing::get(citadel_websocket::ws_connect))
+        .route("/ws", axum::routing::get(discreet_websocket::ws_connect))
         // Payment webhooks (unversioned — called by external services)
         .route("/webhooks/btcpay", axum::routing::post(discreet_billing_handlers::btcpay_webhook))
         .route("/webhooks/stripe", axum::routing::post(discreet_billing_handlers::stripe_webhook))
@@ -759,13 +759,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(state.clone(), maintenance_middleware))
         .layer(axum::middleware::from_fn(request_id_middleware))
-        .layer(axum::middleware::from_fn(citadel_csrf::csrf_middleware))
+        .layer(axum::middleware::from_fn(discreet_csrf::csrf_middleware))
         .layer(axum::middleware::from_fn(
-            citadel_security_headers::security_headers,
+            discreet_security_headers::security_headers,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            citadel_rate_limit::rate_limit_middleware,
+            discreet_rate_limit::rate_limit_middleware,
         ))
         .layer(cors);
 

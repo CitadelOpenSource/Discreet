@@ -12,7 +12,7 @@ use axum::{extract::{State, Json}, http::HeaderMap, response::IntoResponse};
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
+use crate::{discreet_auth::AuthUser, discreet_error::AppError, discreet_state::AppState};
 
 // ─── Status ─────────────────────────────────────────────────────────────
 

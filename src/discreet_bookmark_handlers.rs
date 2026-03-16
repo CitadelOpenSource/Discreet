@@ -9,7 +9,7 @@ use axum::{extract::{Path, Query, State, Json}, http::StatusCode, response::Into
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::{citadel_auth::AuthUser, citadel_error::AppError, citadel_state::AppState};
+use crate::{discreet_auth::AuthUser, discreet_error::AppError, discreet_state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBookmarkRequest {
