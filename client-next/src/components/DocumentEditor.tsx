@@ -3,7 +3,7 @@
  *
  * Features:
  *   - contentEditable editor with formatting toolbar
- *   - AES-GCM encryption keyed from channelId (same PBKDF2 as chat messages)
+ *   - AES-GCM encryption keyed from channelId (same HKDF-SHA256 as chat messages)
  *   - Document list with title, last-edited, encrypted badge
  *   - Auto-save every 30 seconds
  *   - Share link: random AES-256-GCM key stored in URL fragment only
@@ -55,16 +55,31 @@ function makeId(): string {
 // ── Crypto ────────────────────────────────────────────────
 
 async function deriveKey(channelId: string): Promise<CryptoKey> {
-  const pw   = `citadel:${channelId}:0`;
-  const salt = new TextEncoder().encode('mls-group-secret');
-  const km   = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const salt = new TextEncoder().encode('discreet-mls-v1');
+  const info = new TextEncoder().encode(`discreet:${channelId}:0`);
+  const km   = await crypto.subtle.importKey('raw', new TextEncoder().encode(`discreet:${channelId}:0`), 'HKDF', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
     km,
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt'],
   );
+}
+
+async function deriveCommitment(channelId: string): Promise<Uint8Array> {
+  const salt = new TextEncoder().encode('discreet-mls-v1');
+  const info = new TextEncoder().encode(`discreet:${channelId}:0:commit`);
+  const km   = await crypto.subtle.importKey('raw', new TextEncoder().encode(`discreet:${channelId}:0`), 'HKDF', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, km, 256);
+  return new Uint8Array(bits);
+}
+
+function ctEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 async function encryptBlob(key: CryptoKey, plaintext: string): Promise<string> {
@@ -84,12 +99,26 @@ async function decryptBlob(key: CryptoKey, b64: string): Promise<string> {
 
 async function encryptForChannel(channelId: string, html: string): Promise<string> {
   const key = await deriveKey(channelId);
-  return encryptBlob(key, html);
+  const commitment = await deriveCommitment(channelId);
+  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const ct  = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(html));
+  // Output: [commitment(32) | iv(12) | ciphertext]
+  const out = new Uint8Array(32 + iv.length + new Uint8Array(ct).length);
+  out.set(commitment);
+  out.set(iv, 32);
+  out.set(new Uint8Array(ct), 44);
+  return btoa(String.fromCharCode(...out));
 }
 
 async function decryptFromChannel(channelId: string, b64: string): Promise<string> {
+  const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  if (d.length < 44) throw new Error('Key commitment failed');
+  const storedCommit = d.slice(0, 32);
+  const expectedCommit = await deriveCommitment(channelId);
+  if (!ctEqual(storedCommit, expectedCommit)) throw new Error('Key commitment failed');
   const key = await deriveKey(channelId);
-  return decryptBlob(key, b64);
+  const pt  = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(32, 44) }, key, d.slice(44));
+  return new TextDecoder().decode(pt);
 }
 
 /** Generate a fresh AES-256-GCM key for share links (exported raw → base64). */

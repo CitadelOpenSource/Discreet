@@ -69,25 +69,37 @@ interface DM { id: string; other_user_id: string; other_username: string; other_
 
 // ── Crypto ────────────────────────────────────────────────
 async function enc(cid: string, text: string): Promise<string> {
-  // Try MLS first, fall back to PBKDF2 if MLS group doesn't exist yet
+  // Try MLS first, fall back to HKDF if MLS group doesn't exist yet
   if (isMlsAvailable()) {
     try { return await encryptMessage(cid, text); } catch { /* MLS group not set up — fall back */ }
   }
-  // PBKDF2 fallback (same as monolith)
-  const pw = `citadel:${cid}:0`, salt = new TextEncoder().encode('mls-group-secret');
-  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  // HKDF-SHA256 fallback with key commitment
+  const e = new TextEncoder(), salt = e.encode('discreet-mls-v1'), ikm = e.encode(`discreet:${cid}:0`);
+  const km = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey', 'deriveBits']);
+  const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0`) }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const commitBits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0:commit`) }, km, 256);
+  const commit = new Uint8Array(commitBits);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
-  const c = new Uint8Array(iv.length + new Uint8Array(ct).length); c.set(iv); c.set(new Uint8Array(ct), iv.length);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, e.encode(text));
+  // Output: [commitment(32) | iv(12) | ciphertext]
+  const c = new Uint8Array(32 + iv.length + new Uint8Array(ct).length); c.set(commit); c.set(iv, 32); c.set(new Uint8Array(ct), 44);
   return btoa(String.fromCharCode(...c));
 }
 async function dec(cid: string, b64: string): Promise<string> {
-  // Try MLS first, fall back to PBKDF2
+  // Try MLS first, fall back to HKDF
   if (isMlsAvailable()) {
     try { return await decryptMessage(cid, b64); } catch { /* fall back */ }
   }
-  try { const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const pw = `citadel:${cid}:0`, salt = new TextEncoder().encode('mls-group-secret'); const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']); const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, key, d.slice(12)); return new TextDecoder().decode(pt); } catch { return b64; }
+  try {
+    const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    if (d.length < 44) throw new Error('Key commitment failed');
+    const e = new TextEncoder(), salt = e.encode('discreet-mls-v1'), ikm = e.encode(`discreet:${cid}:0`);
+    const km = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey', 'deriveBits']);
+    const commitBits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0:commit`) }, km, 256);
+    const expected = new Uint8Array(commitBits); let diff = 0; for (let i = 0; i < 32; i++) diff |= d[i] ^ expected[i]; if (diff !== 0) throw new Error('Key commitment failed');
+    const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0`) }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(32, 44) }, key, d.slice(44)); return new TextDecoder().decode(pt);
+  } catch { return b64; }
 }
 
 // ── Quick Emojis (dynamic — see EmojiPicker.getQuickReact) ──

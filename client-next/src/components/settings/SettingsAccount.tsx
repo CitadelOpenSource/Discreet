@@ -1,0 +1,186 @@
+import React from 'react';
+import { T } from '../../theme';
+import * as I from '../../icons';
+import { api } from '../../api/CitadelAPI';
+import { TIER_META } from '../../utils/tiers';
+
+interface UserSettings { [key: string]: unknown; }
+
+export interface SettingsAccountProps {
+  s: UserSettings;
+  save: (k: string, v: unknown) => void;
+  sectionVisible: (section: string) => boolean;
+  onUpgrade?: () => void;
+  platformUser?: { account_tier?: string; platform_role?: string | null; badge_type?: string | null; permissions?: string[] } | null;
+  SecurityStatus: React.ComponentType<{ platformUser: any; onSetupStep: (step: string) => void }>;
+  ChangeEmail: React.ComponentType;
+  ChangePassword: React.ComponentType;
+  ActiveSessions: React.ComponentType;
+  RotateEncryptionKey: React.ComponentType;
+  ClearLocalCache: React.ComponentType;
+  DeleteAccount: React.ComponentType;
+}
+
+export default function SettingsAccount({
+  s, save, sectionVisible, onUpgrade, platformUser,
+  SecurityStatus, ChangeEmail, ChangePassword, ActiveSessions,
+  RotateEncryptionKey, ClearLocalCache, DeleteAccount,
+}: SettingsAccountProps) {
+  return (<>
+    {/* Security Status */}
+    <div style={{ display: sectionVisible('security-status') ? undefined : 'none' }}>
+    <div data-section="security-status"><SecurityStatus
+      platformUser={platformUser}
+      onSetupStep={(step) => {
+        if (step === 'verify-email') {
+          const el = document.querySelector('[data-section="change-email"]');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (step === 'setup-2fa') {
+          const el = document.querySelector('[data-section="2fa"]');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (step === 'recovery-key') {
+          const el = document.querySelector('[data-section="recovery-key"]');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }}
+    /></div>
+    </div>
+
+    {/* Identity */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Username</div>
+        <div style={{ fontSize: 12, color: T.ac, fontFamily: 'monospace', marginTop: 2 }}>{api.username || '\u2014'}</div>
+      </div>
+      <button onClick={() => navigator.clipboard?.writeText(api.userId || '')} style={{ fontSize: 10, color: T.mt, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }} title="Copy user ID">Copy ID</button>
+    </div>
+    <div style={{ display: sectionVisible('change-email') ? undefined : 'none' }}>
+    <div data-section="change-email"><ChangeEmail /></div>
+    </div>
+
+    {/* Subscription */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Subscription</div>
+    <SubscriptionPanel platformUser={platformUser} onUpgrade={onUpgrade} />
+
+    {/* Security */}
+    <div style={{ display: sectionVisible('security') ? undefined : 'none' }}>
+    <div data-section="security" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Security</div>
+    <ChangePassword />
+    <div data-section="2fa" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Two-Factor Authentication (2FA) <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
+      <button onClick={() => { alert('2FA setup will be available in a future update. Your account is still protected by password-based authentication and session management.'); }} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
+    </div>
+    <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Encryption Key Fingerprint <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
+      <button onClick={() => navigator.clipboard?.writeText(api.userId || '')} style={{ fontSize: 10, color: T.ac, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontFamily: 'monospace' }} title="Copy fingerprint">Copy</button>
+    </div>
+    </div>
+
+    {/* Active Devices + Danger Zone */}
+    <div style={{ display: sectionVisible('active-devices') ? undefined : 'none' }}>
+    <div data-section="active-devices" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
+    <ActiveSessions />
+    <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 14 }}>Danger Zone</div>
+      <RotateEncryptionKey />
+      <div style={{ height: 1, background: 'rgba(255,71,87,0.1)', margin: '12px 0' }} />
+      <ClearLocalCache />
+      <div style={{ height: 1, background: 'rgba(255,71,87,0.1)', margin: '12px 0' }} />
+      <div style={{ fontSize: 12, color: T.mt, marginBottom: 12, lineHeight: 1.6 }}>
+        Permanently delete your account and <strong style={{ color: T.err }}>ALL</strong> associated data. <strong style={{ color: T.err }}>This action is irreversible.</strong>
+      </div>
+      <DeleteAccount />
+    </div>
+    </div>
+  </>);
+}
+
+// Subscription sub-panel (self-contained state)
+function SubscriptionPanel({ platformUser, onUpgrade }: { platformUser: any; onUpgrade?: () => void }) {
+  const [billing, setBilling] = React.useState<any>(null);
+  const [loadingBilling, setLoadingBilling] = React.useState(true);
+  const [cancelling, setCancelling] = React.useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = React.useState(false);
+
+  React.useEffect(() => {
+    api.getBillingStatus().then(d => { setBilling(d); setLoadingBilling(false); }).catch(() => setLoadingBilling(false));
+  }, []);
+
+  if (loadingBilling) return <div style={{ fontSize: 11, color: T.mt, padding: 12 }}>Loading subscription...</div>;
+
+  if (billing?.self_hosted) {
+    return (
+      <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>&#127968;</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>Self-Hosted Instance</div>
+            <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>All features included — no subscription required.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const tierKey = billing?.tier || platformUser?.account_tier || 'verified';
+  const tierMeta = (TIER_META as any)[tierKey] || { icon: '\u2705', label: 'Free', color: T.ac };
+  const isPaid = billing?.status === 'active' && (tierKey === 'pro' || tierKey === 'teams' || tierKey === 'enterprise');
+  const expiresAt = billing?.expires_at ? new Date(billing.expires_at) : null;
+  const willCancel = billing?.cancel_at_period_end;
+  const paymentMethod = billing?.payment_method;
+
+  return (
+    <div style={{ padding: '14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPaid ? 10 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>{tierMeta.icon}</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: tierMeta.color }}>{tierMeta.label}</div>
+            {isPaid && paymentMethod && (
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>
+                via {paymentMethod === 'stripe' ? 'Card' : paymentMethod === 'btcpay' ? 'Crypto' : paymentMethod}
+                {expiresAt && !willCancel && <span> · renews {expiresAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                {expiresAt && willCancel && <span> · expires {expiresAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+              </div>
+            )}
+          </div>
+        </div>
+        <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>
+          {isPaid ? 'Change Plan' : 'Upgrade'}
+        </button>
+      </div>
+      {willCancel && expiresAt && (
+        <div style={{ padding: '8px 10px', background: 'rgba(250,166,26,0.08)', borderRadius: 6, border: '1px solid rgba(250,166,26,0.15)', fontSize: 11, color: '#faa61a', marginBottom: 8 }}>
+          Your {tierMeta.label} features will remain active until {expiresAt.toLocaleDateString()}. After that you'll be on the Free plan.
+        </div>
+      )}
+      {isPaid && !willCancel && !showCancelConfirm && (
+        <button onClick={() => setShowCancelConfirm(true)} style={{ background: 'none', border: 'none', color: T.mt, fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Cancel subscription</button>
+      )}
+      {showCancelConfirm && (
+        <div style={{ padding: '10px 12px', background: 'rgba(255,71,87,0.06)', borderRadius: 8, border: '1px solid rgba(255,71,87,0.15)', marginTop: 6 }}>
+          <div style={{ fontSize: 12, color: T.tx, marginBottom: 6 }}>
+            Your {tierMeta.label} features will remain active until <strong>{expiresAt?.toLocaleDateString() || 'the end of the billing period'}</strong>. After that you'll be on the Free plan.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={async () => {
+              setCancelling(true);
+              try {
+                await api.fetch('/subscription', { method: 'DELETE' });
+                setBilling((p: any) => ({ ...p, cancel_at_period_end: true }));
+                setShowCancelConfirm(false);
+              } catch {}
+              setCancelling(false);
+            }} disabled={cancelling} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: T.err, color: '#fff', fontSize: 11, fontWeight: 700, cursor: cancelling ? 'default' : 'pointer' }}>
+              {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
+            </button>
+            <button onClick={() => setShowCancelConfirm(false)} style={{ padding: '5px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer' }}>Keep Plan</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

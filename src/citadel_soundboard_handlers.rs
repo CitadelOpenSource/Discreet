@@ -1,7 +1,7 @@
 // citadel_soundboard_handlers.rs — Server soundboard system.
 //
 // Short audio clips (≤500KB, ~10 seconds) that can be played in voice channels.
-// Think Ventrilo-style sound effects.
+// Push-to-play sound effects for voice channels.
 //
 // Endpoints:
 //   GET    /api/v1/servers/:server_id/soundboard        — List clips

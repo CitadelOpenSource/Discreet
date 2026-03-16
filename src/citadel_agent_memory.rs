@@ -285,15 +285,19 @@ fn decrypt_message_content(
         })
     } else {
         // TODO: MLS decryption with agent's leaf key
-        // For now, attempt UTF-8 decode — this will work for the PBKDF2
+        // For now, attempt UTF-8 decode — this will work for the legacy
         // encrypted messages once we wire the AES-GCM decryption here.
         //
-        // The client encrypts with:
+        // Legacy client encrypts with:
         //   key = PBKDF2(passphrase=`citadel:{channelId}:{epoch}`, salt="mls-group-secret")
         //   AES-256-GCM(key, nonce=first_12_bytes, plaintext)
         //
+        // MLS upgrade path (OpenMLS 0.8):
+        //   key = HKDF-SHA256(group_epoch_secret, channel_id, "discreet-msg-key-v1")
+        //   AES-256-GCM(key, nonce=first_12_bytes, plaintext)
+        //
         // To properly decrypt, we need:
-        //   1. The channel epoch key (distributed via WebSocket)
+        //   1. The channel epoch key (distributed via MLS group state)
         //   2. The nonce (prepended to ciphertext)
         //   3. AES-256-GCM decrypt
         //

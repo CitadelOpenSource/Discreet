@@ -1,12 +1,12 @@
 // citadel_stream_handlers.rs — Encrypted RTMP streaming within MLS groups.
 //
 // PATENT-PENDING ARCHITECTURE:
-// Professional streaming software (OBS Studio) sends RTMP to Citadel.
+// Professional streaming software sends RTMP to the server.
 // Server re-encrypts with MLS group key via SFrame (RFC 9605).
 // Viewers receive encrypted frames — server never stores video.
 //
 // This is the FIRST system to combine:
-// 1. Standard RTMP ingest (compatible with OBS, Streamlabs, etc.)
+// 1. Standard RTMP ingest (compatible with any RTMP broadcasting software)
 // 2. MLS (RFC 9420) group encryption for key distribution
 // 3. SFrame (RFC 9605) per-frame encryption
 // 4. Zero-knowledge relay (server discards plaintext immediately)
@@ -73,7 +73,7 @@ pub struct StreamStatus {
 /// connection without exposing the session token.
 ///
 /// PATENT CLAIM 3: Returns a standard RTMP URL that works with unmodified
-/// OBS Studio, Streamlabs, and other broadcasting software.
+/// standard RTMP broadcasting software.
 pub async fn start_stream(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -102,7 +102,7 @@ pub async fn start_stream(
     }
 
     // Generate stream key using HKDF derivation.
-    // PATENT CLAIM 2: stream_key = HKDF-SHA256(jwt_token, channel_id, "citadel-rtmp-stream-v1")
+    // PATENT CLAIM 2: stream_key = HKDF-SHA256(salt="discreet-stream-v1", ikm=user_id, info=user_id:channel_id)
     let stream_id = Uuid::new_v4();
     let stream_key = derive_stream_key(auth.user_id, channel_id);
     let quality = req.quality.unwrap_or_else(|| "1080p".into());
@@ -214,14 +214,16 @@ pub async fn stream_status(
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 /// PATENT CLAIM 2: Derive stream authentication key from user ID and channel ID.
-/// Uses HMAC-SHA256 as a simplified HKDF for stream key generation.
+/// Uses HKDF-SHA256 for proper domain-separated key derivation.
 /// The stream key authenticates RTMP connections without exposing the JWT.
+/// Output: 64 hex chars (256 bits) — full-strength key matching our standard.
 fn derive_stream_key(user_id: Uuid, channel_id: Uuid) -> String {
-    use sha2::{Sha256, Digest};
-    let mut hasher = Sha256::new();
-    hasher.update(b"citadel-rtmp-stream-v1");
-    hasher.update(user_id.as_bytes());
-    hasher.update(channel_id.as_bytes());
-    hasher.update(b"stream-key-derivation");
-    format!("{:x}", hasher.finalize())[..32].to_string()
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+    let info = format!("{}:{}", user_id, channel_id);
+    let hk = Hkdf::<Sha256>::new(Some(b"discreet-stream-v1"), user_id.as_bytes());
+    let mut okm = [0u8; 32];
+    hk.expand(info.as_bytes(), &mut okm)
+        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
+    hex::encode(okm)
 }

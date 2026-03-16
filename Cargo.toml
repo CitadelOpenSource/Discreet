@@ -17,7 +17,7 @@ mls = ["dep:openmls", "dep:openmls_rust_crypto"]
 # Enable when PQ key exchange endpoints are wired:
 # NOTE: ml-kem and ml-dsa only have pre-release versions on crates.io.
 # Add them back with exact pinned versions when PQ implementation begins.
-post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek", "dep:hkdf"]
+post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek"]
 
 [dependencies]
 # ── Web framework ─────────────────────────────────────────
@@ -49,6 +49,7 @@ jsonwebtoken = "9"
 
 # ── Crypto (currently used) ───────────────────────────────
 sha2 = "0.10"
+hkdf = "0.12"
 hmac = "0.12"
 rand = "0.8"
 base64 = "0.22"
@@ -59,7 +60,6 @@ hex = "0.4"
 ed25519-dalek = { version = "2", features = ["serde", "rand_core"], optional = true }
 x25519-dalek = { version = "2", features = ["serde", "static_secrets"], optional = true }
 aes-gcm = "0.10"
-hkdf = { version = "0.12", optional = true }
 
 # ── Crypto — future: post-quantum (behind feature flag) ──
 # ml-kem and ml-dsa will be added when stable releases exist.

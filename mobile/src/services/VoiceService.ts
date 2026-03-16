@@ -23,36 +23,56 @@ import { WebSocketService } from './WebSocketService';
 
 // ── SFrame helpers (AES-256-GCM, matching web client) ─────────────────────────
 
-/** PBKDF2 key derivation — matches web client's deriveChannelKeyBytes exactly. */
+/** HKDF-SHA256 key derivation — matches web client's deriveChannelKeyBytes exactly. */
 async function deriveChannelKeyBytes(channelId: string): Promise<Uint8Array> {
   try {
-    // Prefer react-native-quick-crypto (Node-compatible API)
     const QuickCrypto = require('react-native-quick-crypto');
-    return new Promise<Uint8Array>((resolve, reject) => {
-      QuickCrypto.pbkdf2(
-        `citadel:${channelId}:0`,       // password
-        'mls-group-secret',              // salt
-        100_000,                         // iterations
-        32,                              // keylen (256 bits)
-        'sha256',                        // digest
-        (err: Error | null, key: Buffer) => {
-          if (err) return reject(err);
-          resolve(new Uint8Array(key));
-        },
-      );
-    });
+    const ikm = Buffer.from(`discreet:${channelId}:0`);
+    const salt = Buffer.from('discreet-mls-v1');
+    const info = Buffer.from(`discreet:${channelId}:0`);
+    return new Uint8Array(QuickCrypto.hkdfSync('sha256', ikm, salt, info, 32));
   } catch {
-    // Fallback: Web Crypto API (available in Hermes with JSI crypto polyfill)
     const enc = new TextEncoder();
+    const salt = enc.encode('discreet-mls-v1');
+    const info = enc.encode(`discreet:${channelId}:0`);
     const mat = await crypto.subtle.importKey(
-      'raw', enc.encode(`citadel:${channelId}:0`), 'PBKDF2', false, ['deriveBits'],
+      'raw', enc.encode(`discreet:${channelId}:0`), 'HKDF', false, ['deriveBits'],
     );
     const bits = await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', salt: enc.encode('mls-group-secret'), iterations: 100_000, hash: 'SHA-256' },
-      mat, 256,
+      { name: 'HKDF', hash: 'SHA-256', salt, info }, mat, 256,
     );
     return new Uint8Array(bits);
   }
+}
+
+/** Derive 32-byte key commitment tag for a channel (info suffix ":commit"). */
+async function deriveChannelCommitment(channelId: string): Promise<Uint8Array> {
+  try {
+    const QuickCrypto = require('react-native-quick-crypto');
+    const ikm = Buffer.from(`discreet:${channelId}:0`);
+    const salt = Buffer.from('discreet-mls-v1');
+    const info = Buffer.from(`discreet:${channelId}:0:commit`);
+    return new Uint8Array(QuickCrypto.hkdfSync('sha256', ikm, salt, info, 32));
+  } catch {
+    const enc = new TextEncoder();
+    const salt = enc.encode('discreet-mls-v1');
+    const info = enc.encode(`discreet:${channelId}:0:commit`);
+    const mat = await crypto.subtle.importKey(
+      'raw', enc.encode(`discreet:${channelId}:0`), 'HKDF', false, ['deriveBits'],
+    );
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'HKDF', hash: 'SHA-256', salt, info }, mat, 256,
+    );
+    return new Uint8Array(bits);
+  }
+}
+
+/** Constant-time comparison of two byte arrays. */
+function ctEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 /** Import raw 256-bit key for AES-GCM. */

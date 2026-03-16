@@ -1,7 +1,7 @@
 // citadel_dm_handlers.rs — Zero-knowledge direct messages.
 //
 // ZERO-KNOWLEDGE DESIGN:
-// DM messages are encrypted client-side using Signal Protocol (X3DH + Double Ratchet).
+// DM messages are encrypted client-side using X3DH + Double Ratchet (end-to-end encrypted).
 // The server stores only ciphertext. It cannot read, search, or moderate DMs.
 //
 // DM channels are between exactly two users. The schema enforces user_a < user_b
@@ -49,7 +49,7 @@ pub struct DmChannelInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct SendDmRequest {
-    /// Signal Protocol ciphertext, base64-encoded.
+    /// E2EE ciphertext (X3DH + Double Ratchet), base64-encoded.
     /// The server CANNOT read this.
     pub content_ciphertext: String,
 }
@@ -59,7 +59,7 @@ pub struct DmMessageInfo {
     pub id: Uuid,
     pub dm_channel_id: Uuid,
     pub sender_id: Uuid,
-    /// Base64-encoded Signal Protocol ciphertext.
+    /// Base64-encoded E2EE ciphertext (X3DH + Double Ratchet).
     pub content_ciphertext: String,
     pub created_at: String,
 }

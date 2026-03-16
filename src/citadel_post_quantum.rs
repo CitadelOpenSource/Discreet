@@ -8,7 +8,7 @@
 //
 // Security levels (Apple PQ3 compatible):
 //   Level 1: Classical only
-//   Level 2: PQ in initial key exchange  (≈ Signal PQXDH)
+//   Level 2: PQ in initial key exchange  (PQXDH pattern)
 //   Level 3: PQ in initial + rekeying    (≈ Apple PQ3)
 //   Level 4: Full PQ + quantum-safe sigs (Citadel target)
 //

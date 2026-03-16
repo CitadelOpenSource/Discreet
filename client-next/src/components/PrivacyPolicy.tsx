@@ -62,7 +62,7 @@ export function PrivacyPolicy() {
           has no ability to decrypt them, even under legal compulsion:
         </p>
         <ul style={S.ul}>
-          <li style={S.li}><strong style={{ color: T.tx }}>Message content</strong> — encrypted with MLS (RFC 9420) for groups, Signal Protocol for DMs</li>
+          <li style={S.li}><strong style={{ color: T.tx }}>Message content</strong> — encrypted with MLS (RFC 9420) for groups, X3DH + Double Ratchet for DMs</li>
           <li style={S.li}><strong style={{ color: T.tx }}>Files and attachments</strong> — encrypted before upload</li>
           <li style={S.li}><strong style={{ color: T.tx }}>Voice and video streams</strong> — encrypted with SFrame (RFC 9605)</li>
           <li style={S.li}><strong style={{ color: T.tx }}>AI agent conversations</strong> — agents hold MLS leaf secrets; the server relays ciphertext</li>

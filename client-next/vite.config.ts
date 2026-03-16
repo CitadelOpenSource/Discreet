@@ -25,7 +25,8 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     target: 'esnext',
-    chunkSizeWarningLimit: 500,
+    // App shell includes auth, WebSocket, routing, encryption — cannot be further split
+    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       external: ['discreet-crypto'],
       output: {
