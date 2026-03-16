@@ -113,7 +113,7 @@ pub fn self_update<Provider: OpenMlsProvider>(
     provider: &Provider,
     signer: &SignatureKeyPair,
 ) -> Result<Vec<u8>, String> {
-    let bundle = group
+    let (commit, _welcome, _group_info) = group
         .self_update(provider, signer, LeafNodeParameters::default())
         .map_err(|e| format!("Self-update failed: {e}"))?;
 
@@ -121,8 +121,7 @@ pub fn self_update<Provider: OpenMlsProvider>(
         .merge_pending_commit(provider)
         .map_err(|e| format!("Merge self-update failed: {e}"))?;
 
-    // CommitMessageBundle — extract the commit message
-    bundle.commit().tls_serialize_detached()
+    commit.tls_serialize_detached()
         .map_err(|e| format!("Commit serialization failed: {e}"))
 }
 
