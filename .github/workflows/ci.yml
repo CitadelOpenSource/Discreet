@@ -96,6 +96,9 @@ jobs:
       - name: Test (unit tests)
         run: cargo test --lib
 
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
+
       - name: SQLx offline check
         run: cargo sqlx prepare --check
         env:
