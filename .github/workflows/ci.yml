@@ -44,7 +44,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-test-secret-at-least-32-bytes-long-for-jwt-hmac
       SQLX_OFFLINE: "true"
-      SELF_HOSTED: "true"
+      SELF_HOSTED: "false"
 
     steps:
       - name: Checkout
