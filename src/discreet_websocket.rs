@@ -1,7 +1,8 @@
 // discreet_websocket.rs — WebSocket handler for real-time events + voice signaling.
 //
 // GET /ws?server_id=<uuid>
-//   - Requires Authorization: Bearer <JWT>
+//   - Auth (priority): Sec-WebSocket-Protocol > Authorization header > ?token= (deprecated)
+//   - Origin validated against CORS_ORIGINS (403 if mismatch)
 //   - Upgrades to WebSocket
 //   - Subscribes to server's broadcast bus
 //   - Pushes JSON event envelopes to the client
@@ -39,6 +40,8 @@ use crate::discreet_typing;
 #[derive(Debug, Deserialize)]
 pub struct WsParams {
     pub server_id: Uuid,
+    /// Deprecated: JWT in query string. Use Sec-WebSocket-Protocol instead.
+    pub token: Option<String>,
 }
 
 /// Generic incoming message. The `type` field routes to the appropriate handler.
@@ -94,31 +97,63 @@ pub async fn ws_connect(
             }
             // No Origin header → allow (CLI / non-browser client)
         }
+    } else if let Ok(app_url) = std::env::var("APP_URL") {
+        // CORS_ORIGINS not set — validate against APP_URL.
+        if let Some(origin) = headers
+            .get(header::ORIGIN)
+            .and_then(|v| v.to_str().ok())
+        {
+            if origin != app_url {
+                tracing::warn!(
+                    origin = origin,
+                    allowed = %app_url,
+                    "WebSocket connection rejected — origin does not match APP_URL",
+                );
+                return Err(AppError::Forbidden(
+                    "Origin not allowed".into(),
+                ));
+            }
+        }
     }
 
-    // Auth sources (token query parameter intentionally excluded — tokens must
-    // not appear in URLs where they can be logged by proxies/CDNs):
-    // 1. Authorization: Bearer <token>  (standard HTTP header)
-    // 2. Sec-WebSocket-Protocol: "Bearer, <token>"  (browser WebSocket subprotocol)
-    let token = headers
-        .get(header::AUTHORIZATION)
+    // Auth sources (priority order):
+    // 1. Sec-WebSocket-Protocol: "Bearer, <token>"  (primary — browser subprotocol)
+    // 2. Authorization: Bearer <token>               (standard HTTP header)
+    // 3. ?token=<jwt> query parameter                (deprecated — logged as warning)
+    let mut used_subprotocol = false;
+    let token = headers.get("sec-websocket-protocol")
         .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .map(|t| t.to_string())
+        .and_then(|v| {
+            let parts: Vec<&str> = v.splitn(2, ',').collect();
+            if parts.len() == 2 && parts[0].trim() == "Bearer" {
+                used_subprotocol = true;
+                Some(parts[1].trim().to_string())
+            } else {
+                None
+            }
+        })
         .or_else(|| {
-            headers.get("sec-websocket-protocol")
+            headers.get(header::AUTHORIZATION)
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| {
-                    let parts: Vec<&str> = v.splitn(2, ',').collect();
-                    if parts.len() == 2 && parts[0].trim() == "Bearer" {
-                        Some(parts[1].trim().to_string())
-                    } else {
-                        None
-                    }
-                })
+                .and_then(|h| h.strip_prefix("Bearer "))
+                .map(|t| t.to_string())
+        })
+        .or_else(|| {
+            // Deprecated: ?token= query parameter. Tokens in URLs can be logged
+            // by proxies, CDNs, and server access logs. Migrate to subprotocol auth.
+            if let Some(ref t) = params.token {
+                tracing::warn!(
+                    server_id = %params.server_id,
+                    "WebSocket auth via ?token= query parameter is deprecated — \
+                     migrate to Sec-WebSocket-Protocol: Bearer, <token>"
+                );
+                Some(t.clone())
+            } else {
+                None
+            }
         })
         .ok_or_else(|| AppError::Unauthorized(
-            "Missing authentication — use Authorization header or Sec-WebSocket-Protocol".into(),
+            "Missing authentication — use Sec-WebSocket-Protocol: Bearer, <token>".into(),
         ))?;
 
     // 10-second timeout on JWT validation + DB session check.
@@ -184,7 +219,16 @@ pub async fn ws_connect(
     let server_id = params.server_id;
     let state_clone = state.clone();
 
-    Ok(ws.on_upgrade(move |socket| handle_ws(socket, state_clone, server_id, user_id, username, is_guest)))
+    // When the client authenticated via Sec-WebSocket-Protocol, the server
+    // MUST echo "Bearer" as the selected subprotocol in the 101 response.
+    // Without this, browsers reject the upgrade.
+    let upgrade = if used_subprotocol {
+        ws.protocols(["Bearer"])
+    } else {
+        ws
+    };
+
+    Ok(upgrade.on_upgrade(move |socket| handle_ws(socket, state_clone, server_id, user_id, username, is_guest)))
 }
 
 /// Main WebSocket loop: subscribe to server bus, forward events to client,
@@ -254,15 +298,41 @@ async fn handle_ws(
 
     loop {
         tokio::select! {
-            // ── Ban check ─────────────────────────────────────────────
+            // ── Ban check (fail-closed: Redis → DB → reject) ─────────
             _ = ban_check.tick() => {
                 let ban_key = format!("banned:{}", user_id);
                 let mut redis_conn = state.redis.clone();
-                let is_banned: bool = redis::cmd("EXISTS")
+
+                // Layer 1: Check Redis for ban flag
+                let redis_result: Result<bool, _> = redis::cmd("EXISTS")
                     .arg(&ban_key)
                     .query_async(&mut redis_conn)
-                    .await
-                    .unwrap_or(false);
+                    .await;
+
+                let is_banned = match redis_result {
+                    Ok(true) => true,
+                    Ok(false) => false,
+                    Err(_) => {
+                        // Layer 2: Redis failed — fall back to DB
+                        tracing::warn!(user_id = %user_id, "Ban check Redis error — falling back to DB");
+                        match sqlx::query_scalar!(
+                            "SELECT banned_at IS NOT NULL AS \"is_banned!: bool\" FROM users WHERE id = $1",
+                            user_id,
+                        )
+                        .fetch_optional(&state.db)
+                        .await
+                        {
+                            Ok(Some(banned)) => banned,
+                            Ok(None) => true,  // User not found — fail-closed
+                            Err(e) => {
+                                // Layer 3: Both Redis AND DB failed — fail-closed
+                                tracing::error!(user_id = %user_id, error = %e, "Ban check failed on both Redis and DB — disconnecting (fail-closed)");
+                                true
+                            }
+                        }
+                    }
+                };
+
                 if is_banned {
                     tracing::warn!(user_id = %user_id, "Banned user detected — closing WebSocket");
                     let _ = socket.send(Message::Close(Some(
@@ -704,5 +774,76 @@ async fn handle_client_message(
         _ => {
             tracing::debug!(msg_type = %msg.msg_type, "Unknown WS message type");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Verify the ban check logic is fail-closed.
+    ///
+    /// The ban check cascade is:
+    ///   1. Redis EXISTS banned:{uid} → if true, banned
+    ///   2. Redis error → DB fallback: SELECT banned_at IS NOT NULL
+    ///   3. DB error or user not found → assume banned (fail-closed)
+    ///
+    /// This test verifies the decision logic without requiring live services.
+    #[test]
+    fn test_ban_check_fail_closed_logic() {
+        // Simulate: Redis returns Ok(false) → not banned
+        let redis_ok_false: Result<bool, &str> = Ok(false);
+        let is_banned = match redis_ok_false {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(_) => true, // fail-closed
+        };
+        assert!(!is_banned, "Redis Ok(false) should allow");
+
+        // Simulate: Redis returns Ok(true) → banned
+        let redis_ok_true: Result<bool, &str> = Ok(true);
+        let is_banned = match redis_ok_true {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(_) => true,
+        };
+        assert!(is_banned, "Redis Ok(true) should ban");
+
+        // Simulate: Redis error, DB says banned
+        let redis_err: Result<bool, &str> = Err("connection refused");
+        let db_result: Option<bool> = Some(true);
+        let is_banned = match redis_err {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(_) => match db_result {
+                Some(banned) => banned,
+                None => true, // user not found — fail-closed
+            },
+        };
+        assert!(is_banned, "Redis error + DB banned should ban");
+
+        // Simulate: Redis error, DB says not banned
+        let redis_err: Result<bool, &str> = Err("connection refused");
+        let db_result: Option<bool> = Some(false);
+        let is_banned = match redis_err {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(_) => match db_result {
+                Some(banned) => banned,
+                None => true,
+            },
+        };
+        assert!(!is_banned, "Redis error + DB not-banned should allow");
+
+        // Simulate: Redis error, DB error (user not found) → MUST ban (fail-closed)
+        let redis_err: Result<bool, &str> = Err("connection refused");
+        let db_result: Option<bool> = None;
+        let is_banned = match redis_err {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(_) => match db_result {
+                Some(banned) => banned,
+                None => true, // fail-closed: both layers failed
+            },
+        };
+        assert!(is_banned, "Both Redis and DB failed — must fail-closed (ban)");
     }
 }

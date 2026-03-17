@@ -66,6 +66,7 @@ pub mod discreet_state;
 pub mod discreet_stream_handlers;
 pub mod discreet_task_executor;
 pub mod discreet_tier_limits;
+pub mod discreet_turn;
 pub mod discreet_typing;
 pub mod discreet_user_handlers;
 pub mod discreet_waitlist;

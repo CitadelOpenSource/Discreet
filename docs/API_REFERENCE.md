@@ -742,7 +742,7 @@ curl -X DELETE http://localhost:3000/api/v1/auth/sessions/<session_id> -H 'Autho
 - Auth required: **Yes** (current implementation does not enforce membership in handler; upstream auth still required)
 - Response `200`:
 ```json
-[{"id":"uuid","display_name":"Citadel Legal — visas","specialization":{},"status":"active","fingerprint":"hex","created_at":"timestamp","channel_count":1}]
+[{"id":"uuid","display_name":"Discreet Legal — visas","specialization":{},"status":"active","fingerprint":"hex","created_at":"timestamp","channel_count":1}]
 ```
 
 ## 15) WebSocket
@@ -767,7 +767,7 @@ curl -X DELETE http://localhost:3000/api/v1/auth/sessions/<session_id> -H 'Autho
 {"type":"REACTION_ADD","channel_id":"uuid","message_id":"uuid","user_id":"uuid","emoji":"👍"}
 {"type":"REACTION_REMOVE","channel_id":"uuid","message_id":"uuid","user_id":"uuid","emoji":"👍"}
 {"type":"TYPING_START","channel_id":"uuid","user_id":"uuid","timestamp":"RFC3339"}
-{"type":"agent_channel_created","channel_id":"uuid","agent":{"id":"uuid","display_name":"Citadel Legal"},"topic":"immigration law"}
+{"type":"agent_channel_created","channel_id":"uuid","agent":{"id":"uuid","display_name":"Discreet Legal"},"topic":"immigration law"}
 {"type":"MEMBER_BANNED","server_id":"uuid","user_id":"uuid","banned_by":"uuid"}
 {"type":"MEMBER_UNBANNED","server_id":"uuid","user_id":"uuid","unbanned_by":"uuid"}
 {"type":"lagged","missed":42}

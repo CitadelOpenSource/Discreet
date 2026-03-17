@@ -86,12 +86,68 @@ pub enum AutoModAction {
     Delete(String),
 }
 
+// ─── Sanitization ───────────────────────────────────────────────────────
+
+/// Strip zero-width and invisible characters used to bypass word filters.
+/// Also URL-decode the input so %62%61%64 doesn't evade "bad" word checks.
+fn sanitize_for_scan(input: &str) -> String {
+    // Step 1: Strip zero-width / invisible characters
+    let stripped: String = input.chars().filter(|c| !matches!(c,
+        '\u{200B}' | // zero-width space
+        '\u{200C}' | // zero-width non-joiner
+        '\u{200D}' | // zero-width joiner
+        '\u{FEFF}' | // byte order mark / zero-width no-break space
+        '\u{00AD}' | // soft hyphen
+        '\u{200E}' | // left-to-right mark
+        '\u{200F}'   // right-to-left mark
+    )).collect();
+
+    // Step 2: URL-decode (single pass — handles %XX encoding)
+    let mut decoded = String::with_capacity(stripped.len());
+    let bytes = stripped.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (
+                hex_val(bytes[i + 1]),
+                hex_val(bytes[i + 2]),
+            ) {
+                decoded.push((hi << 4 | lo) as char);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i] as char);
+        i += 1;
+    }
+    decoded
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// URL shortener domains that obscure the actual destination.
+const SHORTENER_DOMAINS: &[&str] = &[
+    "bit.ly", "t.co", "tinyurl.com", "goo.gl", "is.gd", "rb.gy",
+    "ow.ly", "buff.ly", "adf.ly", "cutt.ly", "shorturl.at",
+];
+
 // ─── Rule Engine ────────────────────────────────────────────────────────
 
 /// Evaluate a message against the AutoMod rules.
 ///
 /// Returns the most severe action triggered. Checks run in order:
-/// bad words → invite links → all links → mention spam → caps spam.
+/// bad words → invite links → shortener links → all links → mention spam → caps spam.
+///
+/// Input is sanitized before scanning: zero-width characters are stripped
+/// and URL-encoded sequences are decoded. This prevents bypass attacks
+/// like "b%61dword" or "bad\u{200B}word".
 ///
 /// If `nsfw` is true the bad-words check is skipped (NSFW channels
 /// are expected to contain adult language) but structural rules
@@ -105,7 +161,8 @@ pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool, instance
         return AutoModAction::Allow;
     }
 
-    let lower = message.to_lowercase();
+    let sanitized = sanitize_for_scan(message);
+    let lower = sanitized.to_lowercase();
 
     // ── Bad words (case-insensitive substring match) ─────────────────────
     // Skipped in NSFW channels.
@@ -152,6 +209,17 @@ pub fn check_message(config: &AutoModConfig, message: &str, nsfw: bool, instance
                     }
                 }
                 pos = abs + 8; // skip past "/invite/"
+            }
+        }
+    }
+
+    // ── URL shortener domains (always blocked when invites or links are blocked) ──
+    if config.block_invites || config.block_links {
+        for domain in SHORTENER_DOMAINS {
+            if lower.contains(domain) {
+                return AutoModAction::Delete(format!(
+                    "URL shortener links are not allowed ({})", domain
+                ));
             }
         }
     }
@@ -437,5 +505,70 @@ mod tests {
             check_message(&config, "Join https://other.com/invite/abc123", false, Some("myinstance.com")),
             AutoModAction::Delete(_)
         ));
+    }
+
+    #[test]
+    fn test_zero_width_bypass_blocked() {
+        let mut config = enabled_config();
+        config.bad_words = vec!["badword".into()];
+        // Zero-width spaces inserted between characters: "bad\u{200B}word"
+        let bypass = "bad\u{200B}word";
+        assert!(matches!(
+            check_message(&config, bypass, false, None),
+            AutoModAction::Delete(_)
+        ));
+        // Zero-width joiner: "b\u{200D}a\u{200D}d\u{200D}w\u{200D}o\u{200D}r\u{200D}d"
+        let bypass2 = "b\u{200D}a\u{200D}dw\u{200D}ord";
+        assert!(matches!(
+            check_message(&config, bypass2, false, None),
+            AutoModAction::Delete(_)
+        ));
+        // Soft hyphen: "bad\u{00AD}word"
+        let bypass3 = "bad\u{00AD}word";
+        assert!(matches!(
+            check_message(&config, bypass3, false, None),
+            AutoModAction::Delete(_)
+        ));
+    }
+
+    #[test]
+    fn test_url_encoded_bypass_blocked() {
+        let mut config = enabled_config();
+        config.bad_words = vec!["badword".into()];
+        // URL-encoded: "b%61dword" = "badword"
+        assert!(matches!(
+            check_message(&config, "b%61dword", false, None),
+            AutoModAction::Delete(_)
+        ));
+        // Full URL-encode: "%62%61%64%77%6f%72%64" = "badword"
+        assert!(matches!(
+            check_message(&config, "%62%61%64%77%6f%72%64", false, None),
+            AutoModAction::Delete(_)
+        ));
+    }
+
+    #[test]
+    fn test_url_shortener_blocked() {
+        let mut config = enabled_config();
+        config.block_invites = true;
+        // Shortener links blocked when invites are blocked
+        assert!(matches!(
+            check_message(&config, "Check https://bit.ly/abc123", false, None),
+            AutoModAction::Delete(_)
+        ));
+        assert!(matches!(
+            check_message(&config, "See t.co/xyz", false, None),
+            AutoModAction::Delete(_)
+        ));
+        assert!(matches!(
+            check_message(&config, "Visit tinyurl.com/short", false, None),
+            AutoModAction::Delete(_)
+        ));
+        // Not blocked when invites AND links are both disabled
+        let config2 = enabled_config();
+        assert_eq!(
+            check_message(&config2, "Check https://bit.ly/abc123", false, None),
+            AutoModAction::Allow
+        );
     }
 }

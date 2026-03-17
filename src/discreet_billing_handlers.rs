@@ -125,6 +125,10 @@ async fn create_btcpay_checkout(
     let client = reqwest::Client::new();
     let invoice_url = format!("{}/api/v1/stores/{}/invoices", btcpay_url.trim_end_matches('/'), store_id);
 
+    let app_url = std::env::var("APP_URL")
+        .or_else(|_| std::env::var("PUBLIC_URL"))
+        .unwrap_or_else(|_| "http://localhost:3000".into());
+
     let body = serde_json::json!({
         "amount": format!("{:.2}", price_cents as f64 / 100.0),
         "currency": "USD",
@@ -133,7 +137,7 @@ async fn create_btcpay_checkout(
             "tier": tier,
         },
         "checkout": {
-            "redirectURL": format!("{}/app?billing=success", std::env::var("APP_URL").unwrap_or_default()),
+            "redirectURL": format!("{}/app?billing=success", app_url),
         },
     });
 
@@ -199,7 +203,9 @@ async fn create_stripe_checkout(
         return Err(AppError::NotConfigured(format!("Stripe price ID not configured for {} tier", tier)));
     }
 
-    let app_url = std::env::var("APP_URL").unwrap_or_else(|_| "http://localhost:3000".into());
+    let app_url = std::env::var("APP_URL")
+        .or_else(|_| std::env::var("PUBLIC_URL"))
+        .unwrap_or_else(|_| "http://localhost:3000".into());
 
     let client = reqwest::Client::new();
     let resp = client

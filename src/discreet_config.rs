@@ -16,6 +16,18 @@ pub struct Config {
     #[serde(default = "default_port")]
     pub port: u16,
 
+    // ── URLs ──────────────────────────────────────────────
+    /// Public-facing URL (e.g., https://discreetai.net).
+    /// Used for email footers, Open Graph metadata, external links.
+    pub public_url: Option<String>,
+    /// Frontend app URL (e.g., https://app.discreetai.net).
+    /// Used as default CORS origin when CORS_ORIGINS is not set.
+    /// Email verification and password reset links point here.
+    pub app_url: Option<String>,
+    /// API base URL (e.g., https://api.discreetai.net/api/v1).
+    /// Self-hosted instances default to same-origin /api/v1.
+    pub api_url: Option<String>,
+
     // ── Database ─────────────────────────────────────────
     /// PostgreSQL connection URL
     pub database_url: String,
@@ -53,6 +65,10 @@ pub struct Config {
     /// Enable AI agent framework
     #[serde(default)]
     pub agents_enabled: bool,
+    /// Self-hosted mode — relaxes production credential checks,
+    /// grants enterprise tier to all users. Defaults API URL to same-origin /api/v1.
+    #[serde(default)]
+    pub self_hosted: bool,
 
     // ── AI Agents ────────────────────────────────────────
     /// Master secret for AES-256-GCM encryption of agent API keys at rest.

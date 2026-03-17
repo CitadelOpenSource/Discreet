@@ -66,7 +66,7 @@ export interface SettingsModalProps {
 
 // ─── Module-level constants ───────────────────────────────
 
-const API_BASE = window.location.origin + '/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || (window.location.origin + '/api/v1');
 
 const notifSound = {
   _ctx: null as AudioContext | null,

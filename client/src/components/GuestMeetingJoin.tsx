@@ -11,7 +11,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // ── Constants ─────────────────────────────────────────────
-const WS_BASE = window.location.origin.replace(/^http/, 'ws');
+const WS_BASE = (() => {
+  if (import.meta.env.VITE_API_URL) {
+    try { return new URL(import.meta.env.VITE_API_URL).origin.replace(/^http/, 'ws'); }
+    catch { /* fall through */ }
+  }
+  return window.location.origin.replace(/^http/, 'ws');
+})();
 const SK_NAME = 'gm_display_name';
 const SK_CODE = 'gm_meeting_code';
 

@@ -1054,6 +1054,17 @@ pub async fn login(
             "LOGIN_FAILED — wrong password"
         );
 
+        // Record failure for auto-lockdown evaluation (fire-and-forget).
+        {
+            let state_clone = state.clone();
+            let ip_clone = ip.clone();
+            tokio::spawn(async move {
+                crate::discreet_platform_admin_handlers::record_failed_login_and_check_triggers(
+                    &state_clone, &ip_clone,
+                ).await;
+            });
+        }
+
         // At 20 failures, send email alert to the account owner.
         if new_count == 20 {
             if let Some(ref email) = user.email {
@@ -2046,20 +2057,36 @@ fn validate_username(username: &str) -> Result<(), AppError> {
             "Username may only contain letters, numbers, underscores, and hyphens".into()
         ));
     }
-    // Block reserved prefixes used by system/bot accounts.
+    // Block reserved prefixes used by system/bot accounts (case-insensitive).
     let lower = username.to_lowercase();
-    let blocked_prefixes = ["bot-", "system-", "dev_", "guest_"];
+    let blocked_prefixes = [
+        "bot-", "system-", "dev_", "guest_",
+        "discreet", "citadel",
+    ];
     for prefix in &blocked_prefixes {
         if lower.starts_with(prefix) {
             return Err(AppError::BadRequest("This username prefix is reserved".into()));
         }
     }
-    // Block fully reserved names.
+    // Block fully reserved names (case-insensitive).
     let reserved = [
-        "admin", "system", "citadel", "discreet", "mod", "moderator", "root",
-        "everyone", "here", "deleted", "ghost", "support", "help", "security",
-        "bot", "api", "www", "mail", "noreply", "abuse", "postmaster",
-        "webmaster", "info", "contact", "staff", "team", "official",
+        // Platform brand
+        "discreet", "discreetai", "discreetdev", "discreetadmin", "discreetmod",
+        "discreetbot", "discreetofficial", "discreet_dev", "discreet_admin",
+        "discreet_mod", "discreet_bot",
+        // Legacy brand
+        "citadel", "citadeladmin", "citadeldev", "citadelmod", "citadelbot",
+        // System roles
+        "admin", "administrator", "moderator", "mod", "developer", "dev",
+        "sysadmin", "system", "superuser", "root",
+        // Support / operations
+        "support", "helpdesk", "staff", "team", "official", "security",
+        "postmaster", "webmaster", "abuse", "noreply", "no-reply",
+        "info", "contact", "help", "billing", "sales",
+        // Technical
+        "bot", "api", "www", "mail",
+        // Chat-specific
+        "everyone", "here", "deleted", "ghost",
     ];
     if reserved.contains(&lower.as_str()) {
         return Err(AppError::BadRequest("This username is reserved".into()));

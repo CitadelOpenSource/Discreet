@@ -1,4 +1,4 @@
-# CITADEL USER MANUAL
+# DISCREET USER MANUAL
 ## v0.23.1-alpha — Complete Guide
 
 > **For setup instructions, see [`GUIDE/QUICKSTART.md`](../GUIDE/QUICKSTART.md). For deployment, see [`GUIDE/DEPLOYMENT.md`](../GUIDE/DEPLOYMENT.md).**
@@ -9,13 +9,13 @@
 
 ### Creating an Account
 
-Citadel offers three account tiers:
+Discreet offers three account tiers:
 
 **Guest (Zero Friction)** — Click "Join as Guest" on the login screen. No username, password, or email required. You get full access to voice, text, and AI bots. Guest accounts auto-expire after 30 days of inactivity.
 
 **Registered (Privacy-First)** — Create a username and password. No email required. Full features forever, including creating and owning servers.
 
-**Verified (Full Features)** — Add and confirm your email address. Unlocks password recovery, email notifications, and Citadel Pro eligibility.
+**Verified (Full Features)** — Add and confirm your email address. Unlocks password recovery, email notifications, and Discreet Pro eligibility.
 
 To upgrade: Settings → Profile → add credentials, or Settings → Security → verify email.
 
@@ -221,7 +221,7 @@ All shortcuts rebindable in Settings → Keybinds.
 
 ---
 
-*Citadel — Privacy is not a feature. It's a right.*
+*Discreet — Privacy is not a feature. It's a right.*
 
 ---
 
