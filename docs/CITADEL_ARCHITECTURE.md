@@ -1,4 +1,4 @@
-# Citadel Architecture Document
+# Discreet Architecture Document
 
 **Version:** 0.1.0-alpha
 **Status:** Active Development
@@ -9,7 +9,7 @@
 
 ## 1. Mission Statement
 
-Citadel is a community communication platform where the server is architecturally incapable of reading message content. It provides feature-equivalent functionality (servers, channels, roles, voice) with Signal-equivalent encryption (E2EE for all text, voice, video, and files).
+Discreet is a community communication platform where the server is architecturally incapable of reading message content. It provides feature-equivalent functionality (servers, channels, roles, voice) with Signal-equivalent encryption (E2EE for all text, voice, video, and files).
 
 The server is a **relay**, not an oracle. It routes encrypted blobs between authenticated clients. Cryptographic operations happen exclusively on client devices.
 
@@ -266,7 +266,7 @@ Docker Compose on a single server. PostgreSQL + Redis on the same host.
 ### Phase 2: Separated Services (50K–500K users)
 - Dedicated PostgreSQL with read replicas
 - Redis Cluster for pub/sub fan-out
-- Multiple Citadel server instances behind load balancer
+- Multiple Discreet server instances behind load balancer
 - Sticky WebSocket sessions via consistent hashing on user ID
 
 ### Phase 3: Horizontal Scale (500K–10M+ users)
@@ -309,7 +309,7 @@ Docker Compose on a single server. PostgreSQL + Redis on the same host.
 - [ ] Security audit by independent firm
 
 ### 1.0 (Month 9–12)
-- [ ] Federation protocol (Citadel-to-Citadel)
+- [ ] Federation protocol (Discreet-to-Discreet)
 - [ ] Tor hidden service support
 - [ ] Matrix bridge
 - [ ] Performance benchmarks and optimization

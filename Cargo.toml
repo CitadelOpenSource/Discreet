@@ -48,6 +48,7 @@ argon2 = "0.5"
 jsonwebtoken = "9"
 
 # ── Crypto (currently used) ───────────────────────────────
+sha1 = "0.10"                # TURN ephemeral credentials (HMAC-SHA1, CoTURN standard)
 sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"

@@ -70,6 +70,7 @@ use discreet_server::discreet_settings_handlers;
 use discreet_server::discreet_soundboard_handlers;
 use discreet_server::discreet_stream_handlers;
 use discreet_server::discreet_state::AppState;
+use discreet_server::discreet_turn;
 use discreet_server::discreet_typing;
 use discreet_server::discreet_user_handlers;
 use discreet_server::discreet_dev_token_handlers;
@@ -86,54 +87,121 @@ use discreet_server::discreet_playbook_handlers;
 use discreet_server::discreet_report_handlers;
 use discreet_server::discreet_scheduled_task_handlers;
 
-/// Middleware: maintenance mode gate.
-/// If maintenance_mode is enabled in platform_settings (cached in Redis),
-/// reject all requests except /health and /api/v1/admin/* with 503.
+/// Middleware: lockdown + maintenance mode gate.
+///
+/// Checked BEFORE auth so unauthenticated requests see 503 instantly.
+/// Modes (Redis key `platform:lockdown`):
+///   "full"          — 503 all non-admin requests
+///   "readonly"      — allow GET, block POST/PUT/DELETE/PATCH for non-admins
+///   "registrations" — block new signups only (anti-raid)
+///   "off" / absent  — normal operation
+///
+/// Falls back to platform_settings.maintenance_mode for legacy compat.
 async fn maintenance_middleware(
     State(state): State<Arc<AppState>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = request.uri().path().to_string();
+    let method = request.method().clone();
 
     // Always allow admin endpoints and health check through.
     if path == "/health" || path.starts_with("/api/v1/admin/") {
         return next.run(request).await;
     }
 
-    // Check Redis for cached maintenance flag (avoids DB hit).
-    // Single GET — parse both maintenance_mode and maintenance_message from the same JSON.
+    // ── Check lockdown state (Redis first, then platform_settings fallback) ──
     let mut redis = state.redis.clone();
-    let cached: Option<serde_json::Value> = redis::cmd("GET")
-        .arg("platform_settings")
+
+    // Try lockdown key first (new system)
+    let lockdown: Option<serde_json::Value> = redis::cmd("GET")
+        .arg("platform:lockdown")
         .query_async::<Option<String>>(&mut redis)
         .await
         .ok()
         .flatten()
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let in_maintenance = cached
-        .as_ref()
-        .and_then(|v| v.get("maintenance_mode")?.as_bool())
-        .unwrap_or(false);
+    let mode = lockdown.as_ref()
+        .and_then(|v| v.get("mode")?.as_str())
+        .unwrap_or("off");
 
-    if in_maintenance {
-        let message = cached
-            .as_ref()
-            .and_then(|v| v.get("maintenance_message")?.as_str().map(String::from))
-            .unwrap_or_else(|| "Discreet is undergoing scheduled maintenance. Please try again shortly.".into());
+    let reason = lockdown.as_ref()
+        .and_then(|v| v.get("reason")?.as_str())
+        .unwrap_or("Service temporarily unavailable");
 
-        return (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "error": {
-                    "code": "SERVICE_UNAVAILABLE",
-                    "message": message,
-                },
-                "maintenance": true,
-            })),
-        )
-            .into_response();
+    let retry_after = lockdown.as_ref()
+        .and_then(|v| v.get("retry_after_seconds")?.as_u64())
+        .unwrap_or(900); // default 15 min
+
+    match mode {
+        "full" => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({
+                    "error": { "code": "LOCKDOWN", "message": reason },
+                    "lockdown": true,
+                    "mode": "full",
+                    "retry_after_seconds": retry_after,
+                })),
+            ).into_response();
+        }
+        "readonly" => {
+            if method != axum::http::Method::GET && method != axum::http::Method::HEAD && method != axum::http::Method::OPTIONS {
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    axum::Json(serde_json::json!({
+                        "error": { "code": "LOCKDOWN_READONLY", "message": reason },
+                        "lockdown": true,
+                        "mode": "readonly",
+                        "retry_after_seconds": retry_after,
+                    })),
+                ).into_response();
+            }
+        }
+        "registrations" => {
+            if path.contains("/auth/register") || path.contains("/auth/guest") {
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    axum::Json(serde_json::json!({
+                        "error": { "code": "REGISTRATIONS_LOCKED", "message": reason },
+                        "lockdown": true,
+                        "mode": "registrations",
+                        "retry_after_seconds": retry_after,
+                    })),
+                ).into_response();
+            }
+        }
+        _ => {} // "off" or unknown — continue normally
+    }
+
+    // ── Legacy: check platform_settings.maintenance_mode ──
+    if mode == "off" {
+        let cached: Option<serde_json::Value> = redis::cmd("GET")
+            .arg("platform_settings")
+            .query_async::<Option<String>>(&mut redis)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str(&s).ok());
+
+        let in_maintenance = cached.as_ref()
+            .and_then(|v| v.get("maintenance_mode")?.as_bool())
+            .unwrap_or(false);
+
+        if in_maintenance {
+            let message = cached.as_ref()
+                .and_then(|v| v.get("maintenance_message")?.as_str().map(String::from))
+                .unwrap_or_else(|| "Discreet is undergoing scheduled maintenance. Please try again shortly.".into());
+
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({
+                    "error": { "code": "SERVICE_UNAVAILABLE", "message": message },
+                    "maintenance": true,
+                })),
+            ).into_response();
+        }
     }
 
     next.run(request).await
@@ -184,18 +252,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env();
     let bind_addr = format!("{}:{}", config.host, config.port);
 
-    // Warn if TOTP encryption key is missing in production-like environments.
-    // The server still starts (key is derived from JWT_SECRET as fallback),
-    // but a dedicated key is strongly recommended for production.
-    if config.totp_encryption_key.is_none() {
-        let cors = std::env::var("CORS_ORIGINS").unwrap_or_default();
-        let is_prod = (cors != "*" && !cors.is_empty()) || config.host == "0.0.0.0";
-        if is_prod {
-            tracing::warn!(
-                "TOTP_ENCRYPTION_KEY is not set — TOTP secrets are encrypted with a key \
-                 derived from JWT_SECRET. Set a dedicated 64-hex-char key in production: \
-                 TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)"
-            );
+    // ── Production credential validation ─────────────────────────────────
+    // Refuse to start with weak/default credentials in production.
+    // Skipped when SELF_HOSTED=true (self-hosters manage their own secrets).
+    {
+        let rust_env = std::env::var("RUST_ENV").unwrap_or_default();
+        let self_hosted = std::env::var("SELF_HOSTED").unwrap_or_default();
+        let is_production = rust_env.eq_ignore_ascii_case("production")
+            || self_hosted.ne("true");
+
+        if is_production {
+            tracing::info!("Running production credential checks...");
+
+            // Check DATABASE_URL for default passwords
+            let db_url = std::env::var("DATABASE_URL").unwrap_or_default();
+            let weak_passwords = ["citadel", "discreet", "password", "postgres", "changeme", "CHANGE_ME"];
+            for weak in &weak_passwords {
+                if db_url.contains(&format!(":{}@", weak)) {
+                    tracing::info!("Check: DATABASE_URL password strength");
+                    panic!(
+                        "FATAL: DATABASE_URL contains default password '{}'. \
+                         Generate a secure password: openssl rand -hex 32",
+                        weak
+                    );
+                }
+            }
+            tracing::info!("Check: DATABASE_URL password — OK");
+
+            // Check JWT_SECRET length
+            tracing::info!("Check: JWT_SECRET length (minimum 32 chars)");
+            if config.jwt_secret.len() < 32 {
+                panic!(
+                    "FATAL: JWT_SECRET is only {} chars (minimum 32). \
+                     Generate with: openssl rand -hex 64",
+                    config.jwt_secret.len()
+                );
+            }
+            tracing::info!("Check: JWT_SECRET length — OK ({} chars)", config.jwt_secret.len());
+
+            // Check TOTP_ENCRYPTION_KEY is set
+            tracing::info!("Check: TOTP_ENCRYPTION_KEY presence");
+            if config.totp_encryption_key.is_none() {
+                panic!(
+                    "FATAL: TOTP_ENCRYPTION_KEY is not set. Required in production. \
+                     Generate with: openssl rand -hex 32"
+                );
+            }
+            tracing::info!("Check: TOTP_ENCRYPTION_KEY — OK");
+
+            tracing::info!("All production credential checks passed");
         }
     }
 
@@ -511,6 +616,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/ai-bots/:bot_id/prompt", axum::routing::post(discreet_bot_spawn_handlers::prompt_bot))
         .route("/servers/:server_id/ai-bots/:bot_id/config", axum::routing::get(discreet_bot_spawn_handlers::get_agent_config).put(discreet_bot_spawn_handlers::update_agent_config))
         .route("/servers/:server_id/ai-bots/:bot_id/memory", axum::routing::delete(discreet_bot_spawn_handlers::delete_agent_memory))
+        // Voice / TURN
+        .route("/voice/turn-credentials", axum::routing::get(discreet_turn::turn_credentials))
         // Meetings (Zoom-style)
         .route("/meetings", axum::routing::post(discreet_meeting_handlers::create_meeting).get(discreet_meeting_handlers::list_my_meetings))
         .route("/meetings/:code", axum::routing::get(discreet_meeting_handlers::get_meeting_info).delete(discreet_meeting_handlers::end_meeting))
@@ -631,6 +738,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/generate-dev-accounts", axum::routing::post(discreet_platform_admin_handlers::generate_dev_accounts))
         .route("/admin/users/:user_id/ban", axum::routing::post(discreet_platform_admin_handlers::ban_user)
             .delete(discreet_platform_admin_handlers::unban_user))
+        // ── Lockdown ──
+        .route("/admin/lockdown", axum::routing::post(discreet_platform_admin_handlers::set_lockdown)
+            .get(discreet_platform_admin_handlers::get_lockdown))
         // ── Bug Reports ──
         .route("/bug-reports", axum::routing::post(discreet_bug_report_handlers::submit_bug_report))
         .route("/admin/bug-reports", axum::routing::get(discreet_bug_report_handlers::list_bug_reports))
@@ -658,7 +768,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     // CORS: configurable via CORS_ORIGINS env var.
-    // Not set   → allow only http://localhost:3000 and http://127.0.0.1:3000
+    // Not set   → use APP_URL if set, otherwise allow localhost:{PORT} only
     // "*"       → allow all origins (use only in development)
     // URL(s)    → allow only those origins (comma-separated)
     let cors = match std::env::var("CORS_ORIGINS").ok().as_deref() {
@@ -679,19 +789,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .expose_headers(Any)
         }
         None => {
-            tracing::info!("CORS_ORIGINS not set — allowing localhost:3000 only");
-            let allowed: Vec<_> = [
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-            ]
-            .iter()
-            .filter_map(|o| o.parse().ok())
-            .collect();
-            CorsLayer::new()
-                .allow_origin(allowed)
-                .allow_methods(Any)
-                .allow_headers(Any)
-                .expose_headers(Any)
+            // No CORS_ORIGINS — derive from APP_URL, or fall back to localhost dev defaults.
+            if let Some(ref app_url) = state.config.app_url {
+                tracing::info!("CORS_ORIGINS not set — using APP_URL: {}", app_url);
+                let allowed: Vec<_> = [app_url.as_str()]
+                    .iter()
+                    .filter_map(|o| o.parse().ok())
+                    .collect();
+                CorsLayer::new()
+                    .allow_origin(allowed)
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+                    .expose_headers(Any)
+            } else {
+                tracing::info!(
+                    "CORS_ORIGINS not set — allowing localhost:{} only",
+                    state.config.port
+                );
+                let allowed: Vec<_> = [
+                    format!("http://localhost:{}", state.config.port),
+                    format!("http://127.0.0.1:{}", state.config.port),
+                ]
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+                CorsLayer::new()
+                    .allow_origin(allowed)
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+                    .expose_headers(Any)
+            }
         }
     };
 
@@ -776,6 +903,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("  WebSocket:  ws://{bind_addr}/ws?server_id=<uuid>");
     tracing::info!("  Health:     http://{bind_addr}/health");
     tracing::info!("  Info:       http://{bind_addr}/api/v1/info");
+    if let Some(ref url) = state.config.public_url {
+        tracing::info!("  PUBLIC_URL: {}", url);
+    }
+    if let Some(ref url) = state.config.app_url {
+        tracing::info!("  APP_URL:    {}", url);
+    }
+    if let Some(ref url) = state.config.api_url {
+        tracing::info!("  API_URL:    {}", url);
+    }
+    if state.config.self_hosted {
+        tracing::info!("  Mode:       self-hosted (enterprise tier, same-origin API)");
+    }
     tracing::info!(
         "  Rate limit: {}/min per IP",
         state.config.rate_limit_per_minute

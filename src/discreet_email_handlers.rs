@@ -58,7 +58,8 @@ pub async fn send_verification(
 
     // Generate verification token and link
     let token = crate::discreet_auth_handlers::generate_hex_token();
-    let base_url = std::env::var("BASE_URL")
+    let base_url = std::env::var("APP_URL")
+        .or_else(|_| std::env::var("PUBLIC_URL"))
         .unwrap_or_else(|_| "http://localhost:3000".to_string());
     let verify_link = format!("{}/verify?token={}", base_url, token);
 
@@ -334,7 +335,8 @@ pub async fn resend_verification(
 
     // ── Generate and store a fresh 24-hour token ────────────────────────
     let token = crate::discreet_auth_handlers::generate_hex_token();
-    let base_url = std::env::var("BASE_URL")
+    let base_url = std::env::var("APP_URL")
+        .or_else(|_| std::env::var("PUBLIC_URL"))
         .unwrap_or_else(|_| "http://localhost:3000".to_string());
     let verify_link = format!("{}/verify?token={}", base_url, token);
 

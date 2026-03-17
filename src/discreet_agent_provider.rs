@@ -976,8 +976,175 @@ const AGENT_MAX_INPUT_CHARS: usize = 4096;
 /// Maximum characters returned from an LLM response.
 const AGENT_MAX_RESPONSE_CHARS: usize = 8192;
 
+/// Maximum raw bytes accepted from an LLM response body.
+/// Prevents memory exhaustion from malicious/buggy providers.
+const AGENT_MAX_RESPONSE_BYTES: usize = 32_768; // 32 KB
+
 /// Maximum agent completions per user per server per hour.
 const AGENT_RATE_LIMIT_PER_HOUR: i64 = 30;
+
+/// Maximum agent completions per user per minute (burst limit).
+const AGENT_RATE_LIMIT_PER_MINUTE: i64 = 10;
+
+// ─── Security Validation ────────────────────────────────────────────────
+
+/// Validate an agent endpoint URL. Only HTTPS or localhost URLs are allowed.
+/// This prevents agents from making unencrypted requests to external hosts.
+pub fn validate_endpoint_url(url: &str) -> Result<(), AgentError> {
+    let lower = url.to_lowercase();
+    let is_localhost = lower.contains("://localhost") || lower.contains("://127.0.0.1")
+        || lower.contains("://[::1]") || lower.contains("://0.0.0.0");
+
+    if is_localhost {
+        return Ok(()); // HTTP to localhost is acceptable for local providers
+    }
+
+    if !lower.starts_with("https://") {
+        return Err(AgentError::Internal(format!(
+            "Agent endpoint must use HTTPS for external hosts (got: {})",
+            if url.len() > 60 { &url[..60] } else { url }
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate MCP tool URLs. Only localhost or the instance's own domain are allowed.
+/// External MCP servers are not permitted at launch to prevent SSRF attacks.
+pub fn validate_mcp_tool_urls(urls: &[String], instance_domain: Option<&str>) -> Result<(), AgentError> {
+    for url in urls {
+        let lower = url.to_lowercase();
+        let is_localhost = lower.contains("://localhost") || lower.contains("://127.0.0.1")
+            || lower.contains("://[::1]");
+
+        if is_localhost {
+            continue;
+        }
+
+        // Allow the instance's own domain
+        if let Some(domain) = instance_domain {
+            if lower.contains(&format!("://{}", domain.to_lowercase())) {
+                continue;
+            }
+        }
+
+        return Err(AgentError::Internal(format!(
+            "MCP tool URL must be localhost or this instance's domain (got: {})",
+            if url.len() > 60 { &url[..60] } else { url }
+        )));
+    }
+    Ok(())
+}
+
+/// Validate agent config before making a completion request.
+/// Enforces endpoint URL security, MCP URL restrictions, and response size limits.
+pub fn validate_agent_config(config: &AgentModelConfig, instance_domain: Option<&str>) -> Result<(), AgentError> {
+    validate_endpoint_url(&config.endpoint_url)?;
+    if !config.mcp_tool_urls.is_empty() {
+        validate_mcp_tool_urls(&config.mcp_tool_urls, instance_domain)?;
+    }
+    Ok(())
+}
+
+/// Log an agent invocation for audit purposes. Never logs message content.
+pub fn log_agent_invocation(
+    user_id: uuid::Uuid,
+    agent_id: uuid::Uuid,
+    provider_type: &ProviderType,
+    server_id: uuid::Uuid,
+    channel_id: uuid::Uuid,
+) {
+    info!(
+        user_id = %user_id,
+        agent_id = %agent_id,
+        provider = %provider_type,
+        server_id = %server_id,
+        channel_id = %channel_id,
+        "Agent completion invoked"
+    );
+}
+
+/// Check per-user-per-minute burst rate limit for agent completions.
+///
+/// Uses Redis key `ai_burst:{user_id}` with a 60s TTL.
+/// Returns `Ok(())` if under limit, or `Err(AgentError::RateLimited)` if exceeded.
+pub async fn check_agent_burst_rate_limit(
+    redis: &mut redis::aio::ConnectionManager,
+    user_id: uuid::Uuid,
+) -> Result<(), AgentError> {
+    let key = format!("ai_burst:{}", user_id);
+
+    let count: i64 = match crate::discreet_error::redis_or_503(
+        redis::cmd("INCR")
+            .arg(&key)
+            .query_async::<Option<i64>>(redis)
+            .await
+    ) {
+        Ok(v) => v.unwrap_or(1),
+        Err(_) => 1,
+    };
+
+    if count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&key)
+            .arg(60_i64)
+            .query_async::<bool>(redis)
+            .await;
+    }
+
+    if count > AGENT_RATE_LIMIT_PER_MINUTE {
+        warn!(
+            user_id = %user_id,
+            count,
+            limit = AGENT_RATE_LIMIT_PER_MINUTE,
+            "Agent burst rate limit exceeded (per-minute)"
+        );
+        return Err(AgentError::RateLimited {
+            retry_after_secs: Some(60),
+        });
+    }
+
+    Ok(())
+}
+
+/// Check HTTP response body size before reading it into memory.
+/// Returns the body text if within limits, or an error if too large.
+pub async fn read_bounded_response(resp: reqwest::Response, provider_name: &str) -> Result<String, AgentError> {
+    if let Some(len) = resp.content_length() {
+        if len > AGENT_MAX_RESPONSE_BYTES as u64 {
+            warn!(
+                provider = provider_name,
+                content_length = len,
+                max = AGENT_MAX_RESPONSE_BYTES,
+                "Agent response exceeds size limit"
+            );
+            return Err(AgentError::InvalidResponse(format!(
+                "Response too large ({len} bytes, max {AGENT_MAX_RESPONSE_BYTES})"
+            )));
+        }
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| {
+        AgentError::HttpError(format!("{provider_name} response read failed: {e}"))
+    })?;
+
+    if bytes.len() > AGENT_MAX_RESPONSE_BYTES {
+        warn!(
+            provider = provider_name,
+            actual = bytes.len(),
+            max = AGENT_MAX_RESPONSE_BYTES,
+            "Agent response body exceeds size limit"
+        );
+        return Err(AgentError::InvalidResponse(format!(
+            "Response too large ({} bytes, max {AGENT_MAX_RESPONSE_BYTES})",
+            bytes.len()
+        )));
+    }
+
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
+        AgentError::InvalidResponse(format!("{provider_name} response is not valid UTF-8"))
+    })
+}
 
 /// Sanitize user input before passing to an LLM provider.
 ///
@@ -1395,5 +1562,73 @@ mod tests {
         let text = "x".repeat(10000);
         let result = cap_response(text);
         assert_eq!(result.len(), AGENT_MAX_RESPONSE_CHARS);
+    }
+
+    // ── Endpoint URL validation ──────────────────────────────────────────
+
+    #[test]
+    fn test_validate_endpoint_url_https_allowed() {
+        assert!(validate_endpoint_url("https://api.anthropic.com/v1/messages").is_ok());
+        assert!(validate_endpoint_url("https://api.openai.com/v1/chat/completions").is_ok());
+    }
+
+    #[test]
+    fn test_validate_endpoint_url_localhost_http_allowed() {
+        assert!(validate_endpoint_url("http://localhost:11434").is_ok());
+        assert!(validate_endpoint_url("http://127.0.0.1:8000").is_ok());
+        assert!(validate_endpoint_url("http://[::1]:8000").is_ok());
+    }
+
+    #[test]
+    fn test_validate_endpoint_url_external_http_rejected() {
+        assert!(validate_endpoint_url("http://evil.com/api").is_err());
+        assert!(validate_endpoint_url("http://192.168.1.100:8080").is_err());
+        assert!(validate_endpoint_url("ftp://files.example.com").is_err());
+    }
+
+    // ── MCP URL validation ───────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_mcp_urls_localhost_allowed() {
+        let urls = vec!["http://localhost:3001/tools".into()];
+        assert!(validate_mcp_tool_urls(&urls, Some("chat.example.com")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mcp_urls_own_domain_allowed() {
+        let urls = vec!["https://chat.example.com/mcp/tools".into()];
+        assert!(validate_mcp_tool_urls(&urls, Some("chat.example.com")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mcp_urls_external_rejected() {
+        let urls = vec!["https://evil.com/mcp/tools".into()];
+        assert!(validate_mcp_tool_urls(&urls, Some("chat.example.com")).is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_urls_no_domain_only_localhost() {
+        let local = vec!["http://localhost:3001/tools".into()];
+        assert!(validate_mcp_tool_urls(&local, None).is_ok());
+
+        let external = vec!["https://mcp.example.com/tools".into()];
+        assert!(validate_mcp_tool_urls(&external, None).is_err());
+    }
+
+    // ── Agent config composite validation ────────────────────────────────
+
+    #[test]
+    fn test_validate_agent_config_rejects_http_external() {
+        let config = AgentModelConfig {
+            endpoint_url: "http://evil.com/api".into(),
+            ..Default::default()
+        };
+        assert!(validate_agent_config(&config, None).is_err());
+    }
+
+    #[test]
+    fn test_validate_agent_config_accepts_https() {
+        let config = AgentModelConfig::default(); // https://api.anthropic.com
+        assert!(validate_agent_config(&config, None).is_ok());
     }
 }

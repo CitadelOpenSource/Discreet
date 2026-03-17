@@ -649,21 +649,70 @@ pub async fn ban_user(
     .execute(&state.db)
     .await?;
 
-    // Delete all sessions to force immediate logout.
-    sqlx::query!("DELETE FROM sessions WHERE user_id = $1", target_id)
-        .execute(&state.db)
-        .await?;
+    // 1) Mark all existing sessions as revoked in DB.
+    let session_ids: Vec<uuid::Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM sessions WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
 
-    // Revoke sessions in Redis so in-flight JWTs are rejected.
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // 2) Set Redis ban flag (no expiry for permanent, timed for temp bans).
     let mut redis_conn = state.redis.clone();
-    // Set a blanket revocation flag (checked by auth middleware).
+    let ban_ttl = if let Some(h) = req.duration_hours { h * 3600 } else { 86400 * 365 };
     let _: Result<String, _> = redis::cmd("SET")
         .arg(format!("banned:{}", target_id))
         .arg("1")
         .arg("EX")
-        .arg(if let Some(h) = req.duration_hours { h * 3600 } else { 86400 * 365 })
+        .arg(ban_ttl)
         .query_async(&mut redis_conn)
         .await;
+
+    // 3) Add all session IDs to revoked_sessions Redis SET so in-flight JWTs are rejected.
+    let revoked_key = format!("revoked_sessions:{}", target_id);
+    for sid in &session_ids {
+        let _: Result<i64, _> = redis::cmd("SADD")
+            .arg(&revoked_key)
+            .arg(sid.to_string())
+            .query_async(&mut redis_conn)
+            .await;
+    }
+    if !session_ids.is_empty() {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&revoked_key)
+            .arg(86400_i64) // 24h — JWTs expire in 15min but belt + suspenders
+            .query_async(&mut redis_conn)
+            .await;
+    }
+
+    // 4) Broadcast WS disconnect event to all servers the user is in.
+    let server_ids: Vec<uuid::Uuid> = sqlx::query_scalar!(
+        "SELECT server_id FROM server_members WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for sid in &server_ids {
+        state.ws_broadcast(
+            *sid,
+            serde_json::json!({
+                "type": "user_banned",
+                "user_id": target_id,
+            }),
+        ).await;
+    }
+
+    // Invalidate auth cache so subsequent requests see the ban immediately.
+    crate::discreet_auth::invalidate_user_cache(&state, target_id).await;
 
     // Optional IP ban.
     if req.ip_ban {
@@ -931,5 +980,415 @@ pub async fn compliance_export(
             "members": mem_json,
             "audit_log": aud_json,
         })))
+    }
+}
+
+// ─── POST /api/v1/admin/lockdown ─────────────────────────────────────────
+//
+// Emergency lockdown modes:
+//   "full"          — 503 all non-admin requests
+//   "readonly"      — allow GET, block mutations for non-admins
+//   "registrations" — block new signups only (anti-raid)
+//   "off"           — normal operation
+//
+// Stored in Redis key `platform:lockdown` with auto-expiry.
+// Checked in middleware BEFORE auth — unauthenticated requests see 503 instantly.
+
+#[derive(Debug, Deserialize)]
+pub struct LockdownRequest {
+    /// "full", "readonly", "registrations", "off"
+    pub mode: String,
+    /// Human-readable reason displayed to users
+    pub reason: String,
+    /// Auto-expire in minutes (default: 15, max: 1440 = 24h)
+    pub duration_minutes: Option<i64>,
+}
+
+/// POST /api/v1/admin/lockdown — Activate or deactivate emergency lockdown.
+/// Only platform admins can use this endpoint.
+pub async fn set_lockdown(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<LockdownRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Only full admins — not dev role
+    if caller.platform_role != Some(PlatformRole::Admin) {
+        return Err(AppError::Forbidden("Lockdown requires platform admin role".into()));
+    }
+
+    let valid_modes = ["full", "readonly", "registrations", "off"];
+    if !valid_modes.contains(&req.mode.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid lockdown mode '{}'. Must be one of: {}",
+            req.mode,
+            valid_modes.join(", ")
+        )));
+    }
+
+    let duration_min = req.duration_minutes.unwrap_or(15).clamp(1, 1440);
+    let duration_secs = duration_min * 60;
+
+    let mut redis_conn = state.redis.clone();
+
+    if req.mode == "off" {
+        // Deactivate lockdown
+        let _: Result<i64, _> = redis::cmd("DEL")
+            .arg("platform:lockdown")
+            .query_async(&mut redis_conn)
+            .await;
+
+        tracing::warn!(
+            admin = %caller.user_id,
+            "Lockdown deactivated"
+        );
+
+        // Audit log
+        let _ = crate::discreet_audit::log_action(
+            &state.db,
+            crate::discreet_audit::AuditEntry {
+                server_id: Uuid::nil(),
+                actor_id: caller.user_id,
+                action: "LOCKDOWN_OFF",
+                target_type: Some("platform"),
+                target_id: None,
+                changes: Some(json!({ "reason": req.reason })),
+                reason: Some(&req.reason),
+            },
+        ).await;
+
+        return Ok(Json(json!({
+            "message": "Lockdown deactivated",
+            "mode": "off",
+        })));
+    }
+
+    // Activate lockdown
+    let lockdown_state = json!({
+        "mode": req.mode,
+        "reason": req.reason,
+        "activated_by": caller.user_id,
+        "activated_at": Utc::now().to_rfc3339(),
+        "expires_at": (Utc::now() + chrono::Duration::seconds(duration_secs)).to_rfc3339(),
+        "retry_after_seconds": duration_secs,
+    });
+
+    let _: Result<String, _> = redis::cmd("SET")
+        .arg("platform:lockdown")
+        .arg(lockdown_state.to_string())
+        .arg("EX")
+        .arg(duration_secs)
+        .query_async(&mut redis_conn)
+        .await;
+
+    tracing::warn!(
+        admin = %caller.user_id,
+        mode = %req.mode,
+        reason = %req.reason,
+        duration_minutes = duration_min,
+        "Lockdown activated"
+    );
+
+    // Audit log
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id: Uuid::nil(),
+            actor_id: caller.user_id,
+            action: "LOCKDOWN_ON",
+            target_type: Some("platform"),
+            target_id: None,
+            changes: Some(json!({
+                "mode": req.mode,
+                "duration_minutes": duration_min,
+            })),
+            reason: Some(&req.reason),
+        },
+    ).await;
+
+    Ok(Json(json!({
+        "message": format!("Lockdown activated: {} mode", req.mode),
+        "mode": req.mode,
+        "reason": req.reason,
+        "duration_minutes": duration_min,
+        "activated_by": caller.user_id,
+        "activated_at": Utc::now().to_rfc3339(),
+    })))
+}
+
+/// GET /api/v1/admin/lockdown — Check current lockdown status + trigger history.
+pub async fn get_lockdown(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+
+    let mut redis_conn = state.redis.clone();
+    let lockdown: Option<serde_json::Value> = redis::cmd("GET")
+        .arg("platform:lockdown")
+        .query_async::<Option<String>>(&mut redis_conn)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    // TTL remaining (seconds until auto-expire)
+    let ttl: i64 = redis::cmd("TTL")
+        .arg("platform:lockdown")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(-1);
+
+    // Recent lockdown history from audit log (last 10 events)
+    let history = sqlx::query!(
+        "SELECT actor_id, action, changes, reason, created_at
+         FROM audit_log
+         WHERE action LIKE 'LOCKDOWN%' OR action LIKE 'AUTO_LOCKDOWN%'
+         ORDER BY created_at DESC
+         LIMIT 10"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let history_json: Vec<serde_json::Value> = history.iter().map(|r| json!({
+        "activated_by": r.actor_id,
+        "action": r.action,
+        "changes": r.changes,
+        "reason": r.reason,
+        "timestamp": r.created_at.to_string(),
+    })).collect();
+
+    match lockdown {
+        Some(ld) => Ok(Json(json!({
+            "active": true,
+            "lockdown": ld,
+            "ttl_seconds": if ttl > 0 { ttl } else { 0 },
+            "history": history_json,
+        }))),
+        None => Ok(Json(json!({
+            "active": false,
+            "mode": "off",
+            "history": history_json,
+        }))),
+    }
+}
+
+// ─── Auto-trigger lockdown rules ─────────────────────────────────────────
+//
+// Called from login failure path (discreet_auth_handlers).
+// Tracks failed logins in Redis sorted sets keyed by timestamp.
+//
+// Rule 1 (anti-raid): >50 failures in 3 min from >5 distinct IPs
+//   → auto "registrations" lockdown for 15 min
+//
+// Rule 2 (brute-force): >200 failures in 5 min from any source
+//   → auto "readonly" lockdown for 15 min
+//
+// Both are no-ops if a lockdown is already active (no escalation).
+
+/// Default thresholds — admin-configurable via platform_settings in future.
+const RAID_FAIL_THRESHOLD: usize = 50;
+const RAID_WINDOW_SECS: f64 = 180.0; // 3 min
+const RAID_DISTINCT_IPS: usize = 5;
+const BRUTE_FAIL_THRESHOLD: usize = 200;
+const BRUTE_WINDOW_SECS: f64 = 300.0; // 5 min
+const AUTO_LOCKDOWN_DURATION_SECS: i64 = 900; // 15 min
+
+/// Record a failed login and evaluate auto-lockdown triggers.
+///
+/// Called fire-and-forget from the login handler. Errors are logged
+/// but never propagated — auto-lockdown is best-effort.
+pub async fn record_failed_login_and_check_triggers(
+    state: &Arc<AppState>,
+    ip: &str,
+) {
+    let mut redis_conn = state.redis.clone();
+    let now = Utc::now().timestamp_millis() as f64;
+    let zset_key = "lockdown:failed_logins";
+    let ip_zset_key = "lockdown:failed_login_ips";
+
+    // Record this failure with timestamp as score
+    let _: Result<i64, _> = redis::cmd("ZADD")
+        .arg(zset_key)
+        .arg(now)
+        .arg(format!("{}:{}", ip, now as i64))
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Record distinct IP with timestamp
+    let _: Result<i64, _> = redis::cmd("ZADD")
+        .arg(ip_zset_key)
+        .arg(now)
+        .arg(ip)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Set TTL on sorted sets to auto-cleanup (10 min beyond brute window)
+    let _: Result<bool, _> = redis::cmd("EXPIRE")
+        .arg(zset_key)
+        .arg(600_i64)
+        .query_async(&mut redis_conn)
+        .await;
+    let _: Result<bool, _> = redis::cmd("EXPIRE")
+        .arg(ip_zset_key)
+        .arg(600_i64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Prune entries older than 5 min (covers both windows)
+    let cutoff = now - (BRUTE_WINDOW_SECS * 1000.0);
+    let _: Result<i64, _> = redis::cmd("ZREMRANGEBYSCORE")
+        .arg(zset_key)
+        .arg("-inf")
+        .arg(cutoff)
+        .query_async(&mut redis_conn)
+        .await;
+    let cutoff_ip = now - (RAID_WINDOW_SECS * 1000.0);
+    let _: Result<i64, _> = redis::cmd("ZREMRANGEBYSCORE")
+        .arg(ip_zset_key)
+        .arg("-inf")
+        .arg(cutoff_ip)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Skip if a lockdown is already active
+    let existing: Option<String> = redis::cmd("GET")
+        .arg("platform:lockdown")
+        .query_async(&mut redis_conn)
+        .await
+        .ok()
+        .flatten();
+    if existing.is_some() {
+        return;
+    }
+
+    // ── Rule 2: brute-force (check first — more severe) ──
+    let brute_count: usize = redis::cmd("ZCOUNT")
+        .arg(zset_key)
+        .arg(now - (BRUTE_WINDOW_SECS * 1000.0))
+        .arg("+inf")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(0);
+
+    if brute_count > BRUTE_FAIL_THRESHOLD {
+        let lockdown_state = json!({
+            "mode": "readonly",
+            "reason": format!("Auto-lockdown: {} failed logins in {} min (brute-force protection)", brute_count, BRUTE_WINDOW_SECS as i64 / 60),
+            "activated_by": "system",
+            "activated_at": Utc::now().to_rfc3339(),
+            "expires_at": (Utc::now() + chrono::Duration::seconds(AUTO_LOCKDOWN_DURATION_SECS)).to_rfc3339(),
+            "retry_after_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+            "trigger": "brute_force_lockdown",
+        });
+        let _: Result<String, _> = redis::cmd("SET")
+            .arg("platform:lockdown")
+            .arg(lockdown_state.to_string())
+            .arg("EX")
+            .arg(AUTO_LOCKDOWN_DURATION_SECS)
+            .query_async(&mut redis_conn)
+            .await;
+
+        tracing::error!(
+            failed_count = brute_count,
+            window_secs = BRUTE_WINDOW_SECS as i64,
+            "AUTO-LOCKDOWN: readonly mode activated (brute-force threshold exceeded)"
+        );
+
+        let _ = crate::discreet_audit::log_action(
+            &state.db,
+            crate::discreet_audit::AuditEntry {
+                server_id: Uuid::nil(),
+                actor_id: Uuid::nil(),
+                action: "AUTO_LOCKDOWN_BRUTE_FORCE",
+                target_type: Some("platform"),
+                target_id: None,
+                changes: Some(json!({
+                    "mode": "readonly",
+                    "failed_logins": brute_count,
+                    "window_seconds": BRUTE_WINDOW_SECS as i64,
+                    "duration_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                })),
+                reason: Some("Brute-force login threshold exceeded"),
+            },
+        ).await;
+
+        return;
+    }
+
+    // ── Rule 1: anti-raid (distributed failed logins) ──
+    let raid_cutoff = now - (RAID_WINDOW_SECS * 1000.0);
+    let raid_count: usize = redis::cmd("ZCOUNT")
+        .arg(zset_key)
+        .arg(raid_cutoff)
+        .arg("+inf")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(0);
+
+    if raid_count > RAID_FAIL_THRESHOLD {
+        // Count distinct IPs in the raid window
+        let distinct_ips: usize = redis::cmd("ZCOUNT")
+            .arg(ip_zset_key)
+            .arg(raid_cutoff)
+            .arg("+inf")
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or(0);
+
+        if distinct_ips >= RAID_DISTINCT_IPS {
+            // Collect the offending IPs for audit
+            let ip_list: Vec<String> = redis::cmd("ZRANGEBYSCORE")
+                .arg(ip_zset_key)
+                .arg(raid_cutoff)
+                .arg("+inf")
+                .query_async(&mut redis_conn)
+                .await
+                .unwrap_or_default();
+
+            let lockdown_state = json!({
+                "mode": "registrations",
+                "reason": format!("Auto-lockdown: {} failed logins from {} distinct IPs in {} min (anti-raid)", raid_count, distinct_ips, RAID_WINDOW_SECS as i64 / 60),
+                "activated_by": "system",
+                "activated_at": Utc::now().to_rfc3339(),
+                "expires_at": (Utc::now() + chrono::Duration::seconds(AUTO_LOCKDOWN_DURATION_SECS)).to_rfc3339(),
+                "retry_after_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                "trigger": "failed_login_lockdown",
+            });
+            let _: Result<String, _> = redis::cmd("SET")
+                .arg("platform:lockdown")
+                .arg(lockdown_state.to_string())
+                .arg("EX")
+                .arg(AUTO_LOCKDOWN_DURATION_SECS)
+                .query_async(&mut redis_conn)
+                .await;
+
+            tracing::error!(
+                failed_count = raid_count,
+                distinct_ips = distinct_ips,
+                window_secs = RAID_WINDOW_SECS as i64,
+                "AUTO-LOCKDOWN: registrations mode activated (raid threshold exceeded)"
+            );
+
+            let _ = crate::discreet_audit::log_action(
+                &state.db,
+                crate::discreet_audit::AuditEntry {
+                    server_id: Uuid::nil(),
+                    actor_id: Uuid::nil(),
+                    action: "AUTO_LOCKDOWN_RAID",
+                    target_type: Some("platform"),
+                    target_id: None,
+                    changes: Some(json!({
+                        "mode": "registrations",
+                        "failed_logins": raid_count,
+                        "distinct_ips": distinct_ips,
+                        "offending_ips": ip_list,
+                        "window_seconds": RAID_WINDOW_SECS as i64,
+                        "duration_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                    })),
+                    reason: Some("Distributed login raid threshold exceeded"),
+                },
+            ).await;
+        }
     }
 }

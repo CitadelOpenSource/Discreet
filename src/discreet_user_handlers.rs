@@ -1012,7 +1012,8 @@ pub async fn change_email(
 
     // ── 8. Generate verification token and send email ────────────────────
     let token = generate_hex_token();
-    let base_url = std::env::var("BASE_URL")
+    let base_url = std::env::var("APP_URL")
+        .or_else(|_| std::env::var("PUBLIC_URL"))
         .unwrap_or_else(|_| "http://localhost:3000".to_string());
     let verify_link = format!("{}/verify?token={}", base_url, token);
 

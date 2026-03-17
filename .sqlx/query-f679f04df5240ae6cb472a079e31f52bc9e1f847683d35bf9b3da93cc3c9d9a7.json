@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT actor_id, action, changes, reason, created_at\n         FROM audit_log\n         WHERE action LIKE 'LOCKDOWN%' OR action LIKE 'AUTO_LOCKDOWN%'\n         ORDER BY created_at DESC\n         LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "actor_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "changes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "f679f04df5240ae6cb472a079e31f52bc9e1f847683d35bf9b3da93cc3c9d9a7"
+}

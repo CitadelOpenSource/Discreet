@@ -5,8 +5,14 @@
  * This is the single source of truth for all API communication.
  */
 
-const API_BASE = window.location.origin + '/api/v1';
-const WS_BASE = window.location.origin.replace(/^http/, 'ws');
+const API_BASE = import.meta.env.VITE_API_URL || (window.location.origin + '/api/v1');
+const WS_BASE = (() => {
+  if (import.meta.env.VITE_API_URL) {
+    try { return new URL(import.meta.env.VITE_API_URL).origin.replace(/^http/, 'ws'); }
+    catch { /* fall through */ }
+  }
+  return window.location.origin.replace(/^http/, 'ws');
+})();
 
 // ── Storage abstraction ──────────────────────────────────────────────────────
 // Falls back localStorage → sessionStorage → in-memory if storage is blocked.

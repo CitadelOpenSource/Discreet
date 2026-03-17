@@ -8,7 +8,7 @@ import { T } from '../theme';
 import { BugIcon, X } from '../icons';
 import { api } from '../api/CitadelAPI';
 
-const API_BASE = window.location.origin + '/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || (window.location.origin + '/api/v1');
 
 export function BugReportButton() {
   const [open, setOpen] = useState(false);
