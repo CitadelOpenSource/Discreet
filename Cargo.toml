@@ -45,7 +45,7 @@ redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
 
 # ── Auth ──────────────────────────────────────────────────
 argon2 = "0.5"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 # ── Crypto (currently used) ───────────────────────────────
 sha1 = "0.10"                # TURN ephemeral credentials (HMAC-SHA1, CoTURN standard)
