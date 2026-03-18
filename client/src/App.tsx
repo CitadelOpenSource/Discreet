@@ -48,6 +48,7 @@ import { EventsPanel } from './components/EventsPanel';
 import { VoicePanel } from './components/VoicePanel';
 import { MessageList } from './components/MessageList';
 import { MessageInput } from './components/MessageInput';
+import { QrConnectModal } from './components/QrConnectModal';
 import { LeaderboardPanel, RankBadge } from './components/Gamification';
 import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { useVoice } from './hooks/useVoice';
@@ -667,6 +668,7 @@ export default function App() {
   const [inviteGenerating, setInviteGenerating] = useState(false);
   const [showInviteQr, setShowInviteQr] = useState(false);
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showServerQrConnect, setShowServerQrConnect] = useState(false);
   const [createChannelName, setCreateChannelName] = useState('');
   const [createChannelType, setCreateChannelType] = useState('text');
   const [editChannel, setEditChannel] = useState<Channel | null>(null);
@@ -897,6 +899,41 @@ export default function App() {
       window.history.replaceState({}, '', '/app');
     }
   }, [authed]);
+
+  // ── Handle /connect/:code deep links (QR connect) ──────
+  const [connectAction, setConnectAction] = useState<{ type: string; target_id: string } | null>(null);
+  useEffect(() => {
+    if (!authed) return;
+    const m = window.location.pathname.match(/^\/connect\/([A-Za-z0-9]{12})\/?$/);
+    if (m) {
+      const code = m[1];
+      api.resolveConnectCode(code).then((meta) => {
+        setConnectAction(meta);
+      }).catch(() => {
+        setToast('Invalid or expired connect code'); setTimeout(() => setToast(''), 3000);
+      });
+      window.history.replaceState({}, '', '/app');
+    }
+  }, [authed]);
+
+  // Execute connect action after confirmation
+  const executeConnect = async () => {
+    if (!connectAction) return;
+    try {
+      if (connectAction.type === 'friend') {
+        await api.sendFriendRequest(connectAction.target_id);
+        setToast('Friend request sent!');
+      } else if (connectAction.type === 'server') {
+        await api.joinServer('', connectAction.target_id);
+        await loadServers();
+        setToast('Joined server!');
+      }
+    } catch {
+      setToast('Action failed — you may already be connected');
+    }
+    setTimeout(() => setToast(''), 3000);
+    setConnectAction(null);
+  };
 
   // ── WebSocket ───────────────────────────────────────────
   const curChannelRef = useRef(curChannel);
@@ -3239,10 +3276,21 @@ export default function App() {
                       setModal(null);
                     }
                   } else {
-                    // Try as raw invite code or URL
-                    const code = extractInviteCode(data);
-                    if (code) setJoinCode(code);
-                    else { setToast('Invalid QR code'); setTimeout(() => setToast(''), 3000); }
+                    // Try as connect URL (https://discreetai.net/connect/{code})
+                    const connectMatch = data.match(/\/connect\/([A-Za-z0-9]{12})\/?$/);
+                    if (connectMatch) {
+                      setModal(null);
+                      api.resolveConnectCode(connectMatch[1]).then((meta) => {
+                        setConnectAction(meta);
+                      }).catch(() => {
+                        setToast('Invalid or expired connect code'); setTimeout(() => setToast(''), 3000);
+                      });
+                    } else {
+                      // Try as raw invite code or URL
+                      const code = extractInviteCode(data);
+                      if (code) setJoinCode(code);
+                      else { setToast('Invalid QR code'); setTimeout(() => setToast(''), 3000); }
+                    }
                   }
                 }}
                 onClose={() => setShowQrScanner(false)}
@@ -3281,6 +3329,25 @@ export default function App() {
             <div style={{ fontSize: 14, color: T.tx, fontWeight: 600, marginBottom: 8 }}>This invite is for a different Discreet instance</div>
             <div style={{ fontSize: 12, color: T.mt, marginBottom: 20, lineHeight: 1.5 }}>This invite link points to a different server at <span style={{ color: T.ac, fontWeight: 600 }}>{(() => { try { return new URL(invitePreview.url || '').host; } catch { return 'unknown'; } })()}</span>. You'll need to open it in your browser to join.</div>
             <button onClick={() => { window.open(invitePreview.url, '_blank', 'noopener'); setInvitePreview(null); }} style={{ ...btn(true), width: '100%', fontSize: 14, padding: '10px 0' }}>Open in Browser</button>
+          </div>
+        </Modal>
+      )}
+      {/* QR Connect confirmation */}
+      {connectAction && (
+        <Modal title={connectAction.type === 'friend' ? 'Add Friend' : 'Join Server'} onClose={() => setConnectAction(null)}>
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>{connectAction.type === 'friend' ? '👤' : '🏠'}</div>
+            <div style={{ fontSize: 14, color: T.tx, fontWeight: 600, marginBottom: 20 }}>
+              {connectAction.type === 'friend'
+                ? 'Someone shared their QR code with you. Send a friend request?'
+                : 'Someone shared a server QR code with you. Join the server?'}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={() => setConnectAction(null)} style={{ padding: '10px 20px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={executeConnect} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {connectAction.type === 'friend' ? 'Send Request' : 'Join Server'}
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -3416,6 +3483,15 @@ export default function App() {
                   Hide QR
                 </button>
               </div>
+            )}
+            {/* Shareable QR Code (backend-generated PNG with 24h connect code) */}
+            {inviteResult && (
+              <button onClick={() => setShowServerQrConnect(true)} style={{ width: '100%', marginTop: 10, padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: `linear-gradient(135deg,${T.ac}22,${T.ac}22)`, color: T.ac, border: `1px solid ${T.ac}44` }}>
+                Shareable QR Code (24h)
+              </button>
+            )}
+            {showServerQrConnect && curServer && (
+              <QrConnectModal type="server" serverId={curServer.id} onClose={() => setShowServerQrConnect(false)} />
             )}
           </div>
         </Modal>

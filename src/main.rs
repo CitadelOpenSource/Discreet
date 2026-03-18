@@ -82,6 +82,7 @@ use discreet_server::discreet_voice_handlers;
 use discreet_server::discreet_dev_token_handlers;
 use discreet_server::discreet_platform_admin_handlers;
 use discreet_server::discreet_premium;
+use discreet_server::discreet_qr_handlers;
 use discreet_server::discreet_platform_settings;
 use discreet_server::discreet_waitlist;
 use discreet_server::discreet_websocket;
@@ -577,6 +578,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/leave", axum::routing::post(discreet_server_handlers::leave_server))
         .route("/servers/:server_id/members", axum::routing::get(discreet_server_handlers::list_members))
         .route("/servers/:server_id/invites", axum::routing::post(discreet_server_handlers::create_invite).get(discreet_server_handlers::list_invites))
+        .route("/servers/:server_id/invite-qr", axum::routing::get(discreet_qr_handlers::server_invite_qr))
         .route("/servers/:server_id/vanity", axum::routing::post(discreet_server_handlers::set_server_vanity))
         .route("/invites/:code", axum::routing::get(discreet_server_handlers::resolve_invite_code))
         .route("/servers/:server_id/audit-log", axum::routing::get(discreet_audit::list_audit_log))
@@ -686,6 +688,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/users/@me/servers", axum::routing::get(discreet_user_handlers::list_my_servers))
         .route("/users/@me/export", axum::routing::get(discreet_user_handlers::export_my_data))
         .route("/users/@me/status", axum::routing::put(discreet_user_handlers::update_status))
+        .route("/users/@me/qr", axum::routing::get(discreet_qr_handlers::user_qr))
+        .route("/connect/:code", axum::routing::get(discreet_qr_handlers::resolve_connect_code))
         .route("/users/@me/settings", axum::routing::get(discreet_settings_handlers::get_my_settings).patch(discreet_settings_handlers::patch_my_settings))
         .route("/settings/timezone", axum::routing::post(discreet_settings_handlers::set_timezone))
         .route("/servers/:server_id/notification-settings", axum::routing::get(discreet_settings_handlers::get_server_notification_settings).patch(discreet_settings_handlers::patch_server_notification_settings))

@@ -9,6 +9,7 @@ import { T } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
+import { QrConnectModal } from './QrConnectModal';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -286,6 +287,9 @@ export function UserProfileCard({
         </div>
       )}
 
+      {/* Self QR Share */}
+      {isSelf && <SelfQrButton />}
+
       {/* Bottom Actions */}
       {!isSelf && (
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -360,6 +364,27 @@ function SelfStatusEdit({ user, api: apiRef }: SelfStatusEditProps) {
           <button onClick={() => setEditing(false)} className="pill-btn" style={{ background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 12px', fontSize: 11 }}>Cancel</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── SelfQrButton (inline sub-component) ──────────────────
+
+function SelfQrButton() {
+  const [showQr, setShowQr] = useState(false);
+
+  return (
+    <div style={{ padding: '4px 12px' }}>
+      <button onClick={() => setShowQr(true)} className="pill-btn" style={{
+        width: '100%', padding: '7px 0', background: T.sf2, color: T.tx,
+        border: `1px solid ${T.bd}`, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+      }}>
+        <span style={{ fontSize: 14 }}>&#9783;</span> My QR Code
+      </button>
+      {showQr && (
+        <QrConnectModal type="friend" onClose={() => setShowQr(false)} />
+      )}
     </div>
   );
 }

@@ -349,6 +349,29 @@ export class CitadelAPI {
   async removeFriend(id: string) { return this.fetch(`/friends/${id}`, { method: 'DELETE' }); }
   async searchUsers(q: string) { try { const r = await this.fetch(`/users/search?q=${encodeURIComponent(q)}`); return r.ok ? r.json() : []; } catch { return []; } }
 
+  // ── QR Connect ──
+  async getUserQrUrl(): Promise<string> {
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const r = await fetch(`${API_BASE}/users/@me/qr`, { headers, credentials: 'same-origin' });
+    if (!r.ok) throw new Error(`QR generation failed (${r.status})`);
+    const blob = await r.blob();
+    return URL.createObjectURL(blob);
+  }
+  async getServerInviteQrUrl(serverId: string): Promise<string> {
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const r = await fetch(`${API_BASE}/servers/${serverId}/invite-qr`, { headers, credentials: 'same-origin' });
+    if (!r.ok) throw new Error(`QR generation failed (${r.status})`);
+    const blob = await r.blob();
+    return URL.createObjectURL(blob);
+  }
+  async resolveConnectCode(code: string): Promise<{ type: string; target_id: string }> {
+    const r = await this.fetch(`/connect/${code}`);
+    if (!r.ok) throw new Error('Invalid or expired connect code');
+    return r.json();
+  }
+
   // ── Voice Messages ──
   async sendVoiceMessage(channelId: string, audioBlob: Blob, durationMs: number, contentCiphertext: string, mlsEpoch: number, waveform?: number[]): Promise<any> {
     const form = new FormData();
