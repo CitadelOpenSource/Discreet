@@ -11,7 +11,7 @@
  * Settings, guest upgrade modals, or direct navigation.
  */
 import React, { useState } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { TIER_META, TIER_LIMITS, type Tier } from '../utils/tiers';
 
@@ -109,7 +109,7 @@ function ProgressBar({ currentIdx, startIdx }: { currentIdx: number; startIdx: n
             {i > 0 && (
               <div style={{
                 flex: 1, height: 2,
-                background: done ? T.ac : `${T.bd}88`,
+                background: done ? T.ac : `${ta(T.bd,'88')}`,
                 transition: 'background .3s',
               }} />
             )}
@@ -119,7 +119,7 @@ function ProgressBar({ currentIdx, startIdx }: { currentIdx: number; startIdx: n
             }}>
               <div style={{
                 width: 28, height: 28, borderRadius: 14,
-                background: done ? T.ac : active ? `${T.ac}22` : T.sf2,
+                background: done ? T.ac : active ? `${ta(T.ac,'22')}` : T.sf2,
                 border: `2px solid ${color}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 13, color: done ? '#000' : active ? T.ac : T.mt,
@@ -299,7 +299,7 @@ function VerifyStep({ me, onDone }: { me: any; onDone: () => void }) {
       ) : (
         <>
           <div style={{
-            padding: 14, background: `${T.ac}0a`, border: `1px solid ${T.ac}33`,
+            padding: 14, background: `${ta(T.ac,'0a')}`, border: `1px solid ${ta(T.ac,'33')}`,
             borderRadius: 8, marginBottom: 14, fontSize: 12, color: T.mt, lineHeight: 1.5,
           }}>
             Check your inbox at <strong style={{ color: T.tx }}>{email || me?.email}</strong>.
@@ -438,7 +438,7 @@ function PhoneStep({ me, onDone, onSkip }: { me: any; onDone: () => void; onSkip
       ) : (
         <>
           <div style={{
-            padding: 14, background: `${T.ac}0a`, border: `1px solid ${T.ac}33`,
+            padding: 14, background: `${ta(T.ac,'0a')}`, border: `1px solid ${ta(T.ac,'33')}`,
             borderRadius: 8, marginBottom: 14, fontSize: 12, color: T.mt, lineHeight: 1.5,
           }}>
             Code sent to <strong style={{ color: T.tx }}>{phone}</strong>. Enter it below.
@@ -554,7 +554,7 @@ function PremiumStep({ tier, onClose }: { tier: Tier; onClose: () => void }) {
       {/* Plan headers */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, marginBottom: 2, fontSize: 11 }}>
         <div />
-        <div style={{ textAlign: 'center', padding: '10px 4px', background: tier === 'verified' ? `${T.ac}10` : 'transparent', borderRadius: '8px 8px 0 0' }}>
+        <div style={{ textAlign: 'center', padding: '10px 4px', background: tier === 'verified' ? `${ta(T.ac,'10')}` : 'transparent', borderRadius: '8px 8px 0 0' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>Free</div>
           <div style={{ fontSize: 11, color: T.mt }}>$0/mo</div>
           {(tier === 'verified' || tier === 'unverified' || tier === 'guest') && <div style={{ fontSize: 9, color: T.ac, fontWeight: 700, marginTop: 2 }}>CURRENT</div>}

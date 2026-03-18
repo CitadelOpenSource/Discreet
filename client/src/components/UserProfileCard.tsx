@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
@@ -159,7 +159,7 @@ export function UserProfileCard({
   return ReactDOM.createPortal(
     <div ref={cardRef} style={{ position: 'fixed', left, top, zIndex: 10000, width: 300, background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.5)', overflow: 'hidden', fontFamily: "'DM Sans',sans-serif" }}>
       {/* Banner + Avatar */}
-      <div style={{ height: 60, background: `linear-gradient(135deg, ${T.ac}44, ${T.ac2 ?? T.ac}44)`, position: 'relative' }}>
+      <div style={{ height: 60, background: `linear-gradient(135deg, ${ta(T.ac,'44')}, ${ta(T.ac2 ?? T.ac,'44')})`, position: 'relative' }}>
         <div style={{ position: 'absolute', bottom: -20, left: 16 }}>
           <Av name={user.display_name || user.username || '?'} size={48} color={T.ac} url={avatarUrl} style={{ border: `3px solid ${T.sf}`, borderRadius: 24 }} />
         </div>
@@ -200,7 +200,7 @@ export function UserProfileCard({
       {roles.length > 0 && (
         <div style={{ padding: '0 16px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {roles.map(r => (
-            <span key={r.id || r.role_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${r.color || T.mt}22`, color: r.color || T.mt, border: `1px solid ${r.color || T.mt}44`, fontWeight: 600 }}>{r.name}</span>
+            <span key={r.id || r.role_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ta(r.color || T.mt,'22')}`, color: r.color || T.mt, border: `1px solid ${ta(r.color || T.mt,'44')}`, fontWeight: 600 }}>{r.name}</span>
           ))}
         </div>
       )}
@@ -217,7 +217,7 @@ export function UserProfileCard({
         {tab === 'about' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Member Since</div>
           <div style={{ fontSize: 13, color: T.tx, marginBottom: 12 }}>{user.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}</div>
-          {muted && <div style={{ fontSize: 12, color: T.err, padding: '4px 8px', background: `${T.err}11`, borderRadius: 6, marginBottom: 8 }}>🔇 Muted — their messages are hidden</div>}
+          {muted && <div style={{ fontSize: 12, color: T.err, padding: '4px 8px', background: `${ta(T.err,'11')}`, borderRadius: 6, marginBottom: 8 }}>🔇 Muted — their messages are hidden</div>}
         </>)}
 
         {tab === 'note' && (<>
@@ -340,7 +340,7 @@ function SelfStatusEdit({ user, api: apiRef }: SelfStatusEditProps) {
 
   if (!editing) return (
     <div style={{ padding: '0 16px 8px' }}>
-      <button onClick={() => setEditing(true)} className="pill-btn" style={{ width: '100%', padding: '8px 0', background: `linear-gradient(135deg,${T.ac}22,${T.ac}22)`, color: T.ac, border: `1px solid ${T.ac}44`, borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>✏️ Edit Profile & Status</button>
+      <button onClick={() => setEditing(true)} className="pill-btn" style={{ width: '100%', padding: '8px 0', background: `linear-gradient(135deg,${ta(T.ac,'22')},${ta(T.ac,'22')})`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>✏️ Edit Profile & Status</button>
     </div>
   );
 

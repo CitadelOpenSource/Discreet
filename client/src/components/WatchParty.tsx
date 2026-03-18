@@ -24,7 +24,7 @@ import React, {
   useState, useEffect, useRef, useCallback,
 } from 'react';
 import ReactDOM from 'react-dom';
-import { T, getInp, btn } from '../theme';
+import { T, ta, getInp, btn } from '../theme';
 import { api } from '../api/CitadelAPI';
 
 // ─── Types ────────────────────────────────────────────────
@@ -333,7 +333,7 @@ export function WatchParty({ channelId, serverId, onClose }: WatchPartyProps) {
             {isHost && (
               <span style={{
                 fontSize: 9, fontWeight: 700, color: T.ac,
-                background: `${T.ac}22`, padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase',
+                background: `${ta(T.ac,'22')}`, padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase',
               }}>HOST</span>
             )}
             {syncMsg && (
@@ -404,7 +404,7 @@ export function WatchParty({ channelId, serverId, onClose }: WatchPartyProps) {
                 const p = parseVideoUrl(urlInput.trim());
                 if (!p) return null;
                 return (
-                  <div style={{ padding: '8px 12px', background: `${T.ac}11`, borderRadius: 8, border: `1px solid ${T.ac}33`, marginBottom: 16, fontSize: 12, color: T.ac, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ padding: '8px 12px', background: `${ta(T.ac,'11')}`, borderRadius: 8, border: `1px solid ${ta(T.ac,'33')}`, marginBottom: 16, fontSize: 12, color: T.ac, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span>{p.videoType === 'youtube' ? '▶ YouTube' : '⬤ Twitch'}</span>
                     <span style={{ color: T.mt }}>ID: {p.videoId}</span>
                   </div>

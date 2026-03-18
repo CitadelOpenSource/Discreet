@@ -3,7 +3,7 @@
  * Tabs: general, behavior, personality, limits, advanced.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { T, getInp } from '../theme';
+import { T, ta, getInp } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Modal } from './Modal';
 
@@ -612,7 +612,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
         {tabs.map(t => {
           const labels: Record<string, string> = { dashboard: '📊 Dashboard', logs: '📋 Logs', general: 'General', 'ai-engine': '🧠 AI Engine', behavior: 'Behavior', personality: 'Personality', limits: 'Limits', advanced: 'Advanced' };
           return (
-            <div key={t} onClick={() => setTab(t)} style={{ padding: '6px 13px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: tab === t ? 700 : 400, color: tab === t ? T.ac : T.mt, background: tab === t ? `${T.ac}11` : 'transparent', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            <div key={t} onClick={() => setTab(t)} style={{ padding: '6px 13px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: tab === t ? 700 : 400, color: tab === t ? T.ac : T.mt, background: tab === t ? `${ta(T.ac,'11')}` : 'transparent', whiteSpace: 'nowrap', flexShrink: 0 }}>
               {labels[t] ?? t}
             </div>
           );
@@ -652,7 +652,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Active Channels (7d)</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {activeChannels.map(ch => (
-                <span key={ch} style={{ fontSize: 11, padding: '2px 8px', background: `${T.ac}15`, color: T.ac, borderRadius: 5, fontFamily: 'monospace' }}>#{ch}</span>
+                <span key={ch} style={{ fontSize: 11, padding: '2px 8px', background: `${ta(T.ac,'15')}`, color: T.ac, borderRadius: 5, fontFamily: 'monospace' }}>#{ch}</span>
               ))}
             </div>
           </div>
@@ -749,7 +749,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
                 {/* Log header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: T.sf2, borderBottom: `1px solid ${T.bd}` }}>
                   <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.mt }}>{fmtTs(l.ts)}</span>
-                  {l.channel && <span style={{ fontSize: 10, color: T.ac, background: `${T.ac}15`, padding: '1px 6px', borderRadius: 4 }}>#{l.channel}</span>}
+                  {l.channel && <span style={{ fontSize: 10, color: T.ac, background: `${ta(T.ac,'15')}`, padding: '1px 6px', borderRadius: 4 }}>#{l.channel}</span>}
                   {l.responseTime != null && <span style={{ fontSize: 10, color: '#faa61a', marginLeft: 'auto' }}>{l.responseTime}ms</span>}
                 </div>
                 {/* User message */}
@@ -844,7 +844,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
       {tab === 'ai-engine' && (<>
 
         {/* Server-side LLM notice */}
-        <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: `${T.ac}0d`, border: `1px solid ${T.ac}30`, borderRadius: 10, marginBottom: 16, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: `${ta(T.ac,'0d')}`, border: `1px solid ${ta(T.ac,'30')}`, borderRadius: 10, marginBottom: 16, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 18, flexShrink: 0 }}>🔒</span>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.ac, marginBottom: 2 }}>Server-Side LLM — API Key Encrypted at Rest</div>
@@ -957,7 +957,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
                   <div key={mi.id} onClick={() => setLlmModel(mi.id)} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
                     borderRadius: 8, cursor: 'pointer',
-                    background: active ? `${T.ac}10` : T.sf2,
+                    background: active ? `${ta(T.ac,'10')}` : T.sf2,
                     border: `1px solid ${active ? T.ac : T.bd}`,
                     transition: 'border-color .15s',
                   }}>
@@ -1161,7 +1161,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
           <option value="off">Silent (no auto-responses, only slash commands)</option>
         </select>
 
-        <div style={{ padding: '8px 12px', background: `${T.ac}11`, borderRadius: 6, marginBottom: 12, fontSize: 11, color: T.ac }}>
+        <div style={{ padding: '8px 12px', background: `${ta(T.ac,'11')}`, borderRadius: 6, marginBottom: 12, fontSize: 11, color: T.ac }}>
           In DMs: bots ALWAYS auto-respond (users are talking directly to the bot)
         </div>
 
@@ -1262,7 +1262,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <span style={{
               fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 6,
               background: cfg.temperature < 0.5 ? '#5865f222'
-                        : cfg.temperature < 1.0 ? `${T.ac}22`
+                        : cfg.temperature < 1.0 ? `${ta(T.ac,'22')}`
                         : cfg.temperature < 1.5 ? '#faa61a22'
                         : '#ed424522',
               color: cfg.temperature < 0.5 ? '#5865f2'

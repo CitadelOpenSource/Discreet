@@ -12,7 +12,7 @@
  *   DiscoverPanel
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
 
@@ -94,7 +94,7 @@ function ServerCard({
       onMouseLeave={() => setHovered(false)}
       style={{
         background: hovered ? T.sf2 : T.sf,
-        border: `1px solid ${hovered ? T.ac + '44' : T.bd}`,
+        border: `1px solid ${hovered ? ta(T.ac,'44') : T.bd}`,
         borderRadius: 14,
         padding: 16,
         display: 'flex',
@@ -109,7 +109,7 @@ function ServerCard({
         <div style={{
           width: 48, height: 48, borderRadius: 12, flexShrink: 0,
           overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: server.icon_url ? 'transparent' : `linear-gradient(135deg, ${T.ac}33, ${T.ac2}33)`,
+          background: server.icon_url ? 'transparent' : `linear-gradient(135deg, ${ta(T.ac,'33')}, ${ta(T.ac2,'33')})`,
           fontSize: 20, fontWeight: 700, color: T.ac,
         }}>
           {server.icon_url
@@ -138,7 +138,7 @@ function ServerCard({
             {cat && cat.id !== 'all' && (
               <span style={{
                 fontSize: 10, fontWeight: 600, color: T.ac,
-                background: `${T.ac}18`, border: `1px solid ${T.ac}33`,
+                background: `${ta(T.ac,'18')}`, border: `1px solid ${ta(T.ac,'33')}`,
                 borderRadius: 5, padding: '1px 6px',
               }}>
                 {cat.icon} {cat.label}
@@ -175,7 +175,7 @@ function ServerCard({
 
       {/* Join button + error */}
       {error && (
-        <div style={{ fontSize: 11, color: T.err, background: `${T.err}12`, borderRadius: 6, padding: '5px 8px' }}>
+        <div style={{ fontSize: 11, color: T.err, background: `${ta(T.err,'12')}`, borderRadius: 6, padding: '5px 8px' }}>
           {error}
         </div>
       )}

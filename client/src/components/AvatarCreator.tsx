@@ -3,7 +3,7 @@
  * Generates a PNG via canvas and passes the data URL to onSave.
  */
 import React, { useState } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { Modal } from './Modal';
 
 // ─── Types ───────────────────────────────────────────────
@@ -185,7 +185,7 @@ function OptRow({ label, value, options, onChange }: OptRowProps) {
           const v = typeof o === 'object' ? o.value : o;
           const lbl = typeof o === 'object' ? o.label : o;
           return (
-            <div key={v} onClick={() => onChange(v)} style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: value === v ? T.ac + '33' : 'rgba(255,255,255,0.05)', color: value === v ? T.ac : T.mt, border: `1px solid ${value === v ? T.ac + '55' : T.bd}`, textTransform: 'capitalize', fontWeight: value === v ? 700 : 400 }}>{lbl}</div>
+            <div key={v} onClick={() => onChange(v)} style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: value === v ? ta(T.ac,'33') : 'rgba(255,255,255,0.05)', color: value === v ? T.ac : T.mt, border: `1px solid ${value === v ? ta(T.ac,'55') : T.bd}`, textTransform: 'capitalize', fontWeight: value === v ? 700 : 400 }}>{lbl}</div>
           );
         })}
       </div>

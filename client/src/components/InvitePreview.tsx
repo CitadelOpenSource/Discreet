@@ -9,7 +9,7 @@
  *   - External instance: domain warning + Open in Browser button
  */
 import React, { useEffect, useState } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 
 export interface InvitePreviewProps {
@@ -138,7 +138,7 @@ export function InvitePreview({ url, joinedServerIds, onJoined }: InvitePreviewP
   if (state === 'external') {
     return (
       <div style={card}>
-        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${T.warn}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🌐</div>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${ta(T.warn,'18')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🌐</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>External Discreet Instance</div>
           <div style={{ fontSize: 11, color: T.mt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{host}</div>
@@ -161,7 +161,7 @@ export function InvitePreview({ url, joinedServerIds, onJoined }: InvitePreviewP
   return (
     <div style={card}>
       {/* Server icon */}
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: info?.icon_url ? 'transparent' : `linear-gradient(135deg,${T.ac}33,${T.ac2}33)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: T.ac, overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 12, background: info?.icon_url ? 'transparent' : `linear-gradient(135deg,${ta(T.ac,'33')},${ta(T.ac2,'33')})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: T.ac, overflow: 'hidden', flexShrink: 0 }}>
         {info?.icon_url
           ? <img src={info.icon_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover' }} />
           : serverInitial}

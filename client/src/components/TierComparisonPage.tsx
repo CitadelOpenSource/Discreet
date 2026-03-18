@@ -3,7 +3,7 @@
  * Styled like X/Twitter premium page with feature matrix grid.
  */
 import React from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { TIER_META, TIER_LIMITS, type Tier } from '../utils/tiers';
 
 const CHECK = '\u2713';
@@ -129,8 +129,8 @@ export function TierComparisonPage({ onBack, onCreateAccount, isGuest }: TierCom
           return (
             <div key={tier} style={{
               width: 155, padding: 20, borderRadius: 12, textAlign: 'center',
-              background: highlight ? `linear-gradient(135deg, ${T.ac}12, ${T.sf})` : T.sf,
-              border: highlight ? `2px solid ${T.ac}55` : `1px solid ${T.bd}`,
+              background: highlight ? `linear-gradient(135deg, ${ta(T.ac,'12')}, ${T.sf})` : T.sf,
+              border: highlight ? `2px solid ${ta(T.ac,'55')}` : `1px solid ${T.bd}`,
               position: 'relative',
             }}>
               {highlight && (
@@ -168,7 +168,7 @@ export function TierComparisonPage({ onBack, onCreateAccount, isGuest }: TierCom
                 {displayTiers.map(({ tier, label, highlight }) => (
                   <th key={tier} style={{
                     textAlign: 'center', padding: '12px 10px',
-                    borderBottom: `2px solid ${highlight ? T.ac + '44' : T.bd}`,
+                    borderBottom: `2px solid ${highlight ? ta(T.ac,'44') : T.bd}`,
                     color: highlight ? T.ac : T.tx, fontWeight: 700, fontSize: 12,
                     minWidth: 100,
                   }}>{label}</th>
@@ -178,10 +178,10 @@ export function TierComparisonPage({ onBack, onCreateAccount, isGuest }: TierCom
             <tbody>
               {featureRows.map((row, i) => (
                 <tr key={row.label} style={{
-                  background: i % 2 === 0 ? 'transparent' : `${T.sf}66`,
+                  background: i % 2 === 0 ? 'transparent' : `${ta(T.sf,'66')}`,
                 }}>
                   <td style={{
-                    padding: '10px 16px', borderBottom: `1px solid ${T.bd}22`,
+                    padding: '10px 16px', borderBottom: `1px solid ${ta(T.bd,'22')}`,
                     color: T.tx, fontWeight: 600, fontSize: 12,
                     position: 'sticky', left: 0, background: i % 2 === 0 ? T.bg : T.sf,
                     zIndex: 1,
@@ -193,7 +193,7 @@ export function TierComparisonPage({ onBack, onCreateAccount, isGuest }: TierCom
                     return (
                       <td key={tier} style={{
                         textAlign: 'center', padding: '10px 8px',
-                        borderBottom: `1px solid ${T.bd}22`,
+                        borderBottom: `1px solid ${ta(T.bd,'22')}`,
                         color: isCheck ? T.ac : isCross ? 'rgba(255,71,87,0.4)' : (highlight ? T.ac : T.mt),
                         fontWeight: isCheck || isCross ? 700 : 400,
                         fontSize: isCheck || isCross ? 16 : 12,

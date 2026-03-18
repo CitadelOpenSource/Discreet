@@ -19,7 +19,7 @@
  *   api.awardPoints(sid, uid, amount, reason)→ { points: number } | null
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
 
@@ -233,8 +233,8 @@ export function LeaderboardPanel({ serverId, members }: LeaderboardPanelProps) {
             style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '8px 10px', borderRadius: 8,
-              background: isMe ? `${T.ac}0d` : i % 2 === 0 ? T.sf2 : 'transparent',
-              border: isMe ? `1px solid ${T.ac}33` : '1px solid transparent',
+              background: isMe ? `${ta(T.ac,'0d')}` : i % 2 === 0 ? T.sf2 : 'transparent',
+              border: isMe ? `1px solid ${ta(T.ac,'33')}` : '1px solid transparent',
               marginBottom: 2,
             }}
           >

@@ -3,7 +3,7 @@
  * Two-column comparison (Guest vs Free Account) + Premium teaser.
  */
 import React from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { TIER_META } from '../utils/tiers';
 
 interface UpgradeModalProps {
@@ -41,7 +41,7 @@ export function UpgradeModal({ feature, onCreateAccount, onViewTiers, onClose }:
         {/* Header */}
         <div style={{
           padding: '24px 24px 16px',
-          background: `linear-gradient(135deg, ${T.ac}15, ${T.sf})`,
+          background: `linear-gradient(135deg, ${ta(T.ac,'15')}, ${T.sf})`,
           borderBottom: `1px solid ${T.bd}`,
         }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.tx, marginBottom: 6 }}>
@@ -69,7 +69,7 @@ export function UpgradeModal({ feature, onCreateAccount, onViewTiers, onClose }:
               {features.map(f => (
                 <div key={f.label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${T.bd}22`,
+                  fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${ta(T.bd,'22')}`,
                 }}>
                   <span style={{ color: T.mt }}>{f.label}</span>
                   <span style={{
@@ -85,7 +85,7 @@ export function UpgradeModal({ feature, onCreateAccount, onViewTiers, onClose }:
             {/* Free Account column */}
             <div style={{
               background: T.bg, borderRadius: 10,
-              border: `2px solid ${T.ac}44`, padding: 16,
+              border: `2px solid ${ta(T.ac,'44')}`, padding: 16,
               position: 'relative',
             }}>
               <div style={{
@@ -102,7 +102,7 @@ export function UpgradeModal({ feature, onCreateAccount, onViewTiers, onClose }:
               {features.map(f => (
                 <div key={f.label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${T.bd}22`,
+                  fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${ta(T.bd,'22')}`,
                 }}>
                   <span style={{ color: T.tx }}>{f.label}</span>
                   <span style={{

@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { api, _storage } from './api/CitadelAPI';
-import { T, getInp, btn, setTheme } from './theme';
+import { T, getInp, btn, setTheme, ta, applyServerTheme, registerThemeSync } from './theme';
 import { I } from './icons';
 import { initCrypto, isMlsAvailable, encryptMessage, decryptMessage } from './crypto/mls';
 import { sframeService } from './services/SFrameService';
@@ -535,6 +535,7 @@ function ColorTool({ onInsert }: { onInsert: (v: string) => void }) {
 
 // ══════════════════════════════════════════════════════════
 export default function App() {
+  registerThemeSync(api);
   const tzCtx = useTimezone();
   const [authed, setAuthed] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!api.userId); // true if we need to try cookie refresh
@@ -855,7 +856,7 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     // Load theme and timezone from settings
     api.getSettings?.().then((s: any) => {
-      if (s?.theme) handleThemeChange(s.theme);
+      if (s?.theme) { applyServerTheme(s.theme); forceUpdate(n => n + 1); }
       if (s?.timezone && s.timezone !== 'UTC') {
         tzCtx.setTimezone(s.timezone);
       } else if (!s?.timezone || s.timezone === 'UTC') {
@@ -1945,7 +1946,7 @@ export default function App() {
           if (favServers.length === 0) return null;
           return (<>
             {favServers.map(s => renderServerIcon(s, true))}
-            <div style={{ width: 28, height: 2, background: `${T.ac}44`, borderRadius: 1, marginBottom: 2 }} />
+            <div style={{ width: 28, height: 2, background: `${ta(T.ac,'44')}`, borderRadius: 1, marginBottom: 2 }} />
           </>);
         })()}
         {/* Folders */}
@@ -2326,7 +2327,7 @@ export default function App() {
               const mlsActive = isMlsAvailable();
               return (
                 <div style={{ position: 'relative' }}>
-                  <span onClick={() => setShowInfo(p => !p)} style={{ fontSize: 10, color: mlsActive ? T.ac : '#faa61a', background: mlsActive ? `${T.ac}15` : 'rgba(250,166,26,0.1)', padding: '2px 8px', borderRadius: 4, cursor: 'pointer', userSelect: 'none', transition: 'all .2s' }}>
+                  <span onClick={() => setShowInfo(p => !p)} style={{ fontSize: 10, color: mlsActive ? T.ac : '#faa61a', background: mlsActive ? `${ta(T.ac,'15')}` : 'rgba(250,166,26,0.1)', padding: '2px 8px', borderRadius: 4, cursor: 'pointer', userSelect: 'none', transition: 'all .2s' }}>
                     {mlsActive ? '🔒 MLS' : '🔒 AES-256'}
                   </span>
                   {showInfo && (
@@ -2431,7 +2432,7 @@ export default function App() {
             {/* Zero servers welcome */}
             {servers.length === 0 && !loadingServers && (
               <div style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 24 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: 36, background: `${T.ac}12`, marginBottom: 16 }}><I.Shield s={36} /></div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: 36, background: `${ta(T.ac,'12')}`, marginBottom: 16 }}><I.Shield s={36} /></div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Welcome to Discreet</div>
                 <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 360, margin: '0 auto 20px' }}>End-to-end encrypted messaging with zero-knowledge architecture. Create your first server or join an existing one to get started.</div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
@@ -2446,7 +2447,7 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 24 }}>
                 {servers.map(s => (
                   <div key={s.id} onClick={() => selectServer(s)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: T.sf, borderRadius: 10, cursor: 'pointer', border: `1px solid ${T.bd}` }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: s.icon_url ? 'transparent' : `linear-gradient(135deg,${T.ac}33,${T.ac2}33)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: T.ac, overflow: 'hidden' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: s.icon_url ? 'transparent' : `linear-gradient(135deg,${ta(T.ac,'33')},${ta(T.ac2,'33')})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: T.ac, overflow: 'hidden' }}>
                       {s.icon_url ? <img src={s.icon_url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 10 }} /> : s.name[0]?.toUpperCase()}
                     </div>
                     <div><div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 11, color: T.mt }}>{s.member_count || '?'} members</div></div>
@@ -2652,13 +2653,13 @@ export default function App() {
                     <div onClick={clear} style={btnS(T.sf2, T.err)}>C</div>
                     <div onClick={() => setDisplay(String(parseFloat(display) * -1))} style={btnS(T.sf2, T.mt)}>±</div>
                     <div onClick={() => setDisplay(String(parseFloat(display) / 100))} style={btnS(T.sf2, T.mt)}>%</div>
-                    <div onClick={() => operate('÷')} style={btnS(op === '÷' ? T.ac : `${T.ac}33`, op === '÷' ? '#000' : T.ac)}>÷</div>
+                    <div onClick={() => operate('÷')} style={btnS(op === '÷' ? T.ac : `${ta(T.ac,'33')}`, op === '÷' ? '#000' : T.ac)}>÷</div>
                     {['7','8','9'].map(d => <div key={d} onClick={() => input(d)} style={btnS(T.bg, T.tx)}>{d}</div>)}
-                    <div onClick={() => operate('×')} style={btnS(op === '×' ? T.ac : `${T.ac}33`, op === '×' ? '#000' : T.ac)}>×</div>
+                    <div onClick={() => operate('×')} style={btnS(op === '×' ? T.ac : `${ta(T.ac,'33')}`, op === '×' ? '#000' : T.ac)}>×</div>
                     {['4','5','6'].map(d => <div key={d} onClick={() => input(d)} style={btnS(T.bg, T.tx)}>{d}</div>)}
-                    <div onClick={() => operate('-')} style={btnS(op === '-' ? T.ac : `${T.ac}33`, op === '-' ? '#000' : T.ac)}>−</div>
+                    <div onClick={() => operate('-')} style={btnS(op === '-' ? T.ac : `${ta(T.ac,'33')}`, op === '-' ? '#000' : T.ac)}>−</div>
                     {['1','2','3'].map(d => <div key={d} onClick={() => input(d)} style={btnS(T.bg, T.tx)}>{d}</div>)}
-                    <div onClick={() => operate('+')} style={btnS(op === '+' ? T.ac : `${T.ac}33`, op === '+' ? '#000' : T.ac)}>+</div>
+                    <div onClick={() => operate('+')} style={btnS(op === '+' ? T.ac : `${ta(T.ac,'33')}`, op === '+' ? '#000' : T.ac)}>+</div>
                     <div onClick={() => input('0')} style={{ ...btnS(T.bg, T.tx), gridColumn: 'span 2' }}>0</div>
                     <div onClick={() => { if (!display.includes('.')) { setDisplay(display + '.'); setFresh(false); } }} style={btnS(T.bg, T.tx)}>.</div>
                     <div onClick={equals} style={btnS(T.ac, '#000')}>=</div>
@@ -2727,14 +2728,14 @@ export default function App() {
             </div>
             {bookmarks.length === 0 ? (
               <div style={{ padding: '60px 20px', textAlign: 'center' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Bookmark s={28} /></div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${ta(T.ac,'12')}`, marginBottom: 16 }}><I.Bookmark s={28} /></div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>No saved messages yet</div>
                 <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 300, margin: '0 auto' }}>Hover a message and click the bookmark icon to save it for later.</div>
               </div>
             ) : bookmarks.map((bm: any) => {
               const serverName = servers.find(s => s.id === bm.server_id)?.name || 'Unknown server';
               return (
-                <div key={bm.message_id} onClick={() => navigateToBookmark(bm)} style={{ padding: '12px 20px', borderBottom: `1px solid ${T.bd}20`, cursor: 'pointer', transition: 'background .1s' }}
+                <div key={bm.message_id} onClick={() => navigateToBookmark(bm)} style={{ padding: '12px 20px', borderBottom: `1px solid ${ta(T.bd,'20')}`, cursor: 'pointer', transition: 'background .1s' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -3229,7 +3230,7 @@ export default function App() {
                   const checked = gdmSelected.includes(uid);
                   return (
                     <div key={uid} onClick={() => setGdmSelected(p => checked ? p.filter(id => id !== uid) : [...p, uid])}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, cursor: 'pointer', border: `1px solid ${checked ? T.ac : T.bd}`, background: checked ? `${T.ac}12` : 'transparent', transition: 'border-color .1s' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, cursor: 'pointer', border: `1px solid ${checked ? T.ac : T.bd}`, background: checked ? `${ta(T.ac,'12')}` : 'transparent', transition: 'border-color .1s' }}>
                       <Av name={name} size={28} />
                       <span style={{ flex: 1, fontSize: 13, color: checked ? T.ac : T.tx, fontWeight: checked ? 600 : 400 }}>{name}</span>
                       <span style={{ fontSize: 16, color: checked ? T.ac : T.bd }}>{checked ? '✓' : '○'}</span>
@@ -3313,7 +3314,7 @@ export default function App() {
       {invitePreview && !invitePreview.foreign && (
         <Modal title="You've been invited to join a server" onClose={() => setInvitePreview(null)}>
           <div style={{ padding: 24, textAlign: 'center' }}>
-            <div style={{ width: 64, height: 64, borderRadius: 20, background: invitePreview.icon_url ? 'transparent' : `linear-gradient(135deg,${T.ac}33,${T.ac2}33)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700, color: T.ac, overflow: 'hidden', margin: '0 auto 12px' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: invitePreview.icon_url ? 'transparent' : `linear-gradient(135deg,${ta(T.ac,'33')},${ta(T.ac2,'33')})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700, color: T.ac, overflow: 'hidden', margin: '0 auto 12px' }}>
               {invitePreview.icon_url ? <img src={invitePreview.icon_url} alt="" style={{ width: 64, height: 64, objectFit: 'cover' }} /> : invitePreview.server_name[0]?.toUpperCase()}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.tx, marginBottom: 4 }}>{invitePreview.server_name}</div>
@@ -3385,7 +3386,7 @@ export default function App() {
                 { id: 'forum',        icon: '💬', label: 'Forum'        },
                 { id: 'stage',        icon: '🎤', label: 'Stage'        },
               ] as { id: string; icon: string; label: string }[]).map(t => (
-                <div key={t.id} onClick={() => setCreateChannelType(t.id)} style={{ padding: '8px 6px', borderRadius: 12, cursor: 'pointer', border: `2px solid ${createChannelType === t.id ? T.ac : T.bd}`, textAlign: 'center', fontSize: 12, fontWeight: 600, color: createChannelType === t.id ? T.ac : T.mt, background: createChannelType === t.id ? `${T.ac}11` : 'transparent' }}>
+                <div key={t.id} onClick={() => setCreateChannelType(t.id)} style={{ padding: '8px 6px', borderRadius: 12, cursor: 'pointer', border: `2px solid ${createChannelType === t.id ? T.ac : T.bd}`, textAlign: 'center', fontSize: 12, fontWeight: 600, color: createChannelType === t.id ? T.ac : T.mt, background: createChannelType === t.id ? `${ta(T.ac,'11')}` : 'transparent' }}>
                   <div style={{ fontSize: 18, marginBottom: 2 }}>{t.icon}</div>
                   {t.label}
                 </div>
@@ -3486,7 +3487,7 @@ export default function App() {
             )}
             {/* Shareable QR Code (backend-generated PNG with 24h connect code) */}
             {inviteResult && (
-              <button onClick={() => setShowServerQrConnect(true)} style={{ width: '100%', marginTop: 10, padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: `linear-gradient(135deg,${T.ac}22,${T.ac}22)`, color: T.ac, border: `1px solid ${T.ac}44` }}>
+              <button onClick={() => setShowServerQrConnect(true)} style={{ width: '100%', marginTop: 10, padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: `linear-gradient(135deg,${ta(T.ac,'22')},${ta(T.ac,'22')})`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}` }}>
                 Shareable QR Code (24h)
               </button>
             )}
@@ -3533,7 +3534,7 @@ export default function App() {
               { key: 'dnd', label: '⛔ Do Not Disturb', color: '#ed4245', desc: 'Suppress notifications' },
               { key: 'invisible', label: '👻 Invisible', color: '#747f8d', desc: 'Appear offline' },
             ].map(s => (
-              <div key={s.key} onClick={() => changeStatus(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', marginBottom: 4, background: userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent', border: userStatus === s.key ? `1px solid ${T.ac}33` : '1px solid transparent' }}
+              <div key={s.key} onClick={() => changeStatus(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', marginBottom: 4, background: userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent', border: userStatus === s.key ? `1px solid ${ta(T.ac,'33')}` : '1px solid transparent' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                 onMouseLeave={e => e.currentTarget.style.background = userStatus === s.key ? 'rgba(0,212,170,0.08)' : 'transparent'}>
                 <div style={{ width: 12, height: 12, borderRadius: 6, background: s.color }} />
@@ -3968,7 +3969,7 @@ export default function App() {
                 <div style={{ fontSize: 12, color: T.mt }}>Pin important messages so everyone can find them easily.</div>
               </div>
             ) : pinnedMsgs.map((m: any) => (
-              <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${T.bd}20` }}>
+              <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${ta(T.bd,'20')}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Av name={getName(m.author_id)} size={22} />
@@ -4045,7 +4046,7 @@ export default function App() {
                 <div key={group.section} style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{group.section}</div>
                   {group.shortcuts.map(sc => (
-                    <div key={sc.keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.bd}20` }}>
+                    <div key={sc.keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${ta(T.bd,'20')}` }}>
                       <span style={{ fontSize: 13, color: T.tx }}>{sc.desc}</span>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {sc.keys.split(' + ').map((k, i) => (

@@ -4,7 +4,7 @@
  *       Privacy, Account, Notifications, Accessibility, Keybinds, Advanced, About.
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
-import { T, getInp } from '../theme';
+import { T, ta, getInp } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { setLanguage } from '../i18n/i18n';
@@ -357,7 +357,7 @@ interface AudioToggleProps {
 function AudioToggle({ label, storageKey, defaultVal, desc, onChange }: AudioToggleProps) {
   const [on, setOn] = useState(() => { const v = localStorage.getItem(storageKey); return v !== null ? v === 'true' : defaultVal; });
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.bd}22` }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${ta(T.bd,'22')}` }}>
       <div>
         <div style={{ fontSize: 12, color: T.tx, fontWeight: 500 }}>{label}</div>
         {desc && <div style={{ fontSize: 10, color: T.mt }}>{desc}</div>}
@@ -772,7 +772,7 @@ function SecurityStatus({ platformUser, onSetupStep }: SecurityStatusProps) {
       <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Security Status</div>
       <div style={{
         background: T.sf2, borderRadius: 12, padding: 16,
-        border: `1px solid ${allComplete ? T.ac + '33' : T.bd}`,
+        border: `1px solid ${allComplete ? ta(T.ac,'33') : T.bd}`,
       }}>
         {/* Score + tier badge row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
@@ -820,12 +820,12 @@ function SecurityStatus({ platformUser, onSetupStep }: SecurityStatusProps) {
             <div key={c.label} style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '8px 12px', borderRadius: 8,
-              background: c.ok ? `${T.ac}08` : 'rgba(255,165,0,0.06)',
-              border: `1px solid ${c.ok ? T.ac + '22' : '#ffa50222'}`,
+              background: c.ok ? `${ta(T.ac,'08')}` : 'rgba(255,165,0,0.06)',
+              border: `1px solid ${c.ok ? ta(T.ac,'22') : '#ffa50222'}`,
             }}>
               <div style={{
                 width: 22, height: 22, borderRadius: 11,
-                background: c.ok ? `${T.ac}20` : '#ffa50220',
+                background: c.ok ? `${ta(T.ac,'20')}` : '#ffa50220',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, fontWeight: 800,
                 color: c.ok ? T.ac : '#ffa502',
@@ -1184,7 +1184,7 @@ function ActiveSessions() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sessions.map((s: any) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${s.current ? T.ac + '44' : T.bd}` }}>
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${s.current ? ta(T.ac,'44') : T.bd}` }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {s.device_name || 'Unknown device'}
@@ -1208,7 +1208,7 @@ function ActiveSessions() {
                       setVerifyEmoji(res.emoji);
                     } catch { setVerifyingSession(null); }
                   }} className="pill-btn"
-                    style={{ background: 'rgba(0,212,170,0.1)', color: T.ac, border: `1px solid ${T.ac}44`, padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
+                    style={{ background: 'rgba(0,212,170,0.1)', color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, padding: '4px 10px', fontSize: 10, fontWeight: 600 }}>
                     Verify
                   </button>
                 )}
@@ -1434,7 +1434,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     if (!q || q.length < 2) return text;
     const idx = text.toLowerCase().indexOf(q);
     if (idx === -1) return text;
-    return <>{text.slice(0, idx)}<mark style={{ background: `${T.ac}33`, color: T.ac, borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + q.length)}</mark>{text.slice(idx + q.length)}</>;
+    return <>{text.slice(0, idx)}<mark style={{ background: `${ta(T.ac,'33')}`, color: T.ac, borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + q.length)}</mark>{text.slice(idx + q.length)}</>;
   }, [settingsSearch]);
 
   // Section visibility helper — hides sections that don't match during search
@@ -1451,7 +1451,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.style.transition = 'box-shadow 0.3s';
-        el.style.boxShadow = `0 0 0 2px ${T.ac}, 0 0 12px ${T.ac}44`;
+        el.style.boxShadow = `0 0 0 2px ${T.ac}, 0 0 12px ${ta(T.ac,'44')}`;
         setTimeout(() => { el.style.boxShadow = ''; }, 2000);
       }
       setHighlightSection('');
@@ -1566,7 +1566,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           {tabs.map(t => {
             const dimmed = matchedTabs && !matchedTabs.has(t.id);
             return (
-              <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : dimmed ? `${T.mt}44` : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', transition: 'color .15s, opacity .15s' }}>{t.label}</div>
+              <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : dimmed ? `${ta(T.mt,'44')}` : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', transition: 'color .15s, opacity .15s' }}>{t.label}</div>
             );
           })}
           {onLogout && <div onClick={onLogout} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err, marginLeft: 'auto' }}>Log Out</div>}
@@ -1722,7 +1722,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button onClick={() => setShowAvatarCreator(true)} className="pill-btn" style={{ flex: 1, padding: '8px 0', background: `linear-gradient(135deg,${T.ac}22,${(T as any).ac2 || T.ac}22)`, color: T.ac, border: `1px solid ${T.ac}44`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>🎨 Create Avatar</button>
+            <button onClick={() => setShowAvatarCreator(true)} className="pill-btn" style={{ flex: 1, padding: '8px 0', background: `linear-gradient(135deg,${ta(T.ac,'22')},${(T as any).ac2 || T.ac}22)`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>🎨 Create Avatar</button>
             {localStorage.getItem('d_my_avatar') && (
               <button onClick={() => { localStorage.removeItem('d_my_avatar'); const c = JSON.parse(localStorage.getItem('d_avatars') || '{}'); delete c[api.userId]; localStorage.setItem('d_avatars', JSON.stringify(c)); api.updateProfile({ avatar_url: '' }); setSaved(true); setTimeout(() => setSaved(false), 1500); }} className="pill-btn" style={{ padding: '8px 14px', background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.2)', borderRadius: 8, fontSize: 12 }}>Remove</button>
             )}
@@ -2045,7 +2045,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               </div>
             )}
             {proxyType !== 'none' && proxyHost && proxyPort && (
-              <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.08)', borderRadius: 8, border: `1px solid ${T.ac}22`, marginBottom: 12, fontSize: 11, color: T.ac, fontWeight: 600 }}>
+              <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.08)', borderRadius: 8, border: `1px solid ${ta(T.ac,'22')}`, marginBottom: 12, fontSize: 11, color: T.ac, fontWeight: 600 }}>
                 Proxy configured: {proxyType.toUpperCase()}://{proxyHost}:{proxyPort}
               </div>
             )}
@@ -2112,7 +2112,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             {(platformUser?.permissions ?? []).length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 280, justifyContent: 'flex-end' }}>
                 {(platformUser?.permissions ?? []).map((p: string) => (
-                  <span key={p} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: `${T.ac}18`, border: `1px solid ${T.ac}33`, color: T.ac, fontFamily: 'monospace' }}>{p}</span>
+                  <span key={p} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: `${ta(T.ac,'18')}`, border: `1px solid ${ta(T.ac,'33')}`, color: T.ac, fontFamily: 'monospace' }}>{p}</span>
                 ))}
               </div>
             )}

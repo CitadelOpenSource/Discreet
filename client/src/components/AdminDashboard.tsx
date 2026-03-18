@@ -13,7 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { T, getInp } from '../theme';
+import { T, ta, getInp } from '../theme';
 import { api } from '../api/CitadelAPI';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ function EditPanel({ edit, onSave, onCancel }: {
     <tr>
       <td colSpan={8} style={{ padding: 0 }}>
         <div style={{
-          background: `${T.ac}0a`, border: `1px solid ${T.ac}33`, borderRadius: 8,
+          background: `${ta(T.ac,'0a')}`, border: `1px solid ${ta(T.ac,'33')}`, borderRadius: 8,
           padding: '12px 16px', margin: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end',
         }}>
           <div style={{ width: '100%', fontSize: 13, fontWeight: 700, color: T.tx }}>
@@ -381,7 +381,7 @@ function InactiveServersPanel() {
               style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
                 border: daysFilter === d ? `1px solid ${T.ac}` : `1px solid ${T.bd}`,
-                background: daysFilter === d ? `${T.ac}15` : T.sf2,
+                background: daysFilter === d ? `${ta(T.ac,'15')}` : T.sf2,
                 color: daysFilter === d ? T.ac : T.mt,
               }}
             >{d}d</button>
@@ -428,7 +428,7 @@ function InactiveServersPanel() {
                 <button
                   onClick={() => handleArchive(s.id, false)}
                   disabled={actionLoading === s.id}
-                  style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${T.ac}12`, color: T.ac, border: `1px solid ${T.ac}40` }}
+                  style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${ta(T.ac,'12')}`, color: T.ac, border: `1px solid ${ta(T.ac,'40')}` }}
                 >Unarchive</button>
                 <button
                   onClick={() => handleScheduleDeletion(s.id, true)}
@@ -441,7 +441,7 @@ function InactiveServersPanel() {
               <button
                 onClick={() => handleScheduleDeletion(s.id, false)}
                 disabled={actionLoading === s.id}
-                style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${T.ac}12`, color: T.ac, border: `1px solid ${T.ac}40` }}
+                style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${ta(T.ac,'12')}`, color: T.ac, border: `1px solid ${ta(T.ac,'40')}` }}
               >Cancel Deletion</button>
             )}
           </div>
@@ -638,7 +638,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   };
   const tdBase: React.CSSProperties = {
     fontSize: 12, color: T.tx, padding: '7px 10px',
-    borderBottom: `1px solid ${T.bd}22`, verticalAlign: 'middle',
+    borderBottom: `1px solid ${ta(T.bd,'22')}`, verticalAlign: 'middle',
   };
 
   return (
@@ -652,7 +652,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 20 }}>🛡️</span>
           <span style={{ fontSize: 16, fontWeight: 800, color: T.tx }}>Admin Dashboard</span>
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: `${T.ac}15`, border: `1px solid ${T.ac}30`, color: T.ac }}>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: `${ta(T.ac,'15')}`, border: `1px solid ${ta(T.ac,'30')}`, color: T.ac }}>
             {platformUser?.platform_role}
           </span>
         </div>
@@ -820,8 +820,8 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     ].map(s => (
                       <div key={s.label} style={{
                         fontSize: 11, padding: '4px 10px', borderRadius: 5,
-                        background: s.ok ? `${T.ac}10` : 'rgba(255,71,87,0.1)',
-                        border: `1px solid ${s.ok ? `${T.ac}30` : 'rgba(255,71,87,0.3)'}`,
+                        background: s.ok ? `${ta(T.ac,'10')}` : 'rgba(255,71,87,0.1)',
+                        border: `1px solid ${s.ok ? `${ta(T.ac,'30')}` : 'rgba(255,71,87,0.3)'}`,
                         color: s.ok ? T.ac : '#ff4757',
                       }}>
                         <StatusDot ok={s.ok} />{s.label}{s.text ? `: ${s.text}` : ''}
@@ -915,7 +915,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                       {Object.entries(health.features).filter(([, v]) => v).map(([k]) => (
                         <span key={k} style={{
                           fontSize: 9, padding: '2px 6px', borderRadius: 3,
-                          background: `${T.ac}15`, color: T.ac, border: `1px solid ${T.ac}30`,
+                          background: `${ta(T.ac,'15')}`, color: T.ac, border: `1px solid ${ta(T.ac,'30')}`,
                         }}>{k}</span>
                       ))}
                     </div>
@@ -1017,7 +1017,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                   </div>
 
                   {/* Info box */}
-                  <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${T.ac}08`, borderRadius: 6, border: `1px solid ${T.ac}20`, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${ta(T.ac,'08')}`, borderRadius: 6, border: `1px solid ${ta(T.ac,'20')}`, lineHeight: 1.6 }}>
                     <strong style={{ color: T.ac }}>Protected data</strong> is never purged by retention policies: audit log entries, server settings changes, channel create/delete/rename, role changes, and member join/leave/kick/ban events. These live on the hash chain permanently.
                   </div>
                 </div>
@@ -1065,7 +1065,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     const isEditing = editState?.user.id === u.id;
                     return (
                       <React.Fragment key={u.id}>
-                        <tr style={{ background: isEditing ? `${T.ac}08` : 'transparent' }}>
+                        <tr style={{ background: isEditing ? `${ta(T.ac,'08')}` : 'transparent' }}>
                           <td style={tdBase}>
                             <span style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{u.username}</span>
                             {u.is_bot && <span style={{ marginLeft: 5, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#a855f720', color: '#a855f7', border: '1px solid #a855f740' }}>BOT</span>}
@@ -1086,7 +1086,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                             {isEditing ? (
                               <button onClick={() => setEditState(null)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, cursor: 'pointer' }}>Cancel</button>
                             ) : (
-                              <button onClick={() => setEditState({ user: u, platform_role: '', account_tier: '', saving: false, error: null })} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, cursor: 'pointer' }}>Edit Role</button>
+                              <button onClick={() => setEditState({ user: u, platform_role: '', account_tier: '', saving: false, error: null })} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: `${ta(T.ac,'18')}`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, cursor: 'pointer' }}>Edit Role</button>
                             )}
                           </td>
                         </tr>
@@ -1102,14 +1102,14 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }}>
                 <button disabled={usersPage <= 1 || usersLoading} onClick={() => { setEditState(null); loadUsers(usersPage - 1); }} style={{
                   padding: '5px 14px', borderRadius: 6, fontSize: 12,
-                  background: usersPage <= 1 ? T.sf2 : `${T.ac}18`, color: usersPage <= 1 ? T.mt : T.ac,
-                  border: `1px solid ${usersPage <= 1 ? T.bd : `${T.ac}44`}`, cursor: usersPage <= 1 ? 'not-allowed' : 'pointer',
+                  background: usersPage <= 1 ? T.sf2 : `${ta(T.ac,'18')}`, color: usersPage <= 1 ? T.mt : T.ac,
+                  border: `1px solid ${usersPage <= 1 ? T.bd : `${ta(T.ac,'44')}`}`, cursor: usersPage <= 1 ? 'not-allowed' : 'pointer',
                 }}>← Prev</button>
                 <span style={{ fontSize: 11, color: T.mt }}>Page {usersPage} of {totalPages}</span>
                 <button disabled={usersPage >= totalPages || usersLoading} onClick={() => { setEditState(null); loadUsers(usersPage + 1); }} style={{
                   padding: '5px 14px', borderRadius: 6, fontSize: 12,
-                  background: usersPage >= totalPages ? T.sf2 : `${T.ac}18`, color: usersPage >= totalPages ? T.mt : T.ac,
-                  border: `1px solid ${usersPage >= totalPages ? T.bd : `${T.ac}44`}`, cursor: usersPage >= totalPages ? 'not-allowed' : 'pointer',
+                  background: usersPage >= totalPages ? T.sf2 : `${ta(T.ac,'18')}`, color: usersPage >= totalPages ? T.mt : T.ac,
+                  border: `1px solid ${usersPage >= totalPages ? T.bd : `${ta(T.ac,'44')}`}`, cursor: usersPage >= totalPages ? 'not-allowed' : 'pointer',
                 }}>Next →</button>
               </div>
             )}

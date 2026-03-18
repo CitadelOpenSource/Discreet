@@ -15,7 +15,7 @@
  *   ThreadView
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
 import { Markdown } from './Markdown';
@@ -200,7 +200,7 @@ export function ThreadView({ parentMessage, channelId, onClose, getName }: Threa
       <div style={{
         padding: '12px 14px',
         borderBottom: `1px solid ${T.bd}`,
-        background: `${T.ac}08`,
+        background: `${ta(T.ac,'08')}`,
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>

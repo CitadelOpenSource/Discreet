@@ -10,7 +10,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { voice, useVoice } from '../hooks/useVoice';
 
@@ -101,7 +101,7 @@ function ParticipantTile({
       ) : (
         <div style={{
           width: 64, height: 64, borderRadius: '50%',
-          background: `linear-gradient(135deg, ${T.ac}44, ${T.ac2}44)`,
+          background: `linear-gradient(135deg, ${ta(T.ac,'44')}, ${ta(T.ac2,'44')})`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 24, fontWeight: 700, color: T.ac,
         }}>
@@ -363,7 +363,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                   </div>
 
                   {error && (
-                    <div style={{ fontSize: 12, color: T.err, background: `${T.err}15`, borderRadius: 6, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 12, color: T.err, background: `${ta(T.err,'15')}`, borderRadius: 6, padding: '8px 10px' }}>
                       {error}
                     </div>
                   )}
@@ -432,7 +432,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                   </div>
 
                   {error && (
-                    <div style={{ fontSize: 12, color: T.err, background: `${T.err}15`, borderRadius: 6, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 12, color: T.err, background: `${ta(T.err,'15')}`, borderRadius: 6, padding: '8px 10px' }}>
                       {error}
                     </div>
                   )}
@@ -483,7 +483,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                   onClick={copyCode}
                   title="Click to copy meeting code"
                   style={{
-                    background: `${T.ac}15`, border: `1px solid ${T.ac}40`,
+                    background: `${ta(T.ac,'15')}`, border: `1px solid ${ta(T.ac,'40')}`,
                     borderRadius: 8, padding: '4px 12px',
                     fontSize: 16, fontWeight: 700, color: T.ac,
                     letterSpacing: 3, fontFamily: "'JetBrains Mono', monospace",
@@ -495,7 +495,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                 <button
                   onClick={copyCode}
                   title="Copy meeting code"
-                  style={{ background: `${T.ac}22`, border: `1px solid ${T.ac}33`, borderRadius: 6, color: T.ac, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '4px 10px' }}
+                  style={{ background: `${ta(T.ac,'22')}`, border: `1px solid ${ta(T.ac,'33')}`, borderRadius: 6, color: T.ac, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '4px 10px' }}
                 >
                   Copy
                 </button>

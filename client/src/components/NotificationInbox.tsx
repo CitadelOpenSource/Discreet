@@ -6,7 +6,7 @@
  * Real-time unread count via WebSocket `notification_new` events.
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { useTimezone } from '../hooks/TimezoneContext';
 
@@ -317,12 +317,12 @@ function NotifRow({ n, onAction, onMarkRead }: {
       onClick={() => onAction(n)}
       style={{
         display: 'flex', gap: 10, padding: '10px 16px', cursor: 'pointer',
-        background: n.read ? 'transparent' : `${T.ac}08`,
+        background: n.read ? 'transparent' : `${ta(T.ac,'08')}`,
         borderLeft: n.read ? '3px solid transparent' : `3px solid ${T.ac}`,
         transition: 'background 0.15s',
       }}
       onMouseEnter={e => (e.currentTarget.style.background = T.sf2)}
-      onMouseLeave={e => (e.currentTarget.style.background = n.read ? 'transparent' : `${T.ac}08`)}
+      onMouseLeave={e => (e.currentTarget.style.background = n.read ? 'transparent' : `${ta(T.ac,'08')}`)}
     >
       {/* Type icon */}
       <div style={{

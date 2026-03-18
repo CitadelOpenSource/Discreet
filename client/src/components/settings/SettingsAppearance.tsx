@@ -1,5 +1,5 @@
-import React from 'react';
-import { T } from '../../theme';
+import React, { useState, useRef } from 'react';
+import { T, ta, PRESETS, getThemeName, setTheme, getTheme, exportTheme, validateCustomTheme, applyCustomTheme, loadCustomTheme, type ThemeRaw } from '../../theme';
 import { useTimezone, detectedTimezone } from '../../hooks/TimezoneContext';
 import { api } from '../../api/CitadelAPI';
 
@@ -13,26 +13,197 @@ export interface SettingsAppearanceProps {
   setSaved: (v: boolean) => void;
 }
 
+// ─── Color picker field ─────────────────────────────────────────────────
+
+const COLOR_FIELDS: { key: keyof ThemeRaw; label: string }[] = [
+  { key: 'bg',   label: 'Background' },
+  { key: 'sf',   label: 'Sidebar' },
+  { key: 'sf2',  label: 'Card / Input' },
+  { key: 'sf3',  label: 'Surface 3' },
+  { key: 'bd',   label: 'Border' },
+  { key: 'tx',   label: 'Text' },
+  { key: 'mt',   label: 'Text Muted' },
+  { key: 'ac',   label: 'Accent' },
+  { key: 'ac2',  label: 'Accent Alt' },
+  { key: 'err',  label: 'Danger' },
+  { key: 'warn', label: 'Warning' },
+  { key: 'ok',   label: 'Success' },
+];
+
 export default function SettingsAppearance({ s, save, sel, sectionVisible, setSaved }: SettingsAppearanceProps) {
   const tzCtx = useTimezone();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importErr, setImportErr] = useState('');
+  const [showEditor, setShowEditor] = useState(false);
+  const [draft, setDraft] = useState<ThemeRaw>(() => loadCustomTheme() || getTheme());
+  const [editorDirty, setEditorDirty] = useState(false);
 
   return (<>
     <div style={{ display: sectionVisible('theme') ? undefined : 'none' }}>
-    <div data-section="theme" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme & Colors</div>
+    <div data-section="theme" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Theme</div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-      <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Theme</label>
-        <select style={sel} value={(s.theme as string) || 'dark'} onChange={e => save('theme', e.target.value)}>
-          <option value="dark">Dark</option><option value="onyx">Onyx (OLED Black)</option><option value="light">Light</option><option value="midnight">Midnight</option>
-        </select>
-      </div>
-      <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Accent Color</label>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['#00d4aa', '#7289da', '#ff6b6b', '#faa61a', '#43b581', '#e91e63', '#9b59b6', '#1abc9c'].map(c => (
-            <div key={c} onClick={() => localStorage.setItem('d_accent', c)} style={{ width: 24, height: 24, borderRadius: 12, background: c, cursor: 'pointer', border: localStorage.getItem('d_accent') === c ? '2px solid #fff' : '2px solid transparent' }} />
-          ))}
-        </div>
-      </div>
+      {PRESETS.map(p => {
+        const active = getThemeName() === p.id;
+        const c = p.colors;
+        return (
+          <div key={p.id}
+            onClick={() => { setTheme(p.id); save('theme', p.id); }}
+            style={{
+              cursor: 'pointer', borderRadius: 10, overflow: 'hidden',
+              border: active ? `2px solid ${c.ac}` : `2px solid ${c.bd}`,
+              transition: 'border-color .15s',
+            }}>
+            {/* Live preview mini-mockup */}
+            <div style={{ display: 'flex', height: 72, background: c.bg }}>
+              {/* Sidebar */}
+              <div style={{ width: 40, background: c.sf, borderRight: `1px solid ${c.bd}`, padding: '6px 4px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ width: 20, height: 20, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 6) : 6, background: c.sf2, margin: '0 auto' }} />
+                <div style={{ width: 20, height: 20, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 6) : 6, background: c.ac, margin: '0 auto', opacity: 0.3 }} />
+                <div style={{ width: 20, height: 20, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 6) : 6, background: c.sf2, margin: '0 auto' }} />
+              </div>
+              {/* Chat area */}
+              <div style={{ flex: 1, padding: 6, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 3 }}>
+                {/* Fake message lines */}
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {!p.hideAvatars && <div style={{ width: 10, height: 10, borderRadius: 5, background: c.mt, flexShrink: 0 }} />}
+                  <div style={{ height: 6, width: '70%', background: c.mt, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 3) : 3, opacity: 0.4 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {!p.hideAvatars && <div style={{ width: 10, height: 10, borderRadius: 5, background: c.ac, flexShrink: 0 }} />}
+                  <div style={{ height: 6, width: '50%', background: c.ac, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 3) : 3, opacity: 0.5 }} />
+                </div>
+                {/* Input bar */}
+                <div style={{ height: 10, background: c.sf2, borderRadius: p.borderRadius != null ? Math.min(p.borderRadius, 4) : 4, border: `1px solid ${c.bd}`, marginTop: 2 }} />
+              </div>
+            </div>
+            {/* Label */}
+            <div style={{ padding: '8px 10px', background: c.sf, borderTop: `1px solid ${c.bd}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: active ? c.ac : c.tx, fontFamily: p.font || 'inherit' }}>{p.name}</div>
+                {active && <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: c.ac, color: c.bg, fontWeight: 700 }}>ACTIVE</span>}
+              </div>
+              <div style={{ fontSize: 10, color: c.mt, marginTop: 2 }}>{p.description}</div>
+            </div>
+          </div>
+        );
+      })}
     </div>
+    {/* ── Export / Import ── */}
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <button onClick={() => {
+        const data = exportTheme();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `discreet-theme-${data.name}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }} style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>
+        Export Theme
+      </button>
+      <button onClick={() => fileRef.current?.click()} style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: T.sf2, color: T.tx, border: `1px solid ${T.bd}` }}>
+        Import Theme
+      </button>
+      <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={e => {
+        setImportErr('');
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(reader.result as string);
+            const colors = validateCustomTheme(parsed.colors || parsed);
+            if (!colors) { setImportErr('Invalid theme file. Requires 12 hex color fields.'); return; }
+            applyCustomTheme(colors);
+            setDraft({ ...colors });
+            save('theme', 'custom');
+            setSaved(true); setTimeout(() => setSaved(false), 1500);
+          } catch { setImportErr('Could not parse JSON file.'); }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      }} />
+    </div>
+    {importErr && <div style={{ fontSize: 11, color: T.err, marginBottom: 12 }}>{importErr}</div>}
+
+    {/* ── Custom Theme Editor ── */}
+    <div style={{ marginBottom: 16 }}>
+      <button onClick={() => { setShowEditor(p => !p); if (!showEditor) { setDraft(loadCustomTheme() || getTheme()); setEditorDirty(false); } }}
+        style={{ width: '100%', padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+          background: showEditor ? ta(T.ac, '18') : T.sf2, color: showEditor ? T.ac : T.tx, border: `1px solid ${showEditor ? T.ac : T.bd}` }}>
+        {showEditor ? 'Hide Custom Editor' : 'Custom Theme Editor'}
+      </button>
+
+      {showEditor && (
+        <div style={{ marginTop: 10, padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+          {/* Color pickers grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
+            {COLOR_FIELDS.map(f => (
+              <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="color" value={draft[f.key]} onChange={e => {
+                  const next = { ...draft, [f.key]: e.target.value };
+                  setDraft(next);
+                  setEditorDirty(true);
+                }} style={{ width: 28, height: 28, border: `1px solid ${T.bd}`, borderRadius: 4, padding: 0, cursor: 'pointer', background: 'transparent' }} />
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: T.tx }}>{f.label}</div>
+                  <div style={{ fontSize: 9, color: T.mt, fontFamily: 'monospace' }}>{draft[f.key]}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Live preview */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Live Preview</div>
+          <div style={{ borderRadius: 8, overflow: 'hidden', border: `1px solid ${draft.bd}`, marginBottom: 12 }}>
+            <div style={{ display: 'flex', height: 80, background: draft.bg }}>
+              <div style={{ width: 44, background: draft.sf, borderRight: `1px solid ${draft.bd}`, padding: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: draft.sf2 }} />
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: draft.ac, opacity: 0.3 }} />
+              </div>
+              <div style={{ flex: 1, padding: 8, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 6, background: draft.mt }} />
+                  <div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: draft.tx }}>User </span>
+                    <span style={{ fontSize: 10, color: draft.mt }}>Hello world</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 6, background: draft.ac }} />
+                  <div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: draft.ac }}>You </span>
+                    <span style={{ fontSize: 10, color: draft.tx }}>Hey!</span>
+                  </div>
+                </div>
+                <div style={{ height: 14, background: draft.sf2, borderRadius: 4, border: `1px solid ${draft.bd}` }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, padding: '6px 8px', background: draft.sf, borderTop: `1px solid ${draft.bd}` }}>
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: draft.ac, color: draft.bg, fontWeight: 700 }}>Accent</span>
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: draft.err, color: '#fff', fontWeight: 700 }}>Danger</span>
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: draft.warn, color: '#000', fontWeight: 700 }}>Warn</span>
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: draft.ok, color: '#000', fontWeight: 700 }}>OK</span>
+            </div>
+          </div>
+
+          {/* Save button */}
+          <button onClick={() => {
+            applyCustomTheme(draft);
+            save('theme', 'custom');
+            setEditorDirty(false);
+            setSaved(true); setTimeout(() => setSaved(false), 1500);
+          }} disabled={!editorDirty} style={{
+            width: '100%', padding: '9px 0', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', cursor: editorDirty ? 'pointer' : 'not-allowed',
+            background: editorDirty ? `linear-gradient(135deg,${draft.ac},${draft.ac2})` : T.sf3,
+            color: editorDirty ? '#000' : T.mt,
+          }}>
+            {editorDirty ? 'Save Custom Theme' : 'No changes'}
+          </button>
+        </div>
+      )}
+    </div>
+
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Text & Layout</div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
       <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Font Size</label>

@@ -6,7 +6,7 @@
  * Pure rendering — all state lives in App.tsx.
  */
 import React from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import * as I from '../icons';
 
 export interface VoicePanelProps {
@@ -77,10 +77,10 @@ export function VoicePanel({
         <div onClick={onToggleDeafen} style={{ flex: 1, padding: '5px 0', textAlign: 'center', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: deafened ? 'rgba(255,71,87,0.15)' : T.sf2, color: deafened ? T.err : T.mt, border: `1px solid ${deafened ? 'rgba(255,71,87,0.3)' : T.bd}` }}>
           {deafened ? '🔇 Deaf' : '🎧 Audio'}
         </div>
-        <div onClick={onToggleVideo} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: videoEnabled ? `${T.ac}22` : T.sf2, color: videoEnabled ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
+        <div onClick={onToggleVideo} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: videoEnabled ? `${ta(T.ac,'22')}` : T.sf2, color: videoEnabled ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
           📹 Cam
         </div>
-        <div onClick={onToggleScreenShare} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: screenSharing ? `${T.ac}22` : T.sf2, color: screenSharing ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
+        <div onClick={onToggleScreenShare} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: screenSharing ? `${ta(T.ac,'22')}` : T.sf2, color: screenSharing ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
           {screenSharing ? '🖥️ Live' : '🖥️ Share'}
         </div>
         {isStreaming ? (

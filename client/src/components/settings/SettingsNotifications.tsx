@@ -1,5 +1,5 @@
 import React from 'react';
-import { T, getInp } from '../../theme';
+import { T, ta, getInp } from '../../theme';
 import { api } from '../../api/CitadelAPI';
 import { previewSound, SOUND_OPTIONS } from '../../utils/sounds';
 
@@ -183,7 +183,7 @@ export default function SettingsNotifications({
                 save('dnd_days', daysStr);
               }} style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                background: isActive ? `${T.ac}22` : T.bg, color: isActive ? T.ac : T.mt,
+                background: isActive ? `${ta(T.ac,'22')}` : T.bg, color: isActive ? T.ac : T.mt,
                 border: `1px solid ${isActive ? T.ac : T.bd}`, transition: 'all .15s',
               }}>{day}</div>
             );
@@ -218,7 +218,7 @@ export default function SettingsNotifications({
       return (
         <div key={sv.id} style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: sv.icon_url ? 'transparent' : `${T.ac}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: T.ac, overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: sv.icon_url ? 'transparent' : `${ta(T.ac,'33')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: T.ac, overflow: 'hidden', flexShrink: 0 }}>
               {sv.icon_url ? <img src={sv.icon_url} alt="" style={{ width: 28, height: 28, objectFit: 'cover' }} /> : sv.name[0]?.toUpperCase()}
             </div>
             <span style={{ fontSize: 13, fontWeight: 600, color: muted ? T.mt : T.tx, flex: 1 }}>{sv.name}</span>

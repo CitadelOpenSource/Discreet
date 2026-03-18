@@ -4,7 +4,7 @@
  * Supports right-click context menu on friend rows.
  */
 import React, { useState, useEffect } from 'react';
-import { T, getInp } from '../theme';
+import { T, ta, getInp } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { Av } from './Av';
@@ -115,7 +115,7 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest }: FriendsViewPro
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Friends — {friends.length}</div>
           {friends.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Users s={28} /></div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${ta(T.ac,'12')}`, marginBottom: 16 }}><I.Users s={28} /></div>
               <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>Add friends to start chatting</div>
               <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 16px' }}>Search by username or share your ID so others can find you.</div>
               <button onClick={() => setTab('add')} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Add Friend</button>
@@ -180,7 +180,7 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest }: FriendsViewPro
           </>)}
           {incoming.length === 0 && outgoing.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: `${T.ac}12`, marginBottom: 12 }}><I.Check s={24} /></div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: `${ta(T.ac,'12')}`, marginBottom: 12 }}><I.Check s={24} /></div>
               <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No pending requests</div>
               <div style={{ fontSize: 12, color: T.mt }}>When someone sends you a friend request, it will appear here.</div>
             </div>

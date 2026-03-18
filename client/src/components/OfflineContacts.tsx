@@ -5,7 +5,7 @@
  * When internet is available, users can send friend requests to stored contacts.
  */
 import React, { useEffect, useState } from 'react';
-import { T, btn } from '../theme';
+import { T, ta, btn } from '../theme';
 import { api } from '../api/CitadelAPI';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export function OfflineContacts() {
       {sameInstance.map(c => (
         <div key={c.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 6, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
           {/* Avatar placeholder */}
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg,${T.ac}33,${T.ac2}33)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: T.ac, flexShrink: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg,${ta(T.ac,'33')},${ta(T.ac2,'33')})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: T.ac, flexShrink: 0 }}>
             {c.username[0]?.toUpperCase() || '?'}
           </div>
 
@@ -152,7 +152,7 @@ export function OfflineContacts() {
           </div>
           {otherInstance.map(c => (
             <div key={c.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 6, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, opacity: 0.7 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: `${T.warn}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🌐</div>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: `${ta(T.warn,'18')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🌐</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{c.username}</div>
                 <div style={{ fontSize: 10, color: T.mt }}>

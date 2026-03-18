@@ -6,7 +6,7 @@
  * No npm dependencies — purely native browser APIs.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 
 export interface QrScannerProps {
   /** Called when a QR code is successfully scanned */
@@ -82,7 +82,7 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
           <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
           {/* Scan overlay */}
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <div style={{ width: 180, height: 180, border: `2px solid ${T.ac}88`, borderRadius: 8 }} />
+            <div style={{ width: 180, height: 180, border: `2px solid ${ta(T.ac,'88')}`, borderRadius: 8 }} />
           </div>
         </div>
         <div style={{ fontSize: 11, color: T.mt, textAlign: 'center' }}>

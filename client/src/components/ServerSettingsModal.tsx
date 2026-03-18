@@ -3,7 +3,7 @@
  * Tabs: Overview, Channels, Roles, Members, Bots, Emoji, Events, Moderation, Bans, Audit Log.
  */
 import React, { useState, useEffect } from 'react';
-import { T, getInp, btn } from '../theme';
+import { T, ta, getInp, btn } from '../theme';
 import * as I from '../icons';
 import { api } from '../api/CitadelAPI';
 import { Modal } from './Modal';
@@ -1057,7 +1057,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
   return (<>
     <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
       {modTabs.map(t => (
-        <div key={t.id} onClick={() => setModTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: modTab === t.id ? T.ac : T.mt, background: modTab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', border: `1px solid ${modTab === t.id ? T.ac + '44' : T.bd}` }}>
+        <div key={t.id} onClick={() => setModTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: modTab === t.id ? T.ac : T.mt, background: modTab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', border: `1px solid ${modTab === t.id ? ta(T.ac,'44') : T.bd}` }}>
           {t.icon} {t.label}
         </div>
       ))}
@@ -2002,7 +2002,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                 <button
                   key={f}
                   onClick={() => { setMemberFilter(f); setMemberPage(0); }}
-                  style={{ padding: '4px 12px', borderRadius: 12, fontSize: 11, fontWeight: memberFilter === f ? 700 : 400, background: memberFilter === f ? T.ac + '22' : 'rgba(255,255,255,0.05)', color: memberFilter === f ? T.ac : T.mt, border: `1px solid ${memberFilter === f ? T.ac + '55' : T.bd}`, cursor: 'pointer', transition: 'all .12s', textTransform: 'capitalize' }}
+                  style={{ padding: '4px 12px', borderRadius: 12, fontSize: 11, fontWeight: memberFilter === f ? 700 : 400, background: memberFilter === f ? ta(T.ac,'22') : 'rgba(255,255,255,0.05)', color: memberFilter === f ? T.ac : T.mt, border: `1px solid ${memberFilter === f ? ta(T.ac,'55') : T.bd}`, cursor: 'pointer', transition: 'all .12s', textTransform: 'capitalize' }}
                 >{f === 'all' ? `All (${mgmtMembers.length})` : f.charAt(0).toUpperCase() + f.slice(1)}</button>
               ))}
               {assignableRoles.map(role => (
@@ -2254,7 +2254,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                       : 'Never';
                     const usesStr = inv.max_uses ? `${inv.uses ?? 0} / ${inv.max_uses}` : `${inv.uses ?? 0} / ∞`;
                     return (
-                      <tr key={code} style={{ borderBottom: `1px solid ${T.bd}20`, opacity: expired ? 0.6 : 1 }}>
+                      <tr key={code} style={{ borderBottom: `1px solid ${ta(T.bd,'20')}`, opacity: expired ? 0.6 : 1 }}>
                         <td style={{ padding: '9px 10px' }}>
                           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: expired ? T.mt : T.ac, letterSpacing: 1 }}>{code}</span>
                         </td>
@@ -2263,7 +2263,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                         <td style={{ padding: '9px 10px', color: T.mt, whiteSpace: 'nowrap' }}>{expiryStr}</td>
                         <td style={{ padding: '9px 10px' }}>
                           {expired
-                            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: `${T.mt}22`, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expired</span>
+                            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: `${ta(T.mt,'22')}`, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expired</span>
                             : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(59,165,93,0.15)', color: '#3ba55d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</span>}
                         </td>
                         <td style={{ padding: '9px 10px' }}>
@@ -2336,7 +2336,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
             </select>
           </div>
 
-          <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${T.ac}08`, borderRadius: 6, border: `1px solid ${T.ac}20`, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: `${ta(T.ac,'08')}`, borderRadius: 6, border: `1px solid ${ta(T.ac,'20')}`, lineHeight: 1.6 }}>
             <strong style={{ color: T.ac }}>Protected data</strong> is never purged: audit log, settings changes, channel operations, role changes, and membership events live on the hash chain permanently.
           </div>
         </div>
@@ -2587,7 +2587,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                   { label: 'Hourly', cron: '0 * * * *' },
                 ].map(p => (
                   <button key={p.cron} onClick={() => setNewTaskCron(p.cron)}
-                    style={{ padding: '3px 8px', borderRadius: 4, border: `1px solid ${newTaskCron === p.cron ? T.ac : T.bd}`, background: newTaskCron === p.cron ? `${T.ac}18` : T.bg, color: newTaskCron === p.cron ? T.ac : T.mt, fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>
+                    style={{ padding: '3px 8px', borderRadius: 4, border: `1px solid ${newTaskCron === p.cron ? T.ac : T.bd}`, background: newTaskCron === p.cron ? `${ta(T.ac,'18')}` : T.bg, color: newTaskCron === p.cron ? T.ac : T.mt, fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>
                     {p.label}
                   </button>
                 ))}
@@ -2649,7 +2649,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{typeLabels[task.task_type] || task.task_type}</span>
-                  {monitorType && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: `${T.ac}15`, color: T.ac, fontWeight: 600 }}>{monitorLabels[monitorType] || monitorType}</span>}
+                  {monitorType && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: `${ta(T.ac,'15')}`, color: T.ac, fontWeight: 600 }}>{monitorLabels[monitorType] || monitorType}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, fontSize: 11, color: T.mt }}>
                   {chName && <span>#{chName}</span>}

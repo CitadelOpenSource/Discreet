@@ -5,7 +5,7 @@
  * receives data via props and communicates via callbacks.
  */
 import React, { useRef } from 'react';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 import * as I from '../icons';
 import { useTimezone } from '../hooks/TimezoneContext';
 import { Av } from './Av';
@@ -205,7 +205,7 @@ export function MessageList(props: MessageListProps) {
       {/* Empty state */}
       {!loadingMessages && !showMessagesSkeleton && messages.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: T.mt, animation: 'fadeIn 0.25s ease' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${T.ac}12`, marginBottom: 16 }}><I.Hash s={28} /></div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 32, background: `${ta(T.ac,'12')}`, marginBottom: 16 }}><I.Hash s={28} /></div>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Welcome to #{channelName}</div>
           <div style={{ fontSize: 13, color: T.mt, marginTop: 6, lineHeight: 1.5 }}>
             This is the start of <strong style={{ color: T.tx }}>#{channelName}</strong>. Send the first message!
@@ -264,7 +264,7 @@ export function MessageList(props: MessageListProps) {
                 position: 'relative',
                 background: m.priority === 'urgent' ? 'rgba(255,107,53,0.08)' : m.priority === 'important' ? 'rgba(250,166,26,0.06)' : highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(currentUserId) ? 'rgba(0,212,170,0.06)' : 'transparent'),
                 transition: 'background .15s ease',
-                borderLeft: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === currentUserId ? `2px solid ${T.ac}44` : '2px solid transparent',
+                borderLeft: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === currentUserId ? `2px solid ${ta(T.ac,'44')}` : '2px solid transparent',
               }}
               onMouseEnter={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
               onMouseLeave={e => { if (highlightedMsg !== m.id) e.currentTarget.style.background = 'transparent'; }}
@@ -358,7 +358,7 @@ export function MessageList(props: MessageListProps) {
                     {Object.entries(reactions[m.id].reduce((acc: any, r: any) => { acc[r.emoji] = (acc[r.emoji] || 0) + 1; return acc; }, {})).map(([emoji, count]) => {
                       const mine = (reactions[m.id] || []).some(r => r.emoji === emoji && r.user_id === currentUserId);
                       return (
-                        <span key={emoji} onClick={() => onToggleReaction(m.id, emoji)} title={mine ? 'Remove reaction' : 'Add reaction'} style={{ padding: '1px 6px', background: mine ? `${T.ac}22` : T.sf2, borderRadius: 4, fontSize: 12, cursor: 'pointer', border: `1px solid ${mine ? T.ac : T.bd}`, color: mine ? T.ac : T.tx, fontWeight: mine ? 600 : 400, transition: 'background .1s, border-color .1s' }}>
+                        <span key={emoji} onClick={() => onToggleReaction(m.id, emoji)} title={mine ? 'Remove reaction' : 'Add reaction'} style={{ padding: '1px 6px', background: mine ? `${ta(T.ac,'22')}` : T.sf2, borderRadius: 4, fontSize: 12, cursor: 'pointer', border: `1px solid ${mine ? T.ac : T.bd}`, color: mine ? T.ac : T.tx, fontWeight: mine ? 600 : 400, transition: 'background .1s, border-color .1s' }}>
                           {emoji} {count as number}
                         </span>
                       );
@@ -369,9 +369,9 @@ export function MessageList(props: MessageListProps) {
                 {/* Thread reply count */}
                 {(m.reply_count ?? 0) > 0 && (
                   <div onClick={() => onOpenThread(m)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 8px', background: `${T.ac}14`, borderRadius: 8, cursor: 'pointer', fontSize: 11, color: T.ac, fontWeight: 600, border: `1px solid ${T.ac}22`, transition: 'background .15s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = `${T.ac}22`}
-                    onMouseLeave={e => e.currentTarget.style.background = `${T.ac}14`}>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 8px', background: `${ta(T.ac,'14')}`, borderRadius: 8, cursor: 'pointer', fontSize: 11, color: T.ac, fontWeight: 600, border: `1px solid ${ta(T.ac,'22')}`, transition: 'background .15s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = `${ta(T.ac,'22')}`}
+                    onMouseLeave={e => e.currentTarget.style.background = `${ta(T.ac,'14')}`}>
                     <I.Reply /> {m.reply_count} {m.reply_count === 1 ? 'reply' : 'replies'}
                   </div>
                 )}

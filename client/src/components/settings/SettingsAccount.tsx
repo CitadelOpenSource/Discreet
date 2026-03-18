@@ -1,5 +1,5 @@
 import React from 'react';
-import { T } from '../../theme';
+import { T, ta } from '../../theme';
 import * as I from '../../icons';
 import { api } from '../../api/CitadelAPI';
 import { TIER_META } from '../../utils/tiers';
@@ -258,7 +258,7 @@ function SubscriptionPanel({ platformUser, onUpgrade }: { platformUser: any; onU
             )}
           </div>
         </div>
-        <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${T.ac}18`, color: T.ac, border: `1px solid ${T.ac}44`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>
+        <button onClick={() => onUpgrade ? onUpgrade() : window.open('/app/tiers', '_blank')} className="pill-btn" style={{ background: `${ta(T.ac,'18')}`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>
           {isPaid ? 'Change Plan' : 'Upgrade'}
         </button>
       </div>

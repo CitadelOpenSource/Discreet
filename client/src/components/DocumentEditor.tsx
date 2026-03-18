@@ -20,7 +20,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { T } from '../theme';
+import { T, ta } from '../theme';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -176,7 +176,7 @@ function ToolbarBtn({ label, title, onClick, active }: {
       style={{
         padding: '4px 9px', borderRadius: 5, border: 'none', fontSize: 12, fontWeight: 700,
         cursor: 'pointer', lineHeight: 1.4,
-        background: active ? `${T.ac}30` : hov ? `rgba(255,255,255,0.08)` : 'transparent',
+        background: active ? `${ta(T.ac,'30')}` : hov ? `rgba(255,255,255,0.08)` : 'transparent',
         color: active ? T.ac : T.tx,
         transition: 'background .12s, color .12s',
       }}
@@ -443,7 +443,7 @@ export function DocumentEditor({ channelId, onClose }: DocumentEditorProps) {
                 <span style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>Documents</span>
                 <span style={{
                   fontSize: 10, fontWeight: 700, color: T.ac,
-                  background: `${T.ac}18`, border: `1px solid ${T.ac}30`,
+                  background: `${ta(T.ac,'18')}`, border: `1px solid ${ta(T.ac,'30')}`,
                   borderRadius: 4, padding: '2px 6px',
                 }}>
                   🔒 E2EE
@@ -493,11 +493,11 @@ export function DocumentEditor({ channelId, onClose }: DocumentEditorProps) {
                       </div>
                       <div style={{ fontSize: 11, color: T.mt, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <span>{fmtDate(doc.updatedAt)}</span>
-                        <span style={{ color: T.ac, fontSize: 10, fontWeight: 700, background: `${T.ac}15`, border: `1px solid ${T.ac}25`, borderRadius: 3, padding: '1px 5px' }}>
+                        <span style={{ color: T.ac, fontSize: 10, fontWeight: 700, background: `${ta(T.ac,'15')}`, border: `1px solid ${ta(T.ac,'25')}`, borderRadius: 3, padding: '1px 5px' }}>
                           🔒 Encrypted
                         </span>
                         {doc.channelId !== channelId && (
-                          <span style={{ fontSize: 10, color: T.warn, background: `${T.warn}15`, border: `1px solid ${T.warn}25`, borderRadius: 3, padding: '1px 5px' }}>
+                          <span style={{ fontSize: 10, color: T.warn, background: `${ta(T.warn,'15')}`, border: `1px solid ${ta(T.warn,'25')}`, borderRadius: 3, padding: '1px 5px' }}>
                             Different channel key
                           </span>
                         )}
@@ -549,7 +549,7 @@ export function DocumentEditor({ channelId, onClose }: DocumentEditorProps) {
                 {saving && <span style={{ fontSize: 11, color: T.mt }}>Saving…</span>}
                 {savedMsg && !saving && <span style={{ fontSize: 11, color: T.ac }}>✓ Saved</span>}
                 {isDirty && !saving && !savedMsg && <span style={{ fontSize: 11, color: T.mt }}>Unsaved</span>}
-                <span style={{ fontSize: 10, fontWeight: 700, color: T.ac, background: `${T.ac}18`, border: `1px solid ${T.ac}30`, borderRadius: 4, padding: '2px 6px' }}>🔒 E2EE</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: T.ac, background: `${ta(T.ac,'18')}`, border: `1px solid ${ta(T.ac,'30')}`, borderRadius: 4, padding: '2px 6px' }}>🔒 E2EE</span>
               </div>
 
               {/* Action buttons */}
@@ -581,7 +581,7 @@ export function DocumentEditor({ channelId, onClose }: DocumentEditorProps) {
 
             {/* Share URL notice */}
             {shareUrl && (
-              <div style={{ padding: '8px 16px', background: `${T.ac}12`, borderBottom: `1px solid ${T.ac}30`, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <div style={{ padding: '8px 16px', background: `${ta(T.ac,'12')}`, borderBottom: `1px solid ${ta(T.ac,'30')}`, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: T.ac, fontWeight: 600 }}>Share link (copied to clipboard):</span>
                 <code style={{ flex: 1, fontSize: 10, color: T.mt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
                   {shareUrl}
@@ -593,7 +593,7 @@ export function DocumentEditor({ channelId, onClose }: DocumentEditorProps) {
 
             {/* Error notice */}
             {loadErr && (
-              <div style={{ padding: '8px 16px', background: `${T.err}12`, borderBottom: `1px solid ${T.err}30`, fontSize: 12, color: T.err, flexShrink: 0 }}>
+              <div style={{ padding: '8px 16px', background: `${ta(T.err,'12')}`, borderBottom: `1px solid ${ta(T.err,'30')}`, fontSize: 12, color: T.err, flexShrink: 0 }}>
                 {loadErr}
               </div>
             )}

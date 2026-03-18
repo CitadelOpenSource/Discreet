@@ -4,7 +4,7 @@
  * API fields use backend naming: start_time, end_time, reminder_minutes, etc.
  */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { T, getInp, btn } from '../theme';
+import { T, ta, getInp, btn } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { useTimezone } from '../hooks/TimezoneContext';
 
@@ -148,7 +148,7 @@ function MiniCalendar({ events, selectedDate, onSelect }: {
                 alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                 borderRadius: 6, fontSize: 12, position: 'relative',
                 color: isSelected ? '#000' : isToday ? T.ac : T.tx,
-                background: isSelected ? T.ac : isToday ? `${T.ac}15` : 'transparent',
+                background: isSelected ? T.ac : isToday ? `${ta(T.ac,'15')}` : 'transparent',
                 fontWeight: isToday || isSelected ? 700 : 400,
                 transition: 'background 0.1s',
               }}
@@ -202,8 +202,8 @@ function EventCard({ event, onRsvp, onDelete, isOwner }: {
 
   return (
     <div style={{
-      border: `1px solid ${past ? T.bd : `${T.ac}33`}`,
-      borderRadius: 10, background: past ? T.sf2 : `${T.ac}06`,
+      border: `1px solid ${past ? T.bd : `${ta(T.ac,'33')}`}`,
+      borderRadius: 10, background: past ? T.sf2 : `${ta(T.ac,'06')}`,
       padding: '12px 14px', marginBottom: 10, opacity: past ? 0.6 : 1,
     }}>
       {/* Header */}
@@ -511,9 +511,9 @@ export function EventsPanel({ serverId, isOwner, channels = [] }: EventsPanelPro
           ] as const).map(([val, label]) => (
             <button key={val} onClick={() => setFilter(val)} style={{
               padding: '4px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer', fontWeight: filter === val ? 700 : 400,
-              background: filter === val ? `${T.ac}22` : T.sf2,
+              background: filter === val ? `${ta(T.ac,'22')}` : T.sf2,
               color: filter === val ? T.ac : T.mt,
-              border: `1px solid ${filter === val ? T.ac + '44' : T.bd}`,
+              border: `1px solid ${filter === val ? ta(T.ac,'44') : T.bd}`,
             }}>{label}</button>
           ))}
         </div>

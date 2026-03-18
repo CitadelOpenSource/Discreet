@@ -1,5 +1,5 @@
 import React from 'react';
-import { T } from '../../theme';
+import { T, ta } from '../../theme';
 
 export interface SettingsAdvancedProps {
   sel: React.CSSProperties;
@@ -56,7 +56,7 @@ export default function SettingsAdvanced({ sel, curServer, DevTools }: SettingsA
       </div>
     </div>
     {localStorage.getItem('d_dev_tools') === 'true' && (
-      <div style={{ marginTop: 16, padding: 12, background: T.bg, borderRadius: 10, border: `1px solid ${T.ac}22` }}>
+      <div style={{ marginTop: 16, padding: 12, background: T.bg, borderRadius: 10, border: `1px solid ${ta(T.ac,'22')}` }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.ac, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>Developer Tools</div>
         <div style={{ fontSize: 11, color: T.mt, marginBottom: 10 }}>API testing and debugging tools. Available to verified accounts on their own servers.</div>
         <DevTools curServer={curServer} />

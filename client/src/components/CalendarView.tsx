@@ -15,7 +15,7 @@
  *   onJoinMeeting  — callback to open MeetingRoom with a pre-filled code
  */
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { T, getInp, btn } from '../theme';
+import { T, ta, getInp, btn } from '../theme';
 import { api } from '../api/CitadelAPI';
 
 const MeetingRoom = lazy(() =>
@@ -704,7 +704,7 @@ export function CalendarView({ serverId, onJoinMeeting }: CalendarViewProps) {
                 style={{
                   minHeight: 68, padding: '5px 6px', borderRadius: 6, cursor: 'pointer',
                   background: isSelected ? 'rgba(0,212,170,0.12)' : isToday ? 'rgba(0,212,170,0.06)' : 'transparent',
-                  border: `1px solid ${isSelected ? T.ac : isToday ? `${T.ac}55` : `${T.bd}66`}`,
+                  border: `1px solid ${isSelected ? T.ac : isToday ? `${ta(T.ac,'55')}` : `${ta(T.bd,'66')}`}`,
                   opacity: inMonth ? 1 : 0.3,
                   transition: 'background .1s',
                 }}
@@ -869,7 +869,7 @@ export function CalendarView({ serverId, onJoinMeeting }: CalendarViewProps) {
             </div>
 
             {form.repeat !== 'none' && (
-              <div style={{ background: 'rgba(0,212,170,0.06)', border: `1px solid ${T.ac}44`, borderRadius: 8, padding: '7px 12px', marginBottom: 12, fontSize: 11, color: T.mt }}>
+              <div style={{ background: 'rgba(0,212,170,0.06)', border: `1px solid ${ta(T.ac,'44')}`, borderRadius: 8, padding: '7px 12px', marginBottom: 12, fontSize: 11, color: T.mt }}>
                 ↻ Will create {RECUR_COUNTS[form.repeat]} events starting {form.date}.
               </div>
             )}
