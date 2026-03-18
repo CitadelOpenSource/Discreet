@@ -6,6 +6,8 @@
 // No ambiguous mod.rs files. Every file is identifiable at a glance.
 
 pub mod discreet_ack_handlers;
+pub mod discreet_admin_invite_handlers;
+pub mod discreet_announcement_handlers;
 pub mod discreet_agent_config;
 pub mod discreet_agent_episodic_memory;
 pub mod discreet_agent_handlers;

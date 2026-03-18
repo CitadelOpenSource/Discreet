@@ -36,7 +36,9 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use discreet_server::discreet_admin_invite_handlers;
 use discreet_server::discreet_agent_handlers;
+use discreet_server::discreet_announcement_handlers;
 use discreet_server::discreet_audit;
 use discreet_server::discreet_automod;
 use discreet_server::discreet_auth_handlers;
@@ -760,6 +762,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/export", axum::routing::post(discreet_platform_admin_handlers::compliance_export))
         .route("/admin/settings", axum::routing::get(discreet_platform_settings::get_settings)
             .put(discreet_platform_settings::update_settings))
+        // Admin invite codes
+        .route("/admin/invites", axum::routing::post(discreet_admin_invite_handlers::create_invite)
+            .get(discreet_admin_invite_handlers::list_invites))
+        .route("/admin/invites/:invite_id", axum::routing::delete(discreet_admin_invite_handlers::delete_invite))
+        // Admin announcements
+        .route("/admin/announcements", axum::routing::post(discreet_announcement_handlers::create_announcement)
+            .get(discreet_announcement_handlers::list_announcements))
         // ── Server lifecycle admin ──
         .merge(discreet_server_handlers::server_admin_routes())
         // ── API 404 fallback — consistent JSON for unknown routes ──

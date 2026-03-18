@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE admin_invites SET uses = uses + 1 WHERE id = $1 AND uses < max_uses",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6bf9d45d335202e36f83ee4ccca553a505fa437309cb58e15ab8d4ef57660478"
+}

@@ -538,6 +538,7 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!api.userId); // true if we need to try cookie refresh
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState<{ id: string; content: string; created_at: string } | null>(null);
   const [view, setView] = useState<'home' | 'server' | 'dm'>('home');
   const [homeTab, setHomeTab] = useState('home');
 
@@ -997,6 +998,10 @@ export default function App() {
       }
       if (evt.type === 'maintenance_mode') {
         setMaintenanceMsg(evt.message || 'Discreet is undergoing scheduled maintenance.');
+        return;
+      }
+      if (evt.type === 'system_announcement') {
+        setAnnouncement({ id: evt.id, content: evt.content, created_at: evt.created_at });
         return;
       }
       // Track all users joining/leaving voice channels (including bots via force_voice_join)
@@ -2245,6 +2250,16 @@ export default function App() {
         {wsStatusVisible && wsStatus === 'connected' && (
           <div style={{ padding: '6px 16px', background: '#43b581', color: '#fff', fontSize: 12, fontWeight: 600, flexShrink: 0, animation: 'fadeIn 0.2s ease' }}>
             Connected
+          </div>
+        )}
+        {announcement && (
+          <div style={{ padding: '10px 16px', background: 'rgba(0,212,170,0.08)', borderBottom: '1px solid rgba(0,212,170,0.2)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <span style={{ fontSize: 16 }}>🛡</span>
+            <div style={{ flex: 1, fontSize: 13, color: T.tx, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 700, color: '#00D4AA', marginRight: 6 }}>Discreet</span>
+              {announcement.content}
+            </div>
+            <button onClick={() => setAnnouncement(null)} style={{ background: 'none', border: 'none', color: T.mt, fontSize: 16, cursor: 'pointer', padding: '2px 6px', lineHeight: 1 }} title="Dismiss">&times;</button>
           </div>
         )}
         {hasUnverifiedDevice && view === 'server' && (
