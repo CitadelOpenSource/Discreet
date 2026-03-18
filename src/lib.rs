@@ -29,6 +29,7 @@ pub mod discreet_channel_handlers;
 pub mod discreet_config;
 pub mod discreet_csrf;
 pub mod discreet_dev_token_handlers;
+pub mod discreet_disappearing_handlers;
 pub mod discreet_discovery_handlers;
 pub mod discreet_dm_handlers;
 pub mod discreet_email_handlers;

@@ -47,6 +47,7 @@ interface Channel {
   is_announcement?: boolean;
   ai_model_override?: string | null;
   read_only?: boolean;
+  ttl_seconds?: number | null;
 }
 
 interface Category {
@@ -1177,10 +1178,21 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
               {ch.locked ? '🔒 Locked' : (ch.min_role_position ?? 0) > 0 ? '🔐 Restricted' : '🌐 Public'}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: T.mt }}>
-            TTL: {(ch.message_ttl_seconds ?? 0) > 0 ? ((ch.message_ttl_seconds ?? 0) >= 86400 ? Math.round((ch.message_ttl_seconds ?? 0) / 86400) + 'd' : (ch.message_ttl_seconds ?? 0) >= 3600 ? Math.round((ch.message_ttl_seconds ?? 0) / 3600) + 'h' : (ch.message_ttl_seconds ?? 0) + 's') : 'Forever'}
-            {(ch.slowmode_seconds ?? 0) > 0 && ` · Slowmode: ${ch.slowmode_seconds}s`}
-            {ch.nsfw && ' · NSFW'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.mt }}>
+            <span>Disappearing:</span>
+            <select value={ch.ttl_seconds ?? ''} onChange={async e => {
+              const v = e.target.value === '' ? null : Number(e.target.value);
+              await api.fetch(`/channels/${ch.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) });
+              onUpdate?.();
+            }} style={{ fontSize: 11, padding: '2px 6px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 4, color: T.tx, cursor: 'pointer' }}>
+              <option value="">Off</option>
+              <option value="3600">1 Hour</option>
+              <option value="86400">24 Hours</option>
+              <option value="604800">7 Days</option>
+              <option value="2592000">30 Days</option>
+            </select>
+            {(ch.slowmode_seconds ?? 0) > 0 && <span>· Slowmode: {ch.slowmode_seconds}s</span>}
+            {ch.nsfw && <span>· NSFW</span>}
           </div>
         </div>
       ))}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dm_messages SET content_ciphertext = '\\x00'\n                 WHERE id IN (\n                     SELECT dm.id FROM dm_messages dm\n                     JOIN dm_channels dc ON dc.id = dm.dm_channel_id\n                     JOIN message_acknowledgements ma ON ma.message_id = dm.id\n                     WHERE dc.ttl_seconds IS NOT NULL\n                       AND ma.acked_at + make_interval(secs => dc.ttl_seconds) < NOW()\n                       AND dm.content_ciphertext != '\\x00'\n                       AND dm.created_at < NOW() - make_interval(days => $1)\n                 )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ade90a1fa1dddce44353dd2c9ff745000a8e394a0aae43d1277163b05cccb54"
+}

@@ -80,6 +80,7 @@ use discreet_server::discreet_typing;
 use discreet_server::discreet_user_handlers;
 use discreet_server::discreet_voice_handlers;
 use discreet_server::discreet_dev_token_handlers;
+use discreet_server::discreet_disappearing_handlers;
 use discreet_server::discreet_platform_admin_handlers;
 use discreet_server::discreet_premium;
 use discreet_server::discreet_qr_handlers;
@@ -460,6 +461,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Background task: disappearing messages (read-then-expire) every 60 seconds.
+    // Soft-deletes channel and DM messages where ttl_seconds is set,
+    // the message has been acknowledged, and acked_at + ttl_seconds < now.
+    {
+        let db = state.db.clone();
+        let redis = state.redis.clone();
+        tokio::spawn(discreet_disappearing_handlers::disappearing_cleanup_loop(db, redis));
+    }
+
     // Background task: execute scheduled server deletions every 5 minutes.
     // Servers past their scheduled_deletion_at are fully deleted:
     // messages/channels/roles removed, audit tombstone preserved.
@@ -646,6 +656,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Channels ──
         .route("/servers/:server_id/channels", axum::routing::post(discreet_channel_handlers::create_channel).get(discreet_channel_handlers::list_channels))
         .route("/channels/:channel_id", axum::routing::get(discreet_channel_handlers::get_channel).patch(discreet_channel_handlers::update_channel).delete(discreet_channel_handlers::delete_channel))
+        .route("/channels/:channel_id/ttl", axum::routing::put(discreet_disappearing_handlers::set_channel_ttl))
         // ── Messages ──
         .route("/channels/:channel_id/messages", axum::routing::post(discreet_message_handlers::send_message).get(discreet_message_handlers::get_messages))
         .route("/channels/:channel_id/messages/search", axum::routing::get(discreet_message_handlers::search_messages))
@@ -709,6 +720,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── DMs ──
         .route("/dms", axum::routing::post(discreet_dm_handlers::create_dm).get(discreet_dm_handlers::list_dms))
         .route("/dms/:id/messages", axum::routing::post(discreet_dm_handlers::send_dm).get(discreet_dm_handlers::get_dm_messages))
+        .route("/conversations/:id/ttl", axum::routing::put(discreet_disappearing_handlers::set_conversation_ttl))
         // Group DMs
         .route("/group-dms", axum::routing::post(discreet_group_dm_handlers::create_group_dm).get(discreet_group_dm_handlers::list_group_dms))
         .route("/group-dms/:id", axum::routing::patch(discreet_group_dm_handlers::update_group_dm))

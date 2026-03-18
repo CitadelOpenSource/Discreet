@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET deleted = TRUE, content_ciphertext = '\\x00', edited_at = NOW()\n                 WHERE deleted = FALSE\n                   AND id IN (\n                       SELECT m.id FROM messages m\n                       JOIN channels c ON c.id = m.channel_id\n                       JOIN message_acknowledgements ma ON ma.message_id = m.id\n                       WHERE c.ttl_seconds IS NOT NULL\n                         AND ma.acked_at + make_interval(secs => c.ttl_seconds) < NOW()\n                   )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "c65f2843a355162230fdd0f1c7da615d019b507128f98601aeccaac659db3595"
+}

@@ -121,6 +121,7 @@ export interface MessageListProps {
   onDismissDisclosure: () => void;
   onJoinedServer: () => void;
   voiceBaseUrl: string;
+  channelTtlSeconds: number | null;
 
   // Refs
   msgEndRef: React.RefObject<HTMLDivElement>;
@@ -141,7 +142,7 @@ export function MessageList(props: MessageListProps) {
     onScroll, onLoadMore, onContextMenu, onProfileClick, onReply,
     onReact, onToggleReaction, onEmojiTarget, onPin, onBookmark, onReport,
     onRetryFailed, onAck, onVotePoll, onOpenThread, onDismissDisclosure, onJoinedServer,
-    voiceBaseUrl, msgEndRef,
+    voiceBaseUrl, channelTtlSeconds, msgEndRef,
   } = props;
 
   // Virtual scroll
@@ -287,6 +288,14 @@ export function MessageList(props: MessageListProps) {
                   {msgDensity === 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 9, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
                   <span style={{ flex: 1 }} />
                   {msgDensity !== 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
+                  {channelTtlSeconds != null && channelTtlSeconds > 0 && (() => {
+                    const createdMs = new Date(m.created_at).getTime();
+                    const expiresMs = createdMs + channelTtlSeconds * 1000;
+                    const remainMs = expiresMs - Date.now();
+                    if (remainMs <= 0) return null;
+                    const remainStr = remainMs > 86400000 ? `${Math.floor(remainMs / 86400000)}d` : remainMs > 3600000 ? `${Math.floor(remainMs / 3600000)}h` : `${Math.ceil(remainMs / 60000)}m`;
+                    return <span title={`Disappears in ${remainStr}`} style={{ fontSize: 10, color: T.mt, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: 2 }}><I.Clock s={10} /></span>;
+                  })()}
                 </div>
 
                 {/* Voice message player */}

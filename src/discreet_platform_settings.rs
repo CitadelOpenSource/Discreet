@@ -48,6 +48,9 @@ pub struct PlatformSettings {
     /// Official server ID — new users auto-join this server on registration.
     /// Empty string means disabled.
     pub official_server_id: String,
+    /// Whether disappearing messages (TTL) feature is enabled platform-wide.
+    /// When false, TTL PUT endpoints return 403 and background cleanup skips.
+    pub disappearing_messages_enabled: bool,
 }
 
 impl Default for PlatformSettings {
@@ -65,6 +68,7 @@ impl Default for PlatformSettings {
             default_retention_days: 0,
             global_disappearing_default: "off".into(),
             official_server_id: String::new(),
+            disappearing_messages_enabled: true,
         }
     }
 }
@@ -135,6 +139,9 @@ pub async fn get_platform_settings(state: &AppState) -> Result<PlatformSettings,
             "official_server_id" => {
                 settings.official_server_id = v.as_str().unwrap_or("").to_string();
             }
+            "disappearing_messages_enabled" => {
+                settings.disappearing_messages_enabled = v.as_bool().unwrap_or(true);
+            }
             _ => {}
         }
     }
@@ -192,6 +199,8 @@ pub struct UpdateSettingsRequest {
     pub global_disappearing_default: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub official_server_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disappearing_messages_enabled: Option<bool>,
 }
 
 pub async fn update_settings(
@@ -215,6 +224,7 @@ pub async fn update_settings(
         req.default_retention_days.map(|v| ("default_retention_days", json!(v))),
         req.global_disappearing_default.as_ref().map(|v| ("global_disappearing_default", json!(v))),
         req.official_server_id.as_ref().map(|v| ("official_server_id", json!(v))),
+        req.disappearing_messages_enabled.map(|v| ("disappearing_messages_enabled", json!(v))),
     ]
     .into_iter()
     .flatten()

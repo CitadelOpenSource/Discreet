@@ -64,9 +64,9 @@ import type { CtxMenuItem } from './components/CtxMenu';
 
 // ── Types ─────────────────────────────────────────────────
 interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; message_retention_days?: number | null; disappearing_messages_default?: string | null; last_activity_at?: string | null; is_archived?: boolean; archived_at?: string | null; scheduled_deletion_at?: string | null; }
-interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; read_only?: boolean; }
+interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; read_only?: boolean; ttl_seconds?: number | null; }
 interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; priority?: string; }
-interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; }
+interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; ttl_seconds?: number | null; ttl_set_by?: string; ttl_set_at?: string; }
 
 // ── Crypto ────────────────────────────────────────────────
 async function enc(cid: string, text: string): Promise<string> {
@@ -154,6 +154,7 @@ function GlobalStyles() {
       @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
       @keyframes shimmerPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}
       @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes msgExpire{from{opacity:1;max-height:200px}to{opacity:0;max-height:0;padding:0;margin:0;overflow:hidden}}
       @keyframes spin{to{transform:rotate(360deg)}}
       @keyframes typingBounce{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
       .typing-dot{display:inline-block;font-weight:900;font-size:14px;line-height:1;animation:typingBounce 1.4s ease-in-out infinite}
@@ -2318,7 +2319,19 @@ export default function App() {
             <span /><span /><span />
           </button>
           {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span></>)}
-          {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span></>)}
+          {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span>
+            <select value={curDm.ttl_seconds ?? ''} onChange={async e => {
+              const v = e.target.value === '' ? null : Number(e.target.value);
+              try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: any) { setToast(err?.message || 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
+            }} title={curDm.ttl_set_by ? `Set by ${getName(curDm.ttl_set_by)}${curDm.ttl_set_at ? ` on ${new Date(curDm.ttl_set_at).toLocaleDateString()}` : ''}` : 'Disappearing messages'}
+              style={{ marginLeft: 8, fontSize: 11, padding: '2px 6px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.mt, cursor: 'pointer' }}>
+              <option value="">No timer</option>
+              <option value="3600">1 Hour</option>
+              <option value="86400">24 Hours</option>
+              <option value="604800">7 Days</option>
+              <option value="2592000">30 Days</option>
+            </select>
+          </>)}
           {view === 'dm' && curGroupDm && (<><span style={{ fontSize: 16 }}>👥</span><span style={{ fontWeight: 700, fontSize: 15 }}>{curGroupDm.name || 'Group DM'}</span></>)}
           {view === 'home' && (<><I.Home /><span style={{ fontWeight: 700, fontSize: 15 }}>{homeTab === 'friends' ? 'Friends' : homeTab === 'bookmarks' ? 'Saved Messages' : 'Home'}</span></>)}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2910,6 +2923,7 @@ export default function App() {
             onDismissDisclosure={() => { if (curChannel) setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; }); }}
             onJoinedServer={loadServers}
             voiceBaseUrl={api.baseUrl}
+            channelTtlSeconds={curChannel?.ttl_seconds ?? (curDm?.ttl_seconds ?? null)}
             msgEndRef={msgEndRef}
           />
 

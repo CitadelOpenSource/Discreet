@@ -47,6 +47,7 @@ interface PlatformSettings {
   default_retention_days: number;
   global_disappearing_default: string;
   official_server_id: string;
+  disappearing_messages_enabled: boolean;
 }
 
 interface ServerInfo {
@@ -707,6 +708,8 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     onToggle={() => toggleSetting('guest_access_enabled', !settings.guest_access_enabled)} />
                   <Toggle on={settings.ai_bots_enabled} label="AI Bots" desc="Allow AI agent prompts across all servers" disabled={settingsSaving}
                     onToggle={() => toggleSetting('ai_bots_enabled', !settings.ai_bots_enabled)} />
+                  <Toggle on={settings.disappearing_messages_enabled} label="Disappearing Messages" desc="When disabled, users cannot set message timers. Required for compliance." disabled={settingsSaving}
+                    onToggle={() => toggleSetting('disappearing_messages_enabled', !settings.disappearing_messages_enabled)} />
 
                   <div style={{ marginTop: 4 }} />
 
