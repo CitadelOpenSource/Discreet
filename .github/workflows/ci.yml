@@ -97,7 +97,7 @@ jobs:
         run: cargo test --lib
 
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked --force
 
       - name: SQLx offline check
         run: cargo sqlx prepare --check
