@@ -14,6 +14,7 @@ import { LinkPreview } from './LinkPreview';
 import { InvitePreview } from './InvitePreview';
 import { EmojiPicker, getQuickReact, type CustomEmoji } from './EmojiPicker';
 import { filterMessage, getProfanityLevel } from '../utils/profanityFilter';
+import { VoicePlayer } from './VoiceMessage';
 
 // ─── Skeleton helpers (inline to avoid circular imports) ────────────────
 const shimBase: React.CSSProperties = {
@@ -61,6 +62,8 @@ export interface Msg {
   authorName?: string;
   priority?: string;
   is_auto_reply?: boolean;
+  voice_duration_ms?: number;
+  voice_waveform?: number[];
 }
 
 export interface MessageListProps {
@@ -117,6 +120,7 @@ export interface MessageListProps {
   onOpenThread: (m: Msg) => void;
   onDismissDisclosure: () => void;
   onJoinedServer: () => void;
+  voiceBaseUrl: string;
 
   // Refs
   msgEndRef: React.RefObject<HTMLDivElement>;
@@ -137,7 +141,7 @@ export function MessageList(props: MessageListProps) {
     onScroll, onLoadMore, onContextMenu, onProfileClick, onReply,
     onReact, onToggleReaction, onEmojiTarget, onPin, onBookmark, onReport,
     onRetryFailed, onAck, onVotePoll, onOpenThread, onDismissDisclosure, onJoinedServer,
-    msgEndRef,
+    voiceBaseUrl, msgEndRef,
   } = props;
 
   // Virtual scroll
@@ -285,10 +289,19 @@ export function MessageList(props: MessageListProps) {
                   {msgDensity !== 'compact' && <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default', whiteSpace: 'nowrap' }}>{tzCtx.formatRelative(m.created_at)}</span>}
                 </div>
 
-                {/* Message text */}
+                {/* Voice message player */}
+                {m.voice_duration_ms != null && m.voice_duration_ms > 0 ? (
+                  <VoicePlayer
+                    audioUrl={`${voiceBaseUrl}/channels/${channelId}/voice/${m.id}`}
+                    durationMs={m.voice_duration_ms}
+                    waveform={m.voice_waveform}
+                  />
+                ) : (
+                /* Message text */
                 <div className="msg-text" style={{ fontSize: chatFontSize, lineHeight: msgDensity === 'compact' ? 1.3 : msgDensity === 'cozy' ? 1.6 : 1.5, wordBreak: 'break-word', opacity: failedMessages[m.id] ? 0.5 : 1 }}>
                   <Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} />
                 </div>
+                )}
 
                 {/* Failed message retry */}
                 {failedMessages[m.id] && (

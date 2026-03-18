@@ -2871,6 +2871,7 @@ export default function App() {
             onOpenThread={async (m) => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const d = await Promise.all((r as any[]).map(async (rm: any) => { try { rm.text = await (window as any).__decryptMsg?.(curChannel!.id, rm.content_ciphertext) ?? rm.content_ciphertext; } catch { rm.text = rm.content_ciphertext; } return rm; })); setThreadReplies(d); } catch { setThreadReplies([]); } }}
             onDismissDisclosure={() => { if (curChannel) setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; }); }}
             onJoinedServer={loadServers}
+            voiceBaseUrl={api.baseUrl}
             msgEndRef={msgEndRef}
           />
 
@@ -2886,6 +2887,17 @@ export default function App() {
                 setTimeout(() => setToast(''), 5000); return;
               }
               try { await api.uploadFile(curChannel.id, file); addStorageUsedBytes(file.size); await loadMessages(curChannel); } catch {}
+            }}
+            onVoiceSend={async (blob, durationMs, waveform) => {
+              if (!curChannel) return;
+              try {
+                const ct = await enc(curChannel.id, '\u{1F3A4} Voice message');
+                await api.sendVoiceMessage(curChannel.id, blob, durationMs, ct, 0, waveform);
+                await loadMessages(curChannel);
+              } catch (e: any) {
+                setToast(e?.message || 'Voice message failed');
+                setTimeout(() => setToast(''), 4000);
+              }
             }}
             onTyping={() => {
               if (privacyPrefs.show_typing_indicator && Date.now() - typingRef.current > 3000 && curServer && curChannel) {

@@ -61,6 +61,8 @@ export class CitadelAPI {
   private _wsReconnectAttempt: number;
   private _wsManualClose: boolean;
 
+  get baseUrl(): string { return API_BASE; }
+
   constructor() {
     // Access token is memory-only (NOT persisted) for XSS protection.
     // Refresh token lives in an HttpOnly cookie set by the server.
@@ -346,6 +348,24 @@ export class CitadelAPI {
   async declineFriend(id: string) { return this.fetch(`/friends/${id}/decline`, { method: 'POST' }); }
   async removeFriend(id: string) { return this.fetch(`/friends/${id}`, { method: 'DELETE' }); }
   async searchUsers(q: string) { try { const r = await this.fetch(`/users/search?q=${encodeURIComponent(q)}`); return r.ok ? r.json() : []; } catch { return []; } }
+
+  // ── Voice Messages ──
+  async sendVoiceMessage(channelId: string, audioBlob: Blob, durationMs: number, contentCiphertext: string, mlsEpoch: number, waveform?: number[]): Promise<any> {
+    const form = new FormData();
+    form.append('audio', new Blob([audioBlob], { type: 'audio/ogg' }), 'voice.ogg');
+    form.append('duration_ms', String(durationMs));
+    form.append('content_ciphertext', contentCiphertext);
+    form.append('mls_epoch', String(mlsEpoch));
+    if (waveform?.length) {
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(waveform)));
+      form.append('waveform', b64);
+    }
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const r = await fetch(`${API_BASE}/channels/${channelId}/voice`, { method: 'POST', headers, body: form, credentials: 'same-origin' });
+    if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`Voice upload failed (${r.status}): ${t}`); }
+    return r.json();
+  }
 
   // ── Files ──
   async uploadFile(channelId: string, file: File): Promise<any> {

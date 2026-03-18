@@ -173,15 +173,17 @@ pub async fn forgot_password(
         .execute(&state.db)
         .await?;
 
-        send_email(
-            &state,
-            &email,
-            "Reset your Discreet password",
-            &format!(
-                "Your password reset code: {}\n\nThis code expires in 1 hour.\n\nIf you didn't request this, ignore this email.",
-                &token
-            ),
-        ).await;
+        let body = format!(
+            r#"<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 20px 0;">Use the code below to reset your password.</p>
+<div style="text-align:center;padding:16px 0;margin:0 0 24px 0;background-color:#0a0e17;border-radius:8px;">
+<div style="font-size:32px;font-weight:bold;font-family:'Courier New',Courier,monospace;color:#00D4AA;letter-spacing:4px;">{token}</div>
+</div>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 12px 0;">This code expires in 1 hour.</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If you did not request this, you can safely ignore this email.</p>"#,
+            token = token,
+        );
+        let html = build_branded_email("Reset Your Password", &body);
+        send_html_email(&state, &email, "Reset your Discreet password", &html).await;
     }
 
     // Always return success (don't reveal if email exists)
@@ -382,37 +384,42 @@ pub async fn resend_verification(
 // Returns true if the email was dispatched, false if SMTP is unconfigured.
 
 pub async fn send_verification_link_email(state: &AppState, to: &str, link: &str) -> bool {
-    send_email(
-        state,
-        to,
-        "Verify your Discreet account",
-        &format!(
-            "Welcome to Discreet!\n\n\
-             Please verify your email address by clicking the link below:\n\n\
-             {}\n\n\
-             This link expires in 24 hours.\n\n\
-             If you did not create a Discreet account, you can safely ignore this email.",
-            link
-        ),
-    )
-    .await
+    let link_esc = link.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let body = format!(
+        r#"<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 20px 0;">Welcome to Discreet! Please verify your email address by clicking the link below.</p>
+<div style="text-align:center;margin:0 0 24px 0;">
+<a href="{link}" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#00D4AA,#009e7e);color:#000;font-weight:700;font-size:14px;border-radius:8px;text-decoration:none;">Verify Email</a>
+</div>
+<p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 12px 0;word-break:break-all;">Or copy this link: {link_esc}</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 12px 0;">This link expires in 24 hours.</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If you did not request this, you can safely ignore this email.</p>"#,
+        link = link_esc,
+        link_esc = link_esc,
+    );
+    let html = build_branded_email("Verify Your Email", &body);
+    send_html_email(state, to, "Verify your Discreet account", &html).await
 }
 
 // ─── Email Sender ──────────────────────────────────────────────────────
 //
 // send_html_email    — dispatches pre-built HTML via the Resend API.
-// send_email         — wraps plain text in <p> tags, then delegates.
-// branded_html_email — wraps inner content in the Discreet branded template.
+// build_branded_email — wraps title + body in the Discreet branded template.
 //
 // Priority:
 //   1. RESEND_API_KEY set → POST to Resend HTTP API (https://api.resend.com/emails)
 //   2. Neither configured  → log and return false (dev mode)
 
-/// Wraps inner HTML content in the Discreet branded email template.
+/// Build a complete branded HTML email.
 ///
-/// Provides: dark background (#0a0e17), centered card (#141922) with logo,
-/// and a footer with support/dev contact links and copyright.
-fn branded_html_email(inner: &str) -> String {
+/// Layout:
+///   - Background #0a0e17, centered card max-width 480px, #141922, 32px padding, 12px radius
+///   - Top of card: "Discreet" text logo in #00D4AA, 24px bold
+///   - Below logo: `title` in white (#ffffff), 20px
+///   - Below title: `body_html` inserted as-is
+///   - Footer outside card: support + dev contact links, copyright 2026
+///
+/// All CSS is inline. No external resources.
+pub fn build_branded_email(title: &str, body_html: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -421,9 +428,10 @@ fn branded_html_email(inner: &str) -> String {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0e17;">
 <tr><td align="center" style="padding:40px 16px;">
 <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#141922;border-radius:12px;">
-<tr><td style="padding:32px;">
+<tr><td style="padding:32px;text-align:center;">
 <div style="font-size:24px;font-weight:bold;color:#00D4AA;margin-bottom:24px;">Discreet</div>
-{inner}
+<h2 style="font-size:20px;font-weight:600;color:#ffffff;margin:0 0 20px 0;">{title}</h2>
+{body_html}
 </td></tr>
 </table>
 <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;">
@@ -436,12 +444,13 @@ fn branded_html_email(inner: &str) -> String {
 </table>
 </body>
 </html>"#,
-        inner = inner,
+        title = title,
+        body_html = body_html,
     )
 }
 
 /// Sends a pre-built HTML email via the configured email provider.
-async fn send_html_email(_state: &AppState, to: &str, subject: &str, html: &str) -> bool {
+pub async fn send_html_email(_state: &AppState, to: &str, subject: &str, html: &str) -> bool {
     if let Ok(api_key) = std::env::var("RESEND_API_KEY") {
         if !api_key.is_empty() {
             let from = std::env::var("SMTP_FROM")
@@ -492,12 +501,6 @@ async fn send_html_email(_state: &AppState, to: &str, subject: &str, html: &str)
     false
 }
 
-/// Sends a plain-text email by wrapping the body in basic HTML.
-async fn send_email(state: &AppState, to: &str, subject: &str, body: &str) -> bool {
-    let html = format!("<p>{}</p>", body.replace('\n', "<br>"));
-    send_html_email(state, to, subject, &html).await
-}
-
 // ─── 6-digit verification code helpers ──────────────────────────────────
 
 /// Generate a cryptographically random 6-digit code (100000–999999).
@@ -510,16 +513,15 @@ pub fn generate_verification_code() -> String {
 /// Send a branded HTML verification code email.
 /// Codes resist email-forwarding phishing because there's nothing to click.
 pub async fn send_verification_code_email(state: &AppState, to: &str, code: &str) -> bool {
-    let inner = format!(
-        r#"<h2 style="font-size:20px;font-weight:600;color:#e2e8f0;margin:0 0 20px 0;">Your verification code</h2>
-<div style="text-align:center;padding:16px 0;margin:0 0 24px 0;background-color:#0a0e17;border-radius:8px;">
-<span style="font-size:32px;font-weight:bold;font-family:'Courier New',Courier,monospace;color:#00D4AA;letter-spacing:8px;">{code}</span>
+    let body = format!(
+        r#"<div style="text-align:center;padding:16px 0;margin:0 0 24px 0;background-color:#0a0e17;border-radius:8px;">
+<div style="font-size:32px;font-weight:bold;font-family:'Courier New',Courier,monospace;color:#00D4AA;letter-spacing:8px;">{code}</div>
 </div>
 <p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 12px 0;">This code expires in 10 minutes.</p>
-<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If you did not create this account, you can safely ignore this email.</p>"#,
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If you did not request this, you can safely ignore this email.</p>"#,
         code = code,
     );
-    let html = branded_html_email(&inner);
+    let html = build_branded_email("Your Verification Code", &body);
     send_html_email(state, to, "Your Discreet verification code", &html).await
 }
 
@@ -527,14 +529,13 @@ pub async fn send_verification_code_email(state: &AppState, to: &str, code: &str
 pub async fn send_lockout_alert_email(state: &AppState, to: &str, ip: &str, login: &str) -> bool {
     let login_esc = login.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let ip_esc = ip.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-    let inner = format!(
-        r#"<h2 style="font-size:20px;font-weight:600;color:#e2e8f0;margin:0 0 20px 0;">Account locked</h2>
-<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 16px 0;">Your Discreet account (<strong>{login}</strong>) has been temporarily locked for 24 hours due to 20 failed login attempts from IP address <strong style="font-family:'Courier New',Courier,monospace;">{ip}</strong>.</p>
+    let body = format!(
+        r#"<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 16px 0;">Your Discreet account (<strong>{login}</strong>) has been temporarily locked for 24 hours due to 20 failed login attempts from IP address <strong style="font-family:'Courier New',Courier,monospace;">{ip}</strong>.</p>
 <p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 16px 0;">If this was you, wait 24 hours and try again. If you forgot your password, use your recovery key to reset it.</p>
 <p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If this was <strong>not</strong> you, someone may be trying to access your account. Your password was not compromised &#8212; the lockout prevented further attempts. Consider changing your password after the lockout expires.</p>"#,
         login = login_esc,
         ip = ip_esc,
     );
-    let html = branded_html_email(&inner);
+    let html = build_branded_email("Account Locked", &body);
     send_html_email(state, to, "Security Alert: Your Discreet account has been locked", &html).await
 }

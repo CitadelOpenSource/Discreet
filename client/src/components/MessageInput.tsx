@@ -6,11 +6,12 @@
  * indicator, reply/edit preview bar, read-only notice.
  * Pure rendering — all state lives in the parent.
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { T, getInp } from '../theme';
 import * as I from '../icons';
 import { Av } from './Av';
 import { SlashSuggestions } from '../hooks/useSlashCommands';
+import { VoiceRecorder } from './VoiceMessage';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -63,6 +64,9 @@ export interface MessageInputProps {
   onSlashToolClose: () => void;
   slashToolContent: React.ReactNode;
 
+  // Voice
+  onVoiceSend: (blob: Blob, durationMs: number, waveform: number[]) => void;
+
   // Archived
   isArchived: boolean;
   archivedDeletionDate?: string | null;
@@ -84,9 +88,12 @@ export function MessageInput(props: MessageInputProps) {
     typingNames,
     onEditLastMessage,
     slashTool, onSlashToolClose, slashToolContent,
+    onVoiceSend,
     isArchived, archivedDeletionDate,
     inputRef,
   } = props;
+
+  const [recording, setRecording] = useState(false);
 
   // Read-only channel notice
   if (disabled) {
@@ -189,7 +196,14 @@ export function MessageInput(props: MessageInputProps) {
           </div>
         )}
 
-        {/* Input row */}
+        {/* Voice recorder bar (replaces input row while recording) */}
+        {recording ? (
+          <VoiceRecorder
+            onSend={(blob, dur, wf) => { setRecording(false); onVoiceSend(blob, dur, wf); }}
+            onCancel={() => setRecording(false)}
+          />
+        ) : (
+        /* Input row */
         <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.bd}` }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <label style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Attach file">
@@ -219,9 +233,11 @@ export function MessageInput(props: MessageInputProps) {
             <div onClick={onEmojiPicker} style={{ cursor: 'pointer', color: T.mt, padding: 4 }}><I.Smile /></div>
             <div onClick={onPollCreate} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
             <div onClick={onGifPicker} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
+            <div onClick={() => setRecording(true)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Voice message" aria-label="Record voice message"><I.Mic /></div>
             <div onClick={onSend} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onSend(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
           </div>
         </div>
+        )}
       </div>
     </>
   );

@@ -663,6 +663,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/files/:id", axum::routing::get(discreet_file_handlers::download_file_blob))
         // ── Voice ──
         .route("/channels/:channel_id/voice", axum::routing::post(discreet_voice_handlers::send_voice_message))
+        .route("/channels/:channel_id/voice/:message_id", axum::routing::get(discreet_voice_handlers::get_voice_audio))
         // ── Roles ──
         .route("/servers/:server_id/roles", axum::routing::post(discreet_role_handlers::create_role).get(discreet_role_handlers::list_roles))
         .route("/roles/:role_id", axum::routing::patch(discreet_role_handlers::update_role).delete(discreet_role_handlers::delete_role))

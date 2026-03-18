@@ -5,7 +5,8 @@
 // creates a message row with voice_duration_ms and voice_waveform.
 //
 // Endpoints:
-//   POST /api/v1/channels/:channel_id/voice — Upload a voice message.
+//   POST /api/v1/channels/:channel_id/voice              — Upload a voice message.
+//   GET  /api/v1/channels/:channel_id/voice/:message_id  — Download voice audio.
 //
 // Rate limit: 10 voice messages per hour per user (Redis, fail-closed).
 
@@ -22,7 +23,9 @@ use uuid::Uuid;
 
 use crate::discreet_auth::AuthUser;
 use crate::discreet_error::AppError;
-use crate::discreet_permissions::{require_permission, PERM_ATTACH_FILES, PERM_SEND_MESSAGES};
+use crate::discreet_permissions::{
+    require_permission, PERM_ATTACH_FILES, PERM_SEND_MESSAGES, PERM_VIEW_CHANNEL,
+};
 use crate::discreet_state::AppState;
 
 /// Maximum voice file size: 5 MB.
@@ -38,7 +41,7 @@ const VOICE_RATE_LIMIT: i64 = 10;
 const VOICE_RATE_WINDOW_SECS: i64 = 3600;
 
 /// Allowed MIME types for voice uploads.
-const ALLOWED_VOICE_MIME: &[&str] = &["audio/opus", "audio/ogg"];
+const ALLOWED_VOICE_MIME: &[&str] = &["audio/opus", "audio/ogg", "audio/webm"];
 
 // ─── POST /channels/:channel_id/voice ──────────────────────────────────
 
@@ -349,6 +352,86 @@ fn encrypt_voice_blob(
     result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
     Ok(result)
+}
+
+// ─── GET /channels/:channel_id/voice/:message_id ───────────────────────
+
+/// Download a voice message. The server decrypts the at-rest encryption
+/// layer and returns raw audio. TLS provides transport security.
+pub async fn get_voice_audio(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((channel_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let channel = sqlx::query!(
+        "SELECT c.server_id FROM channels c WHERE c.id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    require_permission(&state, channel.server_id, auth.user_id, PERM_VIEW_CHANNEL).await?;
+
+    // Verify this message exists and is a voice message in this channel.
+    let msg = sqlx::query!(
+        "SELECT voice_duration_ms FROM messages WHERE id = $1 AND channel_id = $2 AND deleted = FALSE",
+        message_id,
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Voice message not found".into()))?;
+
+    if msg.voice_duration_ms.is_none() {
+        return Err(AppError::BadRequest("Message is not a voice message".into()));
+    }
+
+    let file_path = format!("uploads/{channel_id}/{message_id}.enc");
+    let encrypted = tokio::fs::read(&file_path)
+        .await
+        .map_err(|_| AppError::NotFound("Voice audio file not found".into()))?;
+
+    let audio = decrypt_voice_blob(&encrypted, channel_id, &state.config)?;
+
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "audio/ogg")],
+        audio,
+    ))
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+/// Decrypt a voice blob that was encrypted by `encrypt_voice_blob`.
+/// Input: `nonce (12 bytes) || ciphertext`. Returns plaintext audio.
+fn decrypt_voice_blob(
+    encrypted: &[u8],
+    channel_id: Uuid,
+    config: &crate::discreet_config::Config,
+) -> Result<Vec<u8>, AppError> {
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+    use hkdf::Hkdf;
+    use sha2::{Digest, Sha256};
+
+    if encrypted.len() < 13 {
+        return Err(AppError::Internal("Encrypted voice data too short".into()));
+    }
+
+    let master = Sha256::digest(config.jwt_secret.as_bytes());
+    let hk = Hkdf::<Sha256>::new(Some(b"discreet-voice-v1"), &master);
+    let mut key = [0u8; 32];
+    hk.expand(channel_id.as_bytes(), &mut key)
+        .map_err(|e| AppError::Internal(format!("HKDF expand failed: {e}")))?;
+
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AppError::Internal(format!("AES key init failed: {e}")))?;
+
+    let nonce = Nonce::from_slice(&encrypted[..12]);
+    let plaintext = cipher
+        .decrypt(nonce, &encrypted[12..])
+        .map_err(|e| AppError::Internal(format!("Voice decryption failed: {e}")))?;
+
+    Ok(plaintext)
 }
 
 /// Decode base64 (URL-safe or standard).
