@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discreet — Private Messaging for Everyone</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0e17;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    a { color: inherit; text-decoration: none; }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    nav .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #00D4AA;
+    }
+    nav .links { display: flex; gap: 1.5rem; }
+    nav .links a {
+      font-size: 0.95rem;
+      font-weight: 500;
+      opacity: 0.8;
+      transition: opacity 0.2s;
+    }
+    nav .links a:hover { opacity: 1; }
+    #hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 6rem 2rem 4rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    #hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+    #hero p {
+      font-size: 1.15rem;
+      opacity: 0.75;
+      max-width: 540px;
+      margin-bottom: 2.5rem;
+    }
+    .buttons { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .btn {
+      display: inline-block;
+      padding: 0.8rem 2rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary { background: #00D4AA; color: #0a0e17; }
+    .btn-secondary { background: transparent; color: #e2e8f0; border: 1px solid rgba(226, 232, 240, 0.25); }
+    .btn-secondary:hover { border-color: rgba(226, 232, 240, 0.5); }
+    .trust-bar {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 2rem;
+      padding: 3rem 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .trust-bar span {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.4;
+    }
+    #features {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 2rem 4rem;
+    }
+    .card {
+      background: rgba(226, 232, 240, 0.04);
+      border: 1px solid rgba(226, 232, 240, 0.08);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+    .card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #00D4AA;
+    }
+    .card p { font-size: 0.95rem; opacity: 0.7; }
+    #comparison {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 2rem 5rem;
+    }
+    #comparison h2 {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 2rem;
+    }
+    #comparison table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    #comparison th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-weight: 700;
+      border-bottom: 2px solid rgba(226, 232, 240, 0.15);
+    }
+    #comparison th:last-child { color: #00D4AA; }
+    #comparison td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.06);
+    }
+    #comparison tr:nth-child(even) td { background: rgba(226, 232, 240, 0.03); }
+    #comparison td:first-child { font-weight: 500; }
+    .y { color: #00D4AA; }
+    .n { color: #f87171; opacity: 0.6; }
+    #waitlist {
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 4rem 2rem 5rem;
+      text-align: center;
+    }
+    #waitlist h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    #waitlist p {
+      font-size: 1.05rem;
+      opacity: 0.7;
+      margin-bottom: 2rem;
+    }
+    #waitlist form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+    #waitlist input {
+      padding: 0.8rem 1rem;
+      border-radius: 8px;
+      border: 1px solid rgba(226, 232, 240, 0.15);
+      background: rgba(226, 232, 240, 0.06);
+      color: #e2e8f0;
+      font-size: 1rem;
+      outline: none;
+    }
+    #waitlist input::placeholder { color: rgba(226, 232, 240, 0.35); }
+    #waitlist input:focus { border-color: #00D4AA; }
+    #waitlist button {
+      padding: 0.8rem 2rem;
+      border-radius: 8px;
+      border: none;
+      background: #00D4AA;
+      color: #0a0e17;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    #waitlist button:hover { opacity: 0.9; }
+    footer {
+      border-top: 1px solid rgba(226, 232, 240, 0.08);
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 3rem 2rem 2rem;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 2rem;
+    }
+    footer .foot-brand .logo { font-size: 1.25rem; font-weight: 700; color: #00D4AA; }
+    footer .foot-brand .tagline { font-size: 0.9rem; opacity: 0.5; margin-top: 0.5rem; }
+    footer .foot-col h4 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.4;
+      margin-bottom: 0.75rem;
+    }
+    footer .foot-col a, footer .foot-col span {
+      display: block;
+      font-size: 0.9rem;
+      opacity: 0.65;
+      margin-bottom: 0.4rem;
+    }
+    footer .foot-col a:hover { opacity: 1; }
+    .copyright {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1.25rem 2rem 2rem;
+      font-size: 0.8rem;
+      opacity: 0.3;
+      text-align: center;
+    }
+    @media (max-width: 768px) {
+      #hero h1 { font-size: 2rem; }
+      #hero p { font-size: 1rem; }
+      nav { padding: 1rem 1.25rem; }
+      #hero { padding: 4rem 1.25rem 3rem; }
+      #features { grid-template-columns: 1fr; }
+      #comparison { overflow-x: auto; }
+      #comparison table { min-width: 520px; }
+      footer { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="logo">Discreet</span>
+    <div class="links">
+      <a href="/app">Open App</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a>
+    </div>
+  </nav>
+  <main>
+    <section id="hero">
+      <h1>Private messaging for everyone.</h1>
+      <p>Your messages are encrypted before they leave your device. Not even we can read them. No phone number. No email required. Just a username.</p>
+      <div class="buttons">
+        <a href="/app" class="btn btn-primary">Open App</a>
+        <a href="#waitlist" class="btn btn-secondary">Join Waitlist</a>
+      </div>
+    </section>
+    <div class="trust-bar">
+      <span>Patent Pending USPTO</span>
+      <span>Open Source AGPL-3.0</span>
+      <span>OWASP 2025 Compliant</span>
+      <span>Zero Known Vulnerabilities</span>
+    </div>
+    <section id="features">
+      <div class="card">
+        <h3>End-to-End Encrypted</h3>
+        <p>Every message, voice call, and file is encrypted on your device.</p>
+      </div>
+      <div class="card">
+        <h3>No Phone Number Required</h3>
+        <p>Sign up with just a username and password. True anonymity.</p>
+      </div>
+      <div class="card">
+        <h3>Proximity Mesh</h3>
+        <p>Send messages over Bluetooth without internet. Patent pending.</p>
+      </div>
+      <div class="card">
+        <h3>AI Agents</h3>
+        <p>Add AI assistants to encrypted group chats.</p>
+      </div>
+    </section>
+    <section id="comparison">
+      <h2>How Discreet compares</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Signal</th>
+            <th>Discord</th>
+            <th>Element</th>
+            <th>Discreet</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>E2EE messages</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+          <tr><td>E2EE voice</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Servers and channels</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+          <tr><td>No phone or email</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Self-hostable</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+          <tr><td>AI agents</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Proximity mesh</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Passkey login</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section id="waitlist">
+      <h2>Join the Waitlist</h2>
+      <p>Be the first to know when Discreet launches.</p>
+      <form method="POST" action="https://api.discreetai.net/api/v1/waitlist/join">
+        <input type="email" name="email" placeholder="Your email" required>
+        <input type="text" name="referral_code" placeholder="Referral code (optional)">
+        <button type="submit">Join Waitlist</button>
+      </form>
+    </section>
+  </main>
+  <footer>
+    <div class="foot-brand">
+      <div class="logo">Discreet</div>
+      <div class="tagline">Communication Without Compromise</div>
+    </div>
+    <div class="foot-col">
+      <h4>Project</h4>
+      <a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/SECURITY.md">SECURITY.md</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/GUIDE/DEPLOYMENT.md">Self-Hosting Guide</a>
+    </div>
+    <div class="foot-col">
+      <h4>Security</h4>
+      <a href="mailto:security@discreetai.net">security@discreetai.net</a>
+      <span>Built with Rust</span>
+      <span>Encrypted with MLS</span>
+    </div>
+  </footer>
+  <div class="copyright">Copyright 2026 Discreet.</div>
+</body>
+</html>

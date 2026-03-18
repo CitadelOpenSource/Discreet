@@ -18,8 +18,10 @@
 // the outermost layer (first to process the request).  Security headers sit
 // between Rate Limit and Tracing — after CORS, before route handlers.
 //
-// Unversioned routes: /health, /ws
-// Versioned routes:   /api/v1/auth/*, /api/v1/servers/*, /api/v1/channels/*, etc.
+// Landing page:     /               (client/public/landing.html)
+// Vite SPA:         /app/*          (client/dist/ with index.html fallback)
+// Unversioned:      /health, /ws
+// Versioned API:    /api/v1/auth/*, /api/v1/servers/*, /api/v1/channels/*, etc.
 //
 // Usage:
 //   DATABASE_URL=postgres://... REDIS_URL=redis://... JWT_SECRET=... cargo run
@@ -856,11 +858,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tower_http::services::ServeDir::new("client/dist")
                 .fallback(tower_http::services::ServeFile::new("client/dist/index.html")),
         )
-        // Landing page — static HTML at root.
-        .nest_service(
+        // Landing page — single-file HTML at root (client/public/landing.html).
+        // No external assets required; falls back to /app if file is missing.
+        .route(
             "/",
-            tower_http::services::ServeDir::new("static")
-                .fallback(tower_http::services::ServeFile::new("static/index.html")),
+            axum::routing::get(|| async {
+                match tokio::fs::read_to_string("client/public/landing.html").await {
+                    Ok(html) => axum::response::Html(html).into_response(),
+                    Err(_) => axum::response::Redirect::temporary("/app").into_response(),
+                }
+            }),
         )
         // Shared state.
         .with_state(state.clone())
