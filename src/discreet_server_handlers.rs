@@ -138,6 +138,9 @@ pub struct MemberInfo {
     pub joined_at: String,
     pub notification_level: String,
     pub visibility_override: Option<String>,
+    pub platform_role: Option<String>,
+    pub badge_type: Option<String>,
+    pub account_tier: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -903,7 +906,9 @@ pub async fn list_members(
     let offset = params.offset.max(0);
 
     let rows = sqlx::query!(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override
+        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot,
+                u.platform_role, u.badge_type, u.account_tier,
+                m.nickname, m.joined_at, m.notification_level, m.visibility_override
          FROM server_members m
          INNER JOIN users u ON u.id = m.user_id
          WHERE m.server_id = $1
@@ -927,6 +932,9 @@ pub async fn list_members(
             joined_at: r.joined_at.to_rfc3339(),
             notification_level: r.notification_level,
             visibility_override: r.visibility_override,
+            platform_role: r.platform_role,
+            badge_type: r.badge_type,
+            account_tier: r.account_tier,
         })
         .collect();
 
@@ -1337,7 +1345,9 @@ pub async fn search_members(
 
     let pattern = format!("%{}%", q);
     let rows = sqlx::query!(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override
+        "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot,
+                u.platform_role, u.badge_type, u.account_tier,
+                m.nickname, m.joined_at, m.notification_level, m.visibility_override
          FROM server_members m
          INNER JOIN users u ON u.id = m.user_id
          WHERE m.server_id = $1
@@ -1361,6 +1371,9 @@ pub async fn search_members(
             joined_at: r.joined_at.to_rfc3339(),
             notification_level: r.notification_level,
             visibility_override: r.visibility_override,
+            platform_role: r.platform_role,
+            badge_type: r.badge_type,
+            account_tier: r.account_tier,
         })
         .collect();
 

@@ -230,7 +230,7 @@ pub async fn get_user(
     }
 
     let user = sqlx::query!(
-        "SELECT id, username, display_name, avatar_url
+        "SELECT id, username, display_name, avatar_url, platform_role
          FROM users WHERE id = $1",
         user_id,
     )
@@ -243,6 +243,7 @@ pub async fn get_user(
         "username": user.username,
         "display_name": user.display_name,
         "avatar_url": user.avatar_url,
+        "platform_role": user.platform_role,
     })))
 }
 

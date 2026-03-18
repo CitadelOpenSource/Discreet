@@ -226,6 +226,22 @@ export class CitadelAPI {
     return d;
   }
 
+  // ── Passkeys (WebAuthn) ──
+  async passkeyRegisterStart() { return (await this.fetch('/auth/passkey/register/start', { method: 'POST' })).json(); }
+  async passkeyRegisterFinish(credential: any, name?: string) { return (await this.fetch('/auth/passkey/register/finish', { method: 'POST', body: JSON.stringify({ credential, name }) })).json(); }
+  async passkeyLoginStart(username: string) {
+    const r = await fetch(`${API_BASE}/auth/passkey/login/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    return { ok: r.ok, data: await r.json() };
+  }
+  async passkeyLoginFinish(username: string, credential: any) {
+    const r = await fetch(`${API_BASE}/auth/passkey/login/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, credential }), credentials: 'same-origin' });
+    const d = await r.json();
+    if (r.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
+    return { ok: r.ok, data: d };
+  }
+  async passkeyList() { return (await this.fetch('/auth/passkey/list')).json(); }
+  async passkeyDelete(id: string) { return (await this.fetch(`/auth/passkey/${id}`, { method: 'DELETE' })).json(); }
+
   // ── Servers ──
   async listServers() { return (await this.fetch('/servers')).json(); }
   async createServer(name: string, opts?: { enable_automod?: boolean }) { return (await this.fetch('/servers', { method: 'POST', body: JSON.stringify({ name, ...opts }) })).json(); }

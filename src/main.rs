@@ -59,6 +59,7 @@ use discreet_server::discreet_friend_handlers;
 use discreet_server::discreet_group_dm_handlers;
 use discreet_server::discreet_health;
 use discreet_server::discreet_meeting_handlers;
+use discreet_server::discreet_passkey;
 use discreet_server::discreet_message_handlers;
 use discreet_server::discreet_notification_handlers;
 use discreet_server::discreet_pin_handlers;
@@ -542,6 +543,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/resend-code", axum::routing::post(discreet_auth_handlers::resend_registration_code))
         .route("/auth/forgot-password", axum::routing::post(discreet_email_handlers::forgot_password))
         .route("/auth/reset-password", axum::routing::post(discreet_email_handlers::reset_password))
+        // Passkey (WebAuthn)
+        .route("/auth/passkey/register/start", axum::routing::post(discreet_passkey::register_start))
+        .route("/auth/passkey/register/finish", axum::routing::post(discreet_passkey::register_finish))
+        .route("/auth/passkey/login/start", axum::routing::post(discreet_passkey::login_start))
+        .route("/auth/passkey/login/finish", axum::routing::post(discreet_passkey::login_finish))
         // Server discovery
         .route("/discover", axum::routing::get(discreet_discovery_handlers::discover_servers))
         .route("/servers/:server_id/publish", axum::routing::post(discreet_discovery_handlers::publish_server))

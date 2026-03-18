@@ -6,6 +6,22 @@ import React, { useState, useMemo } from 'react';
 import { T, getInp, btn } from '../theme';
 import { api, storageBlocked, _storage } from '../api/CitadelAPI';
 
+// ─── WebAuthn base64url helpers ──────────────────────────────────────────────
+
+function bufferToBase64url(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  bytes.forEach(b => s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64urlToBuffer(b64: string): ArrayBuffer {
+  const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+  return bytes.buffer;
+}
+
 interface AuthScreenProps {
   onAuth: () => void;
 }
@@ -432,13 +448,56 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           </button>
         </form>
 
-        {/* Divider + Guest */}
+        {/* Divider + Passkey + Guest */}
         <div style={{ marginTop: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <div style={{ flex: 1, height: 1, background: T.bd }} />
             <span style={{ fontSize: 11, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>or</span>
             <div style={{ flex: 1, height: 1, background: T.bd }} />
           </div>
+          {typeof window !== 'undefined' && !!window.PublicKeyCredential && mode === 'login' && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!username.trim()) { setError('Enter your username first'); return; }
+                setLoading(true); setError('');
+                try {
+                  const start = await api.passkeyLoginStart(username.trim());
+                  if (!start.ok) { setError(start.data?.error?.message || 'Passkey login not available'); setLoading(false); return; }
+                  const options = start.data;
+                  options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
+                  if (options.publicKey.allowCredentials) {
+                    options.publicKey.allowCredentials = options.publicKey.allowCredentials.map((c: any) => ({
+                      ...c, id: base64urlToBuffer(c.id),
+                    }));
+                  }
+                  const assertion = await navigator.credentials.get(options) as PublicKeyCredential;
+                  if (!assertion) { setError('Passkey authentication cancelled'); setLoading(false); return; }
+                  const resp = assertion.response as AuthenticatorAssertionResponse;
+                  const credential = {
+                    id: assertion.id,
+                    rawId: bufferToBase64url(assertion.rawId),
+                    type: assertion.type,
+                    response: {
+                      authenticatorData: bufferToBase64url(resp.authenticatorData),
+                      clientDataJSON: bufferToBase64url(resp.clientDataJSON),
+                      signature: bufferToBase64url(resp.signature),
+                      userHandle: resp.userHandle ? bufferToBase64url(resp.userHandle) : null,
+                    },
+                  };
+                  const result = await api.passkeyLoginFinish(username.trim(), credential);
+                  if (result.ok) onAuth();
+                  else setError(result.data?.error?.message || 'Passkey login failed');
+                } catch (e: any) {
+                  if (e?.name !== 'NotAllowedError') setError(e?.message || 'Passkey login failed');
+                }
+                setLoading(false);
+              }}
+              disabled={loading}
+              style={{ ...btn(!loading), background: T.sf2, color: T.tx, border: `1px solid ${T.bd}`, width: '100%', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {loading ? '…' : 'Sign in with Passkey'}
+            </button>
+          )}
           <button
             type="button"
             onClick={async () => {

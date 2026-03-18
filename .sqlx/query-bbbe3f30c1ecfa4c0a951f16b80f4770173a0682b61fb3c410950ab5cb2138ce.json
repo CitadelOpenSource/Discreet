@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n           AND (LOWER(u.username) LIKE $2 OR LOWER(u.display_name) LIKE $2 OR LOWER(m.nickname) LIKE $2)\n         ORDER BY u.username\n         LIMIT 25",
+  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot,\n                u.platform_role, u.badge_type, u.account_tier,\n                m.nickname, m.joined_at, m.notification_level, m.visibility_override\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n           AND (LOWER(u.username) LIKE $2 OR LOWER(u.display_name) LIKE $2 OR LOWER(m.nickname) LIKE $2)\n         ORDER BY u.username\n         LIMIT 25",
   "describe": {
     "columns": [
       {
@@ -25,21 +25,36 @@
       },
       {
         "ordinal": 4,
-        "name": "nickname",
+        "name": "platform_role",
         "type_info": "Varchar"
       },
       {
         "ordinal": 5,
+        "name": "badge_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_tier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "nickname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
         "name": "joined_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 9,
         "name": "notification_level",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "visibility_override",
         "type_info": "Text"
       }
@@ -56,10 +71,13 @@
       true,
       false,
       true,
+      true,
+      false,
+      true,
       false,
       false,
       true
     ]
   },
-  "hash": "c10f87069aae1d22c1397f7b6a44fa69012c3a6c62f336745e1362cc99323414"
+  "hash": "bbbe3f30c1ecfa4c0a951f16b80f4770173a0682b61fb3c410950ab5cb2138ce"
 }

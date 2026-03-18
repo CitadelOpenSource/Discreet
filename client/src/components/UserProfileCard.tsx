@@ -28,6 +28,7 @@ interface UserData {
   is_bot?: boolean;
   persona?: string;
   created_at?: string;
+  platform_role?: string | null;
 }
 
 interface ServerInfo {
@@ -170,7 +171,12 @@ export function UserProfileCard({
 
       {/* Identity */}
       <div style={{ padding: '28px 16px 8px' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>{user.display_name || user.username}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {user.display_name || user.username}
+          {(user.platform_role === 'admin' || user.platform_role === 'dev') && (
+            <span title="This user is a Discreet staff member" style={{ fontSize: 10, fontWeight: 700, color: '#00D4AA', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'rgba(0,212,170,0.1)', padding: '1px 6px', borderRadius: 4 }}>🛡 Staff</span>
+          )}
+        </div>
         <div style={{ fontSize: 12, color: T.mt }}>{user.username}{isSelf && ' (you)'}</div>
         {(() => {
           const wsStatus = customStatuses?.[userId];

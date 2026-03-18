@@ -73,6 +73,7 @@ export default function SettingsAccount({
       <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Two-Factor Authentication (2FA) <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
       <button onClick={() => { alert('2FA setup will be available in a future update. Your account is still protected by password-based authentication and session management.'); }} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
     </div>
+    <PasskeyManager />
     <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
       <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Encryption Key Fingerprint <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Verify your identity key hasn't been tampered with</div></div>
       <button onClick={() => navigator.clipboard?.writeText(api.userId || '')} style={{ fontSize: 10, color: T.ac, background: 'none', border: `1px solid ${T.bd}`, borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontFamily: 'monospace' }} title="Copy fingerprint">Copy</button>
@@ -96,6 +97,115 @@ export default function SettingsAccount({
     </div>
     </div>
   </>);
+}
+
+// ─── Passkey Manager ────────────────────────────────────────────────────────
+
+function bufferToBase64url(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  bytes.forEach(b => s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64urlToBuffer(b64: string): ArrayBuffer {
+  const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function PasskeyManager() {
+  const supported = typeof window !== 'undefined' && !!window.PublicKeyCredential;
+  const [passkeys, setPasskeys] = React.useState<{ id: string; name: string; created_at: string }[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [name, setName] = React.useState('');
+
+  const load = React.useCallback(async () => {
+    try {
+      const data = await api.passkeyList();
+      if (Array.isArray(data)) setPasskeys(data);
+    } catch { /* no passkeys yet */ }
+  }, []);
+
+  React.useEffect(() => { if (supported) load(); }, [supported, load]);
+
+  if (!supported) return null;
+
+  const register = async () => {
+    setError(''); setLoading(true);
+    try {
+      const options = await api.passkeyRegisterStart();
+      // Decode challenge and user.id from base64url
+      options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
+      options.publicKey.user.id = base64urlToBuffer(options.publicKey.user.id);
+      if (options.publicKey.excludeCredentials) {
+        options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map((c: any) => ({
+          ...c, id: base64urlToBuffer(c.id),
+        }));
+      }
+      const credential = await navigator.credentials.create(options) as PublicKeyCredential;
+      if (!credential) { setError('Passkey creation cancelled'); setLoading(false); return; }
+      const response = credential.response as AuthenticatorAttestationResponse;
+      const result = {
+        id: credential.id,
+        rawId: bufferToBase64url(credential.rawId),
+        type: credential.type,
+        response: {
+          attestationObject: bufferToBase64url(response.attestationObject),
+          clientDataJSON: bufferToBase64url(response.clientDataJSON),
+        },
+      };
+      await api.passkeyRegisterFinish(result, name || undefined);
+      setName('');
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Passkey registration failed');
+    }
+    setLoading(false);
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm('Remove this passkey?')) return;
+    try {
+      await api.passkeyDelete(id);
+      setPasskeys(prev => prev.filter(p => p.id !== id));
+    } catch { setError('Failed to remove passkey'); }
+  };
+
+  return (
+    <div data-section="passkeys" style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+            Passkeys <I.Lock s={10} />
+          </div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Sign in with biometrics or a security key</div>
+        </div>
+      </div>
+      {passkeys.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          {passkeys.map(pk => (
+            <div key={pk.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: T.bg, borderRadius: 6, marginBottom: 4 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{pk.name}</div>
+                <div style={{ fontSize: 10, color: T.mt }}>{new Date(pk.created_at).toLocaleDateString()}</div>
+              </div>
+              <button onClick={() => remove(pk.id)} style={{ fontSize: 10, color: T.err, background: 'none', border: `1px solid rgba(255,71,87,0.3)`, borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Passkey name (optional)" style={{ flex: 1, padding: '6px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, outline: 'none' }} />
+        <button onClick={register} disabled={loading} style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 6, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+          {loading ? 'Adding…' : 'Add Passkey'}
+        </button>
+      </div>
+      {error && <div style={{ fontSize: 11, color: T.err, marginTop: 6, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>{error}</div>}
+    </div>
+  );
 }
 
 // Subscription sub-panel (self-contained state)

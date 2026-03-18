@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot, m.nickname, m.joined_at, m.notification_level, m.visibility_override\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n         ORDER BY u.is_bot ASC, m.joined_at\n         LIMIT $2 OFFSET $3",
+  "query": "SELECT u.id AS user_id, u.username, u.display_name, u.is_bot,\n                u.platform_role, u.badge_type, u.account_tier,\n                m.nickname, m.joined_at, m.notification_level, m.visibility_override\n         FROM server_members m\n         INNER JOIN users u ON u.id = m.user_id\n         WHERE m.server_id = $1\n         ORDER BY u.is_bot ASC, m.joined_at\n         LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -25,21 +25,36 @@
       },
       {
         "ordinal": 4,
-        "name": "nickname",
+        "name": "platform_role",
         "type_info": "Varchar"
       },
       {
         "ordinal": 5,
+        "name": "badge_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_tier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "nickname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
         "name": "joined_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 9,
         "name": "notification_level",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "visibility_override",
         "type_info": "Text"
       }
@@ -57,10 +72,13 @@
       true,
       false,
       true,
+      true,
+      false,
+      true,
       false,
       false,
       true
     ]
   },
-  "hash": "80fb36c7ae9f51924625b80ff217c4f82f3186b6dff6c0109c49e459bee8dfb0"
+  "hash": "b3f3eff6dc058a2492f2c6177e772df452cff6f1d853d5b46ff76ceae42c8253"
 }

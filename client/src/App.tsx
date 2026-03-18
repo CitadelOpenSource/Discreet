@@ -556,7 +556,7 @@ export default function App() {
   const [dmMsgs, setDmMsgs] = useState<any[]>([]);
   const [userMap, setUserMap] = useState<Record<string, string>>({});
   const [rawUsernameMap, setRawUsernameMap] = useState<Record<string, string>>({});
-  const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null }>>({});
+  const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }>>({});
   const [platformUser, setPlatformUser] = useState<any>(null);
   const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
@@ -819,7 +819,7 @@ export default function App() {
     loadServers(true); loadDms(); api.getMe().then(setMe).catch(() => {});
     api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
     api.listSessions().then((ss: any[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
-    api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null } })); } }).catch(() => {});
+    api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null, platform_role: d.platform_role ?? null } })); } }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
       if (e.type === 'ice_candidate' && api.ws?.readyState === 1) {
@@ -1229,7 +1229,7 @@ export default function App() {
   const loadCategories = async (sid: string) => { try { const c = await api.listCategories(sid); if (Array.isArray(c)) setCategories(c); } catch {} };
   const loadMembers = async (sid: string) => {
     setLoadingMembers(true);
-    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); const myMem = m.find((u: any) => u.user_id === api.userId); if (myMem?.notification_level) setServerNotifLevels(p => ({ ...p, [sid]: myMem.notification_level })); if (myMem) setServerVisibility(p => ({ ...p, [sid]: myMem.visibility_override ?? null })); } } catch {} finally { setLoadingMembers(false); }
+    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null, platform_role: u.platform_role ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); const myMem = m.find((u: any) => u.user_id === api.userId); if (myMem?.notification_level) setServerNotifLevels(p => ({ ...p, [sid]: myMem.notification_level })); if (myMem) setServerVisibility(p => ({ ...p, [sid]: myMem.visibility_override ?? null })); } } catch {} finally { setLoadingMembers(false); }
   };
   const loadRoles = async (sid: string) => {
     try { const r = await api.listRoles(sid); if (Array.isArray(r)) setRoles(r); } catch {}
@@ -1302,7 +1302,8 @@ export default function App() {
   const renderPlatformBadge = (uid: string) => {
     const e = uid === api.userId ? badgeMap[uid] : badgeMap[uid];
     if (!e) return null;
-    const { badge_type: bt, account_tier: at } = e;
+    const { badge_type: bt, account_tier: at, platform_role: pr } = e;
+    if (pr === 'admin' || pr === 'dev') return <span title="This user is a Discreet staff member" style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: '#00D4AA', verticalAlign: 'middle', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'rgba(0,212,170,0.1)', padding: '1px 6px', borderRadius: 4 }}>🛡 Staff</span>;
     if (bt === 'crown')  return <span title="Platform Admin" style={{ marginLeft: 3, fontSize: 11, color: '#faa61a', verticalAlign: 'middle' }}>👑</span>;
     if (bt === 'wrench') return <span title="Developer"      style={{ marginLeft: 3, fontSize: 11, color: '#5865F2', verticalAlign: 'middle' }}>🔧</span>;
     if (bt === 'gem')    return <span title="Premium"        style={{ marginLeft: 3, fontSize: 11, color: '#a855f7', verticalAlign: 'middle' }}>💎</span>;

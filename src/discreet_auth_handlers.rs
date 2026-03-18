@@ -164,7 +164,7 @@ fn clear_refresh_cookie() -> String {
 }
 
 /// Wrap a JSON auth response with the Set-Cookie header for the refresh token.
-fn auth_response_with_cookie(
+pub fn auth_response_with_cookie(
     body: AuthResponse,
     refresh_token: &str,
     max_age_secs: u64,

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webauthn_credentials SET counter = counter + 1\n             WHERE credential_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfa615f04da8bc73c54883022e966d6fe5cdeabfd3255a74502dcb9e869d3037"
+}
