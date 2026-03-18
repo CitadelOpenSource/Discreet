@@ -137,8 +137,9 @@ pub async fn platform_me(
 
 /// Returns aggregate platform statistics. Requires ACCESS_ADMIN_DASHBOARD.
 ///
-/// All nine counts are fetched concurrently with `tokio::try_join!` to keep
-/// response latency near the slowest single query rather than their sum.
+/// Cached in Redis for 60 seconds. All counts are fetched concurrently
+/// with `tokio::try_join!` to keep response latency near the slowest
+/// single query rather than their sum.
 ///
 /// Fields:
 ///   total_users         — non-bot users in the users table
@@ -150,12 +151,36 @@ pub async fn platform_me(
 ///   active_users_24h    — non-bot users whose last_active_at is within 24 h
 ///   registrations_today — non-bot users created since midnight UTC
 ///   total_bot_configs   — rows in server_bots (AI bot integrations per server)
+///   messages_today      — non-deleted messages created since midnight UTC
+///   storage_used_bytes  — total size of non-deleted file_blobs
+///   lockdown_status     — true when maintenance_mode is enabled
+///   pending_bans        — open content reports awaiting review
 pub async fn admin_stats(
     caller: PlatformUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     require_staff_role(&caller)?;
     require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    // Return cached stats if available (60-second TTL)
+    let cache_key = "admin:stats";
+    let mut redis_conn = state.redis.clone();
+    let cached: Option<String> = match redis::cmd("GET")
+        .arg(cache_key)
+        .query_async(&mut redis_conn)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("admin_stats cache miss: {e}");
+            None
+        }
+    };
+    if let Some(json_str) = cached {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            return Ok(Json(val));
+        }
+    }
 
     let (
         total_users,
@@ -167,6 +192,9 @@ pub async fn admin_stats(
         active_users_24h,
         registrations_today,
         total_bot_configs,
+        messages_today,
+        storage_used_bytes,
+        pending_bans,
     ) = tokio::try_join!(
         sqlx::query_scalar!(
             "SELECT COUNT(*) FROM users WHERE is_bot = FALSE"
@@ -216,9 +244,36 @@ pub async fn admin_stats(
             "SELECT COUNT(*) FROM server_bots"
         )
         .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages
+             WHERE deleted = FALSE
+               AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COALESCE(SUM(size_bytes)::BIGINT, 0) FROM file_blobs WHERE deleted = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM content_reports WHERE status = 'open'"
+        )
+        .fetch_one(&state.db),
     )?;
 
-    Ok(Json(json!({
+    // Lockdown status from platform settings
+    let lockdown_row: Option<serde_json::Value> = sqlx::query_scalar!(
+        "SELECT value FROM platform_settings WHERE key = 'maintenance_mode'"
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let lockdown_status = lockdown_row
+        .and_then(|v: serde_json::Value| v.as_bool())
+        .unwrap_or(false);
+
+    let body = json!({
         "total_users":         total_users.unwrap_or(0),
         "verified_users":      verified_users.unwrap_or(0),
         "guest_users":         guest_users.unwrap_or(0),
@@ -228,7 +283,27 @@ pub async fn admin_stats(
         "active_users_24h":    active_users_24h.unwrap_or(0),
         "registrations_today": registrations_today.unwrap_or(0),
         "total_bot_configs":   total_bot_configs.unwrap_or(0),
-    })))
+        "messages_today":      messages_today.unwrap_or(0),
+        "storage_used_bytes":  storage_used_bytes.unwrap_or(0_i64),
+        "lockdown_status":     lockdown_status,
+        "pending_bans":        pending_bans.unwrap_or(0),
+    });
+
+    // Cache in Redis for 60 seconds
+    if let Ok(json_str) = serde_json::to_string(&body) {
+        let cache_result: Result<String, _> = redis::cmd("SET")
+            .arg(cache_key)
+            .arg(&json_str)
+            .arg("EX")
+            .arg(60_u64)
+            .query_async(&mut redis_conn)
+            .await;
+        if let Err(e) = cache_result {
+            tracing::debug!("admin_stats cache write failed: {e}");
+        }
+    }
+
+    Ok(Json(body))
 }
 
 // ─── POST /admin/users/:user_id/role ─────────────────────────────────────────

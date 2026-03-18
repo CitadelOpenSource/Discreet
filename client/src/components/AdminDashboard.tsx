@@ -28,6 +28,10 @@ interface PlatformStats {
   active_users_24h:    number;
   registrations_today: number;
   total_bot_configs:   number;
+  messages_today:      number;
+  storage_used_bytes:  number;
+  lockdown_status:     boolean;
+  pending_bans:        number;
 }
 
 interface PlatformSettings {
@@ -138,8 +142,8 @@ function SectionHeader({ label, loading, onRefresh }: { label: string; loading?:
   );
 }
 
-function StatCard({ label, icon, color, value, loading }: {
-  label: string; icon: string; color: string; value: number | undefined; loading: boolean;
+function StatCard({ label, icon, color, value, loading, displayValue }: {
+  label: string; icon: string; color: string; value?: number; loading: boolean; displayValue?: string;
 }) {
   return (
     <div style={{
@@ -153,7 +157,7 @@ function StatCard({ label, icon, color, value, loading }: {
         <span style={{ fontSize: 10, color: T.mt, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</span>
       </div>
       <div style={{ fontSize: 26, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-        {loading ? <span style={{ fontSize: 14, color: T.bd }}>…</span> : (value ?? 0).toLocaleString()}
+        {loading ? <span style={{ fontSize: 14, color: T.bd }}>…</span> : (displayValue ?? (value ?? 0).toLocaleString())}
       </div>
     </div>
   );
@@ -216,6 +220,14 @@ function MiniBar({ value, max }: { value: number; max: number }) {
 function fmtDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
   catch { return iso.slice(0, 10); }
+}
+
+function fmtBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 // ─── Registration Graph ──────────────────────────────────────────────────────
@@ -668,8 +680,17 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
               {statsError && <div style={{ fontSize: 12, color: T.err, marginBottom: 8 }}>⚠ {statsError}</div>}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                 {STAT_CARDS.map(c => (
-                  <StatCard key={c.key} label={c.label} icon={c.icon} color={c.color} value={stats?.[c.key]} loading={statsLoading} />
+                  <StatCard key={c.key} label={c.label} icon={c.icon} color={c.color} value={stats?.[c.key] as number} loading={statsLoading} />
                 ))}
+                <StatCard key="messages_today" label="Messages Today" icon="📨" color="#f97316" value={stats?.messages_today} loading={statsLoading} />
+                <StatCard key="storage_used" label="Storage Used" icon="💾" color="#8b5cf6" loading={statsLoading}
+                  displayValue={fmtBytes(stats?.storage_used_bytes ?? 0)} />
+                <StatCard key="lockdown" label="Lockdown"
+                  icon={stats?.lockdown_status ? '🔴' : '🟢'}
+                  color={stats?.lockdown_status ? '#ef4444' : '#10b981'}
+                  loading={statsLoading}
+                  displayValue={stats?.lockdown_status ? 'ACTIVE' : 'OFF'} />
+                <StatCard key="pending_bans" label="Pending Bans" icon="⚖️" color="#ef4444" value={stats?.pending_bans} loading={statsLoading} />
               </div>
             </div>
 
