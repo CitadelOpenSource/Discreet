@@ -78,6 +78,7 @@ use discreet_server::discreet_state::AppState;
 use discreet_server::discreet_turn;
 use discreet_server::discreet_typing;
 use discreet_server::discreet_user_handlers;
+use discreet_server::discreet_voice_handlers;
 use discreet_server::discreet_dev_token_handlers;
 use discreet_server::discreet_platform_admin_handlers;
 use discreet_server::discreet_premium;
@@ -660,6 +661,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Files ──
         .route("/channels/:channel_id/files", axum::routing::post(discreet_file_handlers::upload_file_blob))
         .route("/files/:id", axum::routing::get(discreet_file_handlers::download_file_blob))
+        // ── Voice ──
+        .route("/channels/:channel_id/voice", axum::routing::post(discreet_voice_handlers::send_voice_message))
         // ── Roles ──
         .route("/servers/:server_id/roles", axum::routing::post(discreet_role_handlers::create_role).get(discreet_role_handlers::list_roles))
         .route("/roles/:role_id", axum::routing::patch(discreet_role_handlers::update_role).delete(discreet_role_handlers::delete_role))

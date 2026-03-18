@@ -72,5 +72,6 @@ pub mod discreet_tier_limits;
 pub mod discreet_turn;
 pub mod discreet_typing;
 pub mod discreet_user_handlers;
+pub mod discreet_voice_handlers;
 pub mod discreet_waitlist;
 pub mod discreet_websocket;

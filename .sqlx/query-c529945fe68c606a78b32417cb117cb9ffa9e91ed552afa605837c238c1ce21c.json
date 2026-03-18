@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch,\n         voice_duration_ms, voice_waveform)\n         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Int8",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c529945fe68c606a78b32417cb117cb9ffa9e91ed552afa605837c238c1ce21c"
+}

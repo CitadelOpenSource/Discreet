@@ -400,18 +400,52 @@ pub async fn send_verification_link_email(state: &AppState, to: &str, link: &str
 
 // ─── Email Sender ──────────────────────────────────────────────────────
 //
+// send_html_email    — dispatches pre-built HTML via the Resend API.
+// send_email         — wraps plain text in <p> tags, then delegates.
+// branded_html_email — wraps inner content in the Discreet branded template.
+//
 // Priority:
 //   1. RESEND_API_KEY set → POST to Resend HTTP API (https://api.resend.com/emails)
 //   2. Neither configured  → log and return false (dev mode)
 
-async fn send_email(_state: &AppState, to: &str, subject: &str, body: &str) -> bool {
-    // ── Resend HTTP API ───────────────────────────────────────────────
+/// Wraps inner HTML content in the Discreet branded email template.
+///
+/// Provides: dark background (#0a0e17), centered card (#141922) with logo,
+/// and a footer with support/dev contact links and copyright.
+fn branded_html_email(inner: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#0a0e17;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0e17;">
+<tr><td align="center" style="padding:40px 16px;">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#141922;border-radius:12px;">
+<tr><td style="padding:32px;">
+<div style="font-size:24px;font-weight:bold;color:#00D4AA;margin-bottom:24px;">Discreet</div>
+{inner}
+</td></tr>
+</table>
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;">
+<tr><td style="padding:24px 32px;text-align:center;">
+<p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 8px 0;">Need help? <a href="mailto:support@discreetai.net" style="color:#00D4AA;text-decoration:none;">support@discreetai.net</a> &#183; Report a bug: <a href="mailto:dev@discreetai.net" style="color:#00D4AA;text-decoration:none;">dev@discreetai.net</a></p>
+<p style="font-size:12px;color:#64748b;margin:0;">&#169; 2026 Discreet</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"#,
+        inner = inner,
+    )
+}
+
+/// Sends a pre-built HTML email via the configured email provider.
+async fn send_html_email(_state: &AppState, to: &str, subject: &str, html: &str) -> bool {
     if let Ok(api_key) = std::env::var("RESEND_API_KEY") {
         if !api_key.is_empty() {
             let from = std::env::var("SMTP_FROM")
                 .unwrap_or_else(|_| "noreply@discreetai.net".to_string());
-
-            let html = format!("<p>{}</p>", body.replace('\n', "<br>"));
 
             let payload = serde_json::json!({
                 "from":    from,
@@ -450,13 +484,18 @@ async fn send_email(_state: &AppState, to: &str, subject: &str, body: &str) -> b
         }
     }
 
-    // ── No provider configured — dev mode ─────────────────────────────
     tracing::info!(
         "Email provider not configured — email to {} would have subject: {}",
         to,
         subject
     );
     false
+}
+
+/// Sends a plain-text email by wrapping the body in basic HTML.
+async fn send_email(state: &AppState, to: &str, subject: &str, body: &str) -> bool {
+    let html = format!("<p>{}</p>", body.replace('\n', "<br>"));
+    send_html_email(state, to, subject, &html).await
 }
 
 // ─── 6-digit verification code helpers ──────────────────────────────────
@@ -468,41 +507,34 @@ pub fn generate_verification_code() -> String {
     code.to_string()
 }
 
-/// Send a 6-digit verification code email (not a clickable link).
+/// Send a branded HTML verification code email.
 /// Codes resist email-forwarding phishing because there's nothing to click.
 pub async fn send_verification_code_email(state: &AppState, to: &str, code: &str) -> bool {
-    send_email(
-        state,
-        to,
-        "Your Discreet verification code",
-        &format!(
-            "Your verification code is:\n\n\
-             {}\n\n\
-             Enter this code in the Discreet app to verify your email.\n\
-             This code expires in 10 minutes.\n\n\
-             If you did not create a Discreet account, you can safely ignore this email.",
-            code
-        ),
-    )
-    .await
+    let inner = format!(
+        r#"<h2 style="font-size:20px;font-weight:600;color:#e2e8f0;margin:0 0 20px 0;">Your verification code</h2>
+<div style="text-align:center;padding:16px 0;margin:0 0 24px 0;background-color:#0a0e17;border-radius:8px;">
+<span style="font-size:32px;font-weight:bold;font-family:'Courier New',Courier,monospace;color:#00D4AA;letter-spacing:8px;">{code}</span>
+</div>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 12px 0;">This code expires in 10 minutes.</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If you did not create this account, you can safely ignore this email.</p>"#,
+        code = code,
+    );
+    let html = branded_html_email(&inner);
+    send_html_email(state, to, "Your Discreet verification code", &html).await
 }
 
-/// Send a lockout alert when an account hits 20 failed login attempts.
+/// Send a branded HTML lockout alert when an account hits 20 failed login attempts.
 pub async fn send_lockout_alert_email(state: &AppState, to: &str, ip: &str, login: &str) -> bool {
-    send_email(
-        state,
-        to,
-        "Security Alert: Your Discreet account has been locked",
-        &format!(
-            "Your Discreet account ({login}) has been temporarily locked for 24 hours \
-             due to 20 failed login attempts from IP address {ip}.\n\n\
-             If this was you, wait 24 hours and try again. If you forgot your password, \
-             use your recovery key to reset it.\n\n\
-             If this was NOT you, someone may be trying to access your account. \
-             Your password was NOT compromised — the lockout prevented further attempts. \
-             Consider changing your password after the lockout expires.\n\n\
-             — Discreet Security"
-        ),
-    )
-    .await
+    let login_esc = login.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let ip_esc = ip.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let inner = format!(
+        r#"<h2 style="font-size:20px;font-weight:600;color:#e2e8f0;margin:0 0 20px 0;">Account locked</h2>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 16px 0;">Your Discreet account (<strong>{login}</strong>) has been temporarily locked for 24 hours due to 20 failed login attempts from IP address <strong style="font-family:'Courier New',Courier,monospace;">{ip}</strong>.</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0 0 16px 0;">If this was you, wait 24 hours and try again. If you forgot your password, use your recovery key to reset it.</p>
+<p style="font-size:14px;color:#e2e8f0;line-height:1.6;margin:0;">If this was <strong>not</strong> you, someone may be trying to access your account. Your password was not compromised &#8212; the lockout prevented further attempts. Consider changing your password after the lockout expires.</p>"#,
+        login = login_esc,
+        ip = ip_esc,
+    );
+    let html = branded_html_email(&inner);
+    send_html_email(state, to, "Security Alert: Your Discreet account has been locked", &html).await
 }
