@@ -25,7 +25,7 @@ export async function initCrypto(): Promise<void> {
     }
     wasmModule = mod;
     initialized = true;
-    console.log('[crypto] MLS WASM module loaded — RFC 9420 active');
+    // MLS WASM module loaded — RFC 9420 active
   } catch (e) {
     console.warn('[crypto] WASM not available, using HKDF fallback:', (e as Error)?.message);
   }

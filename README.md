@@ -62,13 +62,19 @@ Open [localhost:5173](http://localhost:5173) in your browser. The default Docker
 
 ## Developer Setup
 
-For hot-reloading and development tooling:
+### Dev Container (Recommended)
+
+If you use VS Code, open the project and select **Reopen in Container** when prompted. The dev container includes Rust, Node 18, `sqlx-cli`, `wasm-pack`, PostgreSQL 16, and Redis 7 — fully pre-configured.
+
+### Docker Compose Dev Environment
 
 ```bash
 docker compose -f docker-compose.dev.yml up
 ```
 
-Run the test suite before submitting changes:
+This starts a Rust development container with PostgreSQL and Redis. The API is available on port 3001 and the Vite dev server on port 5173.
+
+### Run Tests
 
 ```bash
 cargo test --lib              # Unit tests

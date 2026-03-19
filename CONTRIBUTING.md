@@ -19,6 +19,31 @@ Optional:
 
 ## Dev Setup
 
+### Option A: Dev Container (Recommended)
+
+The fastest way to get started. Requires Docker and VS Code (or any editor with dev container support).
+
+```bash
+git clone https://github.com/CitadelOpenSource/Discreet.git
+code Discreet
+```
+
+When VS Code prompts **Reopen in Container**, accept. The dev container starts a Rust 1.78 environment with Node 18, `sqlx-cli`, `wasm-pack`, PostgreSQL 16, and Redis 7 — all pre-configured. No local toolchain installation needed.
+
+The API is available on port 3001 and the Vite dev server on port 5173.
+
+### Option B: Docker Compose Dev Environment
+
+```bash
+git clone https://github.com/CitadelOpenSource/Discreet.git
+cd Discreet
+docker compose -f docker-compose.dev.yml up
+```
+
+This starts a Rust development container alongside PostgreSQL and Redis. Attach to the `dev` container to run `cargo` and `npm` commands.
+
+### Option C: Local Toolchain
+
 ```bash
 # Clone the repository
 git clone https://github.com/CitadelOpenSource/Discreet.git
@@ -40,8 +65,6 @@ npm run dev
 ```
 
 The backend runs at `http://localhost:3000` and the Vite dev server at `http://localhost:5173`.
-
-If you use VS Code or a compatible editor, a dev container configuration is available in `.devcontainer/` for a fully pre-configured environment with Rust, Node, PostgreSQL, and Redis ready to go.
 
 ## Code Standards
 

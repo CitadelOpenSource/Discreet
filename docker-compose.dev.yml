@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  dev:
+    image: rust:1.78-bookworm
+    command: >
+      bash -c "apt-get update && apt-get install -y nodejs npm &&
+      npm i -g n && n 18 &&
+      cargo install sqlx-cli wasm-pack &&
+      sleep infinity"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    ports:
+      - "3001:3001"
+      - "5173:5173"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgres://discreet:devpass@postgres:5432/discreet_dev
+      REDIS_URL: redis://redis:6379
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: discreet
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: discreet_dev
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata_dev:
