@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE error_reports SET resolved = TRUE, resolved_by = $1, resolved_at = NOW()\n         WHERE id = ANY($2) AND resolved = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff32e6612377587d2974232df0cebe59544ea803ff75bc965ffc4f94cebf121e"
+}

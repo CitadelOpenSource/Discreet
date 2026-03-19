@@ -169,15 +169,16 @@ pub fn auth_response_with_cookie(
     refresh_token: &str,
     max_age_secs: u64,
     status: StatusCode,
-) -> Response {
+) -> Result<Response, AppError> {
     let cookie = build_refresh_cookie(refresh_token, max_age_secs);
-    let json_body = serde_json::to_string(&body).expect("AuthResponse serializes");
+    let json_body = serde_json::to_string(&body)
+        .map_err(|e| AppError::Internal(format!("Auth response serialization failed: {e}")))?;
     Response::builder()
         .status(status)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::SET_COOKIE, cookie)
         .body(axum::body::Body::from(json_body))
-        .expect("valid response")
+        .map_err(|e| AppError::Internal(format!("Auth response build failed: {e}")))
 }
 
 /// Extract refresh token from cookie (preferred) or JSON body (mobile fallback).
@@ -459,7 +460,7 @@ pub async fn register(
         }
     }
 
-    Ok(auth_response_with_cookie(
+    auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
                 id: user_id,
@@ -477,7 +478,7 @@ pub async fn register(
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::CREATED,
-    ))
+    )
 }
 
 // ─── POST /auth/verify-code ───────────────────────────────────────────
@@ -775,7 +776,7 @@ pub async fn register_guest(
 
     tracing::info!(user_id = %user_id, "Guest account created: {}", guest_name);
 
-    Ok(auth_response_with_cookie(
+    auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
                 id: user_id,
@@ -793,7 +794,7 @@ pub async fn register_guest(
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::CREATED,
-    ))
+    )
 }
 
 // ─── POST /auth/upgrade ────────────────────────────────────────────────
@@ -1127,7 +1128,7 @@ pub async fn login(
 
     tracing::info!(user_id = %user.id, username = %user.username, ip = %ip, "LOGIN_SUCCESS");
 
-    Ok(auth_response_with_cookie(
+    auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
                 id: user.id,
@@ -1145,7 +1146,7 @@ pub async fn login(
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::OK,
-    ))
+    )
 }
 
 // ─── POST /auth/2fa/verify (login completion) ───────────────────────────
@@ -1207,7 +1208,7 @@ pub async fn complete_2fa_login(
 
     tracing::info!(user_id = %user_id, "User completed 2FA login");
 
-    Ok(auth_response_with_cookie(
+    auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
                 id: user.id,
@@ -1225,7 +1226,7 @@ pub async fn complete_2fa_login(
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::OK,
-    ))
+    )
 }
 
 // ─── POST /auth/refresh ─────────────────────────────────────────────────
@@ -1328,7 +1329,7 @@ pub async fn logout(
     let mut resp = StatusCode::NO_CONTENT.into_response();
     resp.headers_mut().insert(
         axum::http::header::SET_COOKIE,
-        clear_refresh_cookie().parse().expect("valid cookie"),
+        clear_refresh_cookie().parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("")),
     );
     Ok(resp)
 }

@@ -509,6 +509,10 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [editState, setEditState] = useState<EditState | null>(null);
+  const [wipeTarget, setWipeTarget] = useState<AdminUser | null>(null);
+  const [wipeReason, setWipeReason] = useState('');
+  const [wipeSaving, setWipeSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // ── Loaders ──
   const loadStats = useCallback(async () => {
@@ -975,26 +979,29 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                 <SectionHeader label="Data Management" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                  {/* Global retention */}
+                  {/* Data Retention */}
                   <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Default Message Retention</div>
-                        <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Global maximum. Server/channel can be more restrictive, never less.</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Data Retention</div>
+                        <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Minimum period messages must be preserved.</div>
                       </div>
                       <select
                         value={settings.default_retention_days}
                         onChange={e => toggleSetting('default_retention_days', Number(e.target.value))}
                         disabled={settingsSaving}
-                        style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 140, cursor: settingsSaving ? 'not-allowed' : 'pointer' }}
+                        style={{ ...getInp(), fontSize: 12, padding: '6px 10px', width: 170, cursor: settingsSaving ? 'not-allowed' : 'pointer' }}
                       >
-                        <option value={0}>Forever</option>
-                        <option value={365}>365 days</option>
-                        <option value={180}>180 days</option>
-                        <option value={90}>90 days</option>
-                        <option value={30}>30 days</option>
-                        <option value={7}>7 days</option>
+                        <option value={0}>Off</option>
+                        <option value={90}>90 Days</option>
+                        <option value={365}>1 Year</option>
+                        <option value={1095}>3 Years</option>
+                        <option value={2190}>6 Years (HIPAA)</option>
+                        <option value={2555}>7 Years (Financial)</option>
                       </select>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.6 }}>
+                      Messages are preserved for the configured retention period regardless of user deletion or disappearing message timers. HIPAA requires 6 years. SEC and FINRA require up to 7 years.
                     </div>
                   </div>
 
@@ -1086,11 +1093,17 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                           </td>
                           <td style={{ ...tdBase, color: T.mt, whiteSpace: 'nowrap', fontSize: 11 }}>{fmtDate(u.created_at)}</td>
                           <td style={{ ...tdBase, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                             {isEditing ? (
                               <button onClick={() => setEditState(null)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, cursor: 'pointer' }}>Cancel</button>
                             ) : (
                               <button onClick={() => setEditState({ user: u, platform_role: '', account_tier: '', saving: false, error: null })} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: `${ta(T.ac,'18')}`, color: T.ac, border: `1px solid ${ta(T.ac,'44')}`, cursor: 'pointer' }}>Edit Role</button>
                             )}
+                            <button onClick={() => { setWipeTarget(u); setWipeReason(''); }} title="Wipe all sessions" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 5, background: 'rgba(255,71,87,0.1)', color: T.err, border: '1px solid rgba(255,71,87,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                              Wipe
+                            </button>
+                            </div>
                           </td>
                         </tr>
                         {isEditing && editState && <EditPanel edit={editState} onSave={handleSave} onCancel={() => setEditState(null)} />}
@@ -1255,6 +1268,66 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
           </div>
         )}
       </div>
+
+      {/* ── Wipe Sessions Modal ── */}
+      {wipeTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { if (!wipeSaving) { setWipeTarget(null); } }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.sf, border: `1px solid ${T.bd}`, borderRadius: 12, padding: 24, width: 400, maxWidth: '90vw', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 4 }}>Revoke All Sessions for {wipeTarget.username}</div>
+            <div style={{ fontSize: 12, color: T.mt, marginBottom: 16, lineHeight: 1.6 }}>
+              This will immediately log this user out of every device. This action cannot be undone.
+            </div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Reason for wipe</label>
+            <input
+              value={wipeReason}
+              onChange={e => setWipeReason(e.target.value)}
+              placeholder="e.g. Lost device, security concern"
+              maxLength={500}
+              autoFocus
+              style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 16 }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setWipeTarget(null)} disabled={wipeSaving} style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+              <button
+                disabled={wipeReason.trim().length < 5 || wipeSaving}
+                onClick={async () => {
+                  setWipeSaving(true);
+                  try {
+                    const r = await api.fetch(`/admin/users/${wipeTarget.id}/wipe`, { method: 'POST', body: JSON.stringify({ reason: wipeReason.trim() }) });
+                    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((e as any).error || `HTTP ${r.status}`); }
+                    const data = await r.json();
+                    setToast({ msg: `Wiped ${data.wiped_sessions} sessions for ${wipeTarget.username}`, ok: true });
+                    setWipeTarget(null);
+                  } catch (e: any) {
+                    setToast({ msg: e?.message || 'Wipe failed', ok: false });
+                  }
+                  setWipeSaving(false);
+                  setTimeout(() => setToast(null), 4000);
+                }}
+                style={{
+                  padding: '8px 18px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: wipeReason.trim().length < 5 || wipeSaving ? 'not-allowed' : 'pointer',
+                  background: wipeReason.trim().length < 5 || wipeSaving ? T.sf3 : T.err,
+                  color: wipeReason.trim().length < 5 || wipeSaving ? T.mt : '#fff',
+                  opacity: wipeSaving ? 0.6 : 1,
+                }}>
+                {wipeSaving ? 'Wiping…' : 'Wipe All Sessions'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast notification ── */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 10001,
+          padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          background: toast.ok ? '#10b981' : T.err, color: '#fff',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.3)', animation: 'fadeIn 0.2s ease',
+        }}>
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }

@@ -1170,9 +1170,12 @@ pub fn sanitize_agent_input(input: &str) -> String {
         .collect();
 
     // Step 2: Remove triple-backtick blocks containing injection keywords
-    let injection_re = regex_lite::Regex::new(
+    let injection_re = match regex_lite::Regex::new(
         r"(?si)```[^\n]*\n.*?(?:system:|instruction:|ignore previous|you are now).*?```"
-    ).expect("injection regex compiles");
+    ) {
+        Ok(re) => re,
+        Err(_) => return cleaned, // regex is a constant — should never fail
+    };
 
     let sanitized = if injection_re.is_match(&cleaned) {
         modified = true;

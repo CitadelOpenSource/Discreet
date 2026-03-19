@@ -245,11 +245,11 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             <>
               <label style={label()}>Username or Email</label>
               <input style={{ ...getInp(), marginBottom: 14 }} value={username} onChange={e => setUsername(e.target.value)}
-                placeholder="alice or alice@example.com" autoFocus autoComplete="username" />
+                placeholder="alice or alice@example.com" autoFocus autoComplete="username" name="email" type="email" aria-label="Email address" />
 
               <label style={label()}>Password</label>
               <input style={{ ...getInp(), marginBottom: 8 }} type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••" autoComplete="current-password" />
+                placeholder="••••••••" autoComplete="current-password" name="password" aria-label="Password" />
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
                 {/* Remember me */}
@@ -277,7 +277,8 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                       type="email" placeholder="Email address" value={fpEmail}
                       onChange={e => { setFpEmail(e.target.value); setFpError(''); }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('fp-send-btn')?.click(); } }}
-                      style={{ ...getInp(), marginBottom: 8 }} autoFocus />
+                      style={{ ...getInp(), marginBottom: 8 }} autoFocus
+                      autoComplete="email" name="email" aria-label="Email address" />
                     {fpError && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{fpError}</div>}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button id="fp-send-btn" type="button" disabled={fpLoading || !fpEmail.includes('@')} onClick={async () => {
@@ -308,7 +309,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                       type="password" placeholder="Minimum 12 characters" value={fpNewPw}
                       onChange={e => { setFpNewPw(e.target.value); setFpError(''); }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('fp-reset-btn')?.click(); } }}
-                      style={{ ...getInp(), marginBottom: 8 }} autoComplete="new-password" />
+                      style={{ ...getInp(), marginBottom: 8 }} autoComplete="new-password" name="password" aria-label="New password" />
                     {fpError && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{fpError}</div>}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button id="fp-reset-btn" type="button" disabled={fpLoading || !fpToken.trim() || fpNewPw.length < 12} onClick={async () => {
@@ -346,7 +347,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
               <input
                 style={{ ...getInp(), marginBottom: usernameErr ? 4 : 14, borderColor: usernameErr ? '#ff4757' : undefined }}
                 value={username} onChange={e => setUsername(e.target.value)}
-                placeholder="alice" autoFocus autoComplete="username"
+                placeholder="alice" autoFocus autoComplete="username" name="username" aria-label="Username"
                 maxLength={32} />
               {fieldErr(usernameErr)}
               {!usernameErr && username.length > 0 && (
@@ -359,7 +360,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
               <input
                 style={{ ...getInp(), marginBottom: 8, borderColor: password.length > 0 && !allReqsMet ? '#ff4757' : undefined }}
                 type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Minimum 12 characters" autoComplete="new-password" />
+                placeholder="Minimum 12 characters" autoComplete="new-password" name="password" aria-label="Password" />
 
               {/* Strength meter */}
               {password.length > 0 && (
@@ -397,7 +398,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                   <input
                     style={{ ...getInp(), marginBottom: 4, borderColor: confirmPw.length > 0 && password !== confirmPw ? '#ff4757' : undefined }}
                     type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
-                    placeholder="Re-enter your password" autoComplete="new-password" />
+                    placeholder="Re-enter your password" autoComplete="new-password" name="confirm-password" aria-label="Confirm password" />
                   {confirmPw.length > 0 && (
                     <div style={{ fontSize: 11, marginBottom: 10, color: password === confirmPw ? '#2ecc71' : '#ff4757', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 13 }}>{password === confirmPw ? '\u2713' : '\u2717'}</span>
@@ -410,7 +411,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
 
               <label style={label()}>Email <span style={{ color: T.mt, fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(optional)</span></label>
               <input style={{ ...getInp(), marginBottom: 6 }} type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="alice@example.com" autoComplete="email" />
+                placeholder="alice@example.com" autoComplete="email" name="email" aria-label="Email address" />
               <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginBottom: 14 }}>
                 Adding an email enables account recovery and qualifies your account for the Verified tier.
               </div>
@@ -573,7 +574,8 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             <input
               style={{ ...getInp(), textAlign: 'center', fontSize: 24, fontFamily: 'monospace', letterSpacing: '8px', marginBottom: 12 }}
               value={verifyCode} onChange={e => { setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setVerifyErr(''); }}
-              placeholder="000000" maxLength={6} autoFocus />
+              placeholder="000000" maxLength={6} autoFocus
+              autoComplete="one-time-code" inputMode="numeric" name="otp" aria-label="Verification code" />
 
             {verifyErr && (
               <div style={{ fontSize: 12, color: '#ff4757', marginBottom: 10, textAlign: 'center' }}>{verifyErr}</div>

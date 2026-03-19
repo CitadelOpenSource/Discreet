@@ -5,6 +5,8 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { api, _storage } from './api/CitadelAPI';
 import { T, getInp, btn, setTheme, ta, applyServerTheme, registerThemeSync } from './theme';
+import { useMobile } from './contexts/MobileContext';
+import { MobileBottomTabs, type MobileTab } from './components/MobileBottomTabs';
 import { I } from './icons';
 import { initCrypto, isMlsAvailable, encryptMessage, decryptMessage } from './crypto/mls';
 import { sframeService } from './services/SFrameService';
@@ -19,7 +21,7 @@ import { VideoGrid } from './components/VideoGrid';
 import { SearchPanel } from './components/SearchPanel';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpgradeModal } from './components/UpgradeModal';
-import { MaintenancePage } from './components/ErrorBoundary';
+import { MaintenancePage, ErrorBoundary as SectionBoundary } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
@@ -242,24 +244,29 @@ function GlobalStyles() {
 
         .sidebar {
           position:fixed !important;
-          left:-244px; top:0; bottom:0;
-          z-index:200;
-          width:240px !important;
-          min-width:240px !important;
-          transition:left .25s ease, box-shadow .25s ease;
+          left:0; top:0; bottom:0;
+          z-index:1001;
+          width:280px !important;
+          min-width:280px !important;
+          transform:translateX(-100%);
+          transition:transform .3s ease, box-shadow .3s ease;
+          box-shadow:none;
         }
         .sidebar--open {
-          left:0 !important;
+          transform:translateX(0) !important;
           box-shadow:4px 0 24px rgba(0,0,0,.6);
         }
+
+        /* Lock body scroll when sidebar is open */
+        body.sidebar-open { overflow:hidden !important; }
 
         .hamburger {
           display:flex;
           flex-direction:column;
           justify-content:center;
           gap:4px;
-          width:36px; height:36px;
-          padding:6px;
+          width:48px; height:48px;
+          padding:8px;
           background:transparent;
           border:none;
           border-radius:8px;
@@ -280,8 +287,8 @@ function GlobalStyles() {
         .mobile-backdrop {
           display:block;
           position:fixed; inset:0;
-          background:rgba(0,0,0,.55);
-          z-index:199;
+          background:rgba(0,0,0,.5);
+          z-index:1000;
           animation:fadeIn .2s ease;
         }
 
@@ -300,16 +307,30 @@ function GlobalStyles() {
         }
 
         .input-bar { width:100%; }
+
+        /* 48px minimum touch targets on mobile */
+        button, a, select, [role="button"] {
+          min-height:48px; min-width:48px;
+        }
+        .msg-actions button, .msg-actions span,
+        .msg-actions [role="button"] {
+          min-height:36px; min-width:36px;
+        }
+
+        /* Prevent fixed-width elements from causing horizontal overflow */
+        img, video, canvas, table, pre, code {
+          max-width:100% !important;
+        }
       }
 
       /* ── ≤ 480px ─────────────────────────────────────── */
       @media (max-width:480px) {
         .chat-header { min-height:52px; padding:8px 12px !important; }
 
-        /* 44px minimum touch targets */
-        .hamburger   { width:44px; height:44px; }
+        /* Larger touch targets on small screens */
+        .hamburger   { width:48px; height:48px; }
         .touch-target {
-          min-height:44px; min-width:44px;
+          min-height:48px; min-width:48px;
           display:flex; align-items:center; justify-content:center;
         }
 
@@ -317,12 +338,30 @@ function GlobalStyles() {
         .msg-text  { font-size:16px !important; line-height:1.6 !important; }
         .input-bar input { font-size:16px !important; }
 
-        /* Full-width sidebar overlay */
-        .sidebar        { left:-100vw; width:100vw !important; }
-        .sidebar--open  { left:0 !important; }
+        /* Full-width sidebar overlay on very small screens */
+        .sidebar        { width:100vw !important; }
+        .sidebar--open  { transform:translateX(0) !important; }
 
         /* Taller member bottom-sheet */
         .member-panel { max-height:65vh; }
+      }
+
+      /* ── .mobile class (toggled via JS on body) ─────── */
+      body.mobile {
+        max-width:100vw;
+        overflow-x:hidden;
+      }
+      body.mobile button,
+      body.mobile a,
+      body.mobile input,
+      body.mobile select {
+        min-height:48px;
+      }
+      /* Exempt compact inline elements from 48px rule */
+      body.mobile .msg-actions button,
+      body.mobile .msg-actions span,
+      body.mobile .msg-actions a {
+        min-height:auto;
       }
     `}</style>
   );
@@ -538,6 +577,12 @@ function ColorTool({ onInsert }: { onInsert: (v: string) => void }) {
 export default function App() {
   registerThemeSync(api);
   const tzCtx = useTimezone();
+  // Toggle .mobile class on <body> for CSS-only mobile rules
+  const isMobile = useMobile();
+  const [mobileTab, setMobileTab] = useState<MobileTab>('home');
+  useEffect(() => {
+    document.body.classList.toggle('mobile', isMobile);
+  }, [isMobile]);
   const [authed, setAuthed] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!api.userId); // true if we need to try cookie refresh
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null);
@@ -748,6 +793,12 @@ export default function App() {
 
   // ── Mobile nav ───────────────────────────────────────────
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showAppBanner, setShowAppBanner] = useState(() => isMobile && localStorage.getItem('app_banner_dismissed') !== 'true');
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    document.body.classList.toggle('sidebar-open', mobileMenuOpen);
+    return () => { document.body.classList.remove('sidebar-open'); };
+  }, [mobileMenuOpen]);
 
   // ── Session restore: try to refresh access token from HttpOnly cookie ──
   useEffect(() => {
@@ -1341,6 +1392,15 @@ export default function App() {
     try { const raw = await api.getGroupDmMessages(gdm.id); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
   };
   const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setServerEmoji([]); setMobileMenuOpen(false); };
+
+  // Mobile tab handler — maps bottom tabs to existing view system
+  const handleMobileTab = (tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === 'home') goHome();
+    else if (tab === 'chats') { setView('dm'); setMobileMenuOpen(false); }
+    else if (tab === 'servers') { setView('home'); setHomeTab('home'); setMobileMenuOpen(false); }
+    else if (tab === 'settings') setModal('settings');
+  };
   const getName = (uid: string) => userMap[uid] || '?';
 
   // Inline badge shown after a username. badge_type drives the emoji; account_tier
@@ -1923,8 +1983,15 @@ export default function App() {
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg }}>
+    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0 }}>
       <GlobalStyles />
+      {/* Mobile app download banner */}
+      {isMobile && showAppBanner && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1001, height: 40, background: '#00D4AA', display: 'flex', alignItems: 'center', padding: '0 12px' }}>
+          <div onClick={() => { window.location.href = '/download'; }} style={{ flex: 1, cursor: 'pointer', color: '#fff', fontSize: 14, fontWeight: 600 }}>Get the Discreet app</div>
+          <button onClick={(e) => { e.stopPropagation(); localStorage.setItem('app_banner_dismissed', 'true'); setShowAppBanner(false); }} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', lineHeight: 1, minHeight: 'auto' }}>✕</button>
+        </div>
+      )}
       {/* Verify email banner — shown when user skipped verification */}
       {me && !me.email_verified && me.email && !verifyBannerDismissed && _storage.getItem('d_verify_skipped') === '1' && (
         <VerifyEmailBanner
@@ -1934,8 +2001,8 @@ export default function App() {
       )}
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
-      {/* ═══ Server Rail ═══ */}
-      <div className="server-rail" role="navigation" aria-label="Server list" style={{ width: 68, minWidth: 68, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
+      {/* ═══ Server Rail (hidden on mobile — replaced by bottom tabs) ═══ */}
+      <div className="server-rail" role="navigation" aria-label="Server list" style={{ width: 68, minWidth: 68, background: T.bg, display: isMobile ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
         <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" role="button" aria-label="Home" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') goHome(); }} style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
         {/* DM button */}
         <div title="Direct Messages" role="button" aria-label="Direct Messages" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setView('dm'); }} style={{ width: 48, height: 48, borderRadius: view === 'dm' ? 16 : 24, background: view === 'dm' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s', color: view === 'dm' ? '#000' : T.tx, position: 'relative', fontSize: 14 }} onClick={() => { setView('dm'); }}>
@@ -1979,6 +2046,7 @@ export default function App() {
 
       {/* ═══ Sidebar ═══ */}
       <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 230, minWidth: 230, background: T.sf, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.bd}` }}>
+      <SectionBoundary name="sidebar">
         <div onContextMenu={e => {
           if (view === 'server' && curServer) {
             e.preventDefault();
@@ -1993,8 +2061,11 @@ export default function App() {
             }
             setCtxMenu({ x: e.clientX, y: e.clientY, items });
           }
-        }} style={{ padding: '12px 14px', borderBottom: `1px solid ${T.bd}`, fontWeight: 700, fontSize: 15, cursor: view === 'server' ? 'pointer' : 'default' }}>
-          {view === 'server' && curServer ? curServer.name : 'Discreet'}
+        }} style={{ padding: '12px 14px', borderBottom: `1px solid ${T.bd}`, fontWeight: 700, fontSize: 15, cursor: view === 'server' ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>{view === 'server' && curServer ? curServer.name : 'Discreet'}</span>
+          {isMobile && mobileMenuOpen && (
+            <button onClick={(e) => { e.stopPropagation(); setMobileMenuOpen(false); }} aria-label="Close sidebar" style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}><I.X s={18} /></button>
+          )}
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
           {view !== 'server' && (<>
@@ -2160,7 +2231,7 @@ export default function App() {
         </div>
         {/* Voice Panel */}
         {voiceChannel && (
-          <VoicePanel
+          <SectionBoundary name="voice"><VoicePanel
             channelName={voiceChannel.name}
             speaking={vc.speaking}
             muted={vc.muted}
@@ -2179,7 +2250,7 @@ export default function App() {
             onStartGoLive={startGoLive}
             onStopGoLive={stopGoLive}
             onLeave={leaveVoice}
-          />
+          /></SectionBoundary>
         )}
 
         {/* User Bar */}
@@ -2271,10 +2342,10 @@ export default function App() {
           </div>
           <div onClick={() => setModal('settings')} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Settings" role="button" aria-label="Settings" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setModal('settings'); }}><I.Settings /></div>
         </div>
-      </div>
+      </SectionBoundary></div>
 
       {/* ═══ Main Content ═══ */}
-      <div className="chat-main" role="main" aria-label="Chat" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="chat-main" role="main" aria-label="Chat" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: isMobile ? 72 : 0 }}>
         {/* Connection status banner */}
         {wsStatusVisible && wsStatus === 'reconnecting' && (
           <div style={{ padding: '6px 16px', background: '#faa61a', color: '#000', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -2784,7 +2855,7 @@ export default function App() {
 
         {/* ─── Admin Dashboard ─── */}
         {view === 'home' && homeTab === 'admin' && (isAnyOwner || isPlatformDevOrAdmin) && (
-          <AdminDashboard platformUser={platformUser} />
+          <SectionBoundary name="admin"><AdminDashboard platformUser={platformUser} /></SectionBoundary>
         )}
 
         {/* ─── Group DM View ─── */}
@@ -3375,7 +3446,7 @@ export default function App() {
         </Modal>
       )}
       {modal === 'settings' && (
-        <Suspense fallback={<ModalLoadingFallback />}>
+        <SectionBoundary name="settings"><Suspense fallback={<ModalLoadingFallback />}>
           <SettingsModal
             onClose={() => setModal(null)}
             onThemeChange={handleThemeChange}
@@ -3392,7 +3463,7 @@ export default function App() {
               else localStorage.removeItem('d_dev_tier_override');
             }}
           />
-        </Suspense>
+        </Suspense></SectionBoundary>
       )}
       {modal === 'create-channel' && curServer && (
         <Modal title="Create Channel" onClose={() => setModal(null)}>
@@ -4267,6 +4338,9 @@ export default function App() {
       <style>{`.msg-row:hover .msg-actions, div:hover > .msg-actions { display: flex !important; }`}</style>
 
       <BugReportButton />
+
+      {/* Mobile bottom tab bar */}
+      {isMobile && <MobileBottomTabs activeTab={mobileTab} onTabChange={handleMobileTab} />}
     </div>
   );
 }

@@ -865,6 +865,26 @@ pub async fn delete_message(
         .await?;
     }
 
+    // Data retention check: if retention policy is set, messages within the
+    // retention window cannot be deleted by users or moderators.
+    {
+        let settings = crate::discreet_platform_settings::get_platform_settings(&state).await?;
+        if settings.default_retention_days > 0 {
+            let msg_created = sqlx::query_scalar!(
+                "SELECT created_at FROM messages WHERE id = $1",
+                message_id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            let retention_end = msg_created + chrono::Duration::days(settings.default_retention_days as i64);
+            if retention_end > chrono::Utc::now() {
+                return Err(AppError::Forbidden(
+                    "This message is within the mandatory data retention period and cannot be deleted. Contact your administrator.".into(),
+                ));
+            }
+        }
+    }
+
     // Soft-delete: wipe ciphertext but keep the record for ordering/threading.
     // This ensures the server truly forgets the content.
     sqlx::query!(

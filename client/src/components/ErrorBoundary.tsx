@@ -222,6 +222,8 @@ export function MaintenancePage({ message }: { message?: string }) {
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
+  /** Section name for error reporting. Omit for full-page fallback. */
+  name?: string;
 }
 
 interface ErrorBoundaryState {
@@ -243,8 +245,30 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
-    console.error('[ErrorBoundary] Uncaught React error:', error, errorInfo);
+
+    // Always log in development
+    console.error(`[ErrorBoundary:${this.props.name || 'root'}] Uncaught React error:`, error, errorInfo);
+
+    // Report to server in production
+    if (import.meta.env.PROD) {
+      const report = {
+        component: this.props.name || 'root',
+        error_message: error.message,
+        stack: errorInfo.componentStack || error.stack || '',
+        timestamp: new Date().toISOString(),
+        browser: navigator.userAgent,
+      };
+      fetch(`${window.location.origin}/api/v1/errors/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(report),
+      }).catch(() => { /* best effort */ });
+    }
   }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
 
   handleReload = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
@@ -261,12 +285,44 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     }
 
     const { error, errorInfo, showBugReport } = this.state;
-
     const errorName = error?.name || 'Error';
     const errorMessage = error?.message || 'An unexpected error occurred';
     const stack = error?.stack || '';
     const componentStack = errorInfo?.componentStack || '';
 
+    // ── Section-level inline fallback (when name prop is set) ──
+    if (this.props.name) {
+      return (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flex: 1, padding: 24, minHeight: 120,
+        }}>
+          <div style={{
+            maxWidth: 400, width: '100%', padding: 24,
+            background: 'var(--bg-card, #0f1119)', borderRadius: 12,
+            border: '1px solid var(--border-color, #181c2a)',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>⚠️</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary, #dde0ea)', marginBottom: 8 }}>
+              Something went wrong
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted, #5a6080)', lineHeight: 1.6, marginBottom: 16 }}>
+              This section encountered an error but the rest of the app is still working.
+            </div>
+            <button onClick={this.handleRetry} style={{
+              padding: '8px 20px', borderRadius: 8, border: 'none',
+              background: 'var(--accent, #00d4aa)', color: '#000',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Full-page fallback (top-level ErrorBoundary without name) ──
     const details = [
       `${errorName}: ${errorMessage}`,
       stack && `\nStack trace:\n${stack}`,
@@ -286,7 +342,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
           onReport={this.handleReport}
         />
 
-        {/* Inline bug report form (since BugReportButton may not be mounted) */}
         {showBugReport && (
           <div style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',

@@ -12,6 +12,7 @@
 //                                               random passwords shown once (MANAGE_USERS).
 //   POST /api/v1/admin/users/:id/ban          — Ban user account, optionally IP ban (MANAGE_USERS).
 //   DELETE /api/v1/admin/users/:id/ban        — Unban user account, remove IP bans (MANAGE_USERS).
+//   POST /api/v1/admin/users/:id/wipe         — Wipe all sessions for a user (MANAGE_USERS).
 //
 // Guards:
 //   require_staff_role           — In-memory check: platform_role must be admin or dev.
@@ -436,6 +437,18 @@ pub async fn set_user_role(
         account_tier  = ?req.account_tier,
         "Admin updated user role",
     );
+
+    // Alert when a user is promoted to admin or dev
+    if let Some(ref role) = row.platform_role {
+        if role == "admin" || role == "dev" {
+            crate::discreet_email_handlers::send_admin_alert(
+                &state,
+                "New Administrator Created",
+                &format!("User {} ({}) was assigned the '{}' platform role by admin {}.", row.username, target_id, role, caller.user_id),
+                &[],
+            ).await;
+        }
+    }
 
     Ok(Json(json!({
         "id":             row.id,
@@ -1388,6 +1401,13 @@ pub async fn record_failed_login_and_check_triggers(
             },
         ).await;
 
+        crate::discreet_email_handlers::send_admin_alert(
+            state,
+            "Platform Lockdown Activated",
+            &format!("{brute_count} failed login attempts in {} seconds triggered readonly lockdown.", BRUTE_WINDOW_SECS as i64),
+            &[ip.to_string()],
+        ).await;
+
         return;
     }
 
@@ -1464,6 +1484,169 @@ pub async fn record_failed_login_and_check_triggers(
                     reason: Some("Distributed login raid threshold exceeded"),
                 },
             ).await;
+
+            crate::discreet_email_handlers::send_admin_alert(
+                state,
+                "Platform Lockdown Activated",
+                &format!("{raid_count} failed logins from {distinct_ips} distinct IPs triggered registration lockdown."),
+                &ip_list,
+            ).await;
         }
     }
+
+    // ── Per-IP flood check (50+ failures in 5 min) ──
+    let ip_flood_key = format!("login_flood:{ip}");
+    let flood_count: i64 = redis::cmd("INCR")
+        .arg(&ip_flood_key)
+        .query_async::<Option<i64>>(&mut redis_conn)
+        .await
+        .unwrap_or(Some(1))
+        .unwrap_or(1);
+    if flood_count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&ip_flood_key)
+            .arg(300_i64) // 5 minutes
+            .query_async(&mut redis_conn)
+            .await;
+    }
+    if flood_count == 50 {
+        crate::discreet_email_handlers::send_admin_alert(
+            state,
+            &format!("Login Flood Detected (50+ failures from {ip})"),
+            &format!("{flood_count} failed login attempts from IP {ip} in the last 5 minutes."),
+            &[ip.to_string()],
+        ).await;
+    }
+}
+
+// ─── POST /api/v1/admin/users/:user_id/wipe ──────────────────────────────
+
+/// Request body for remote session wipe.
+#[derive(Debug, Deserialize)]
+pub struct WipeSessionsRequest {
+    pub reason: String,
+}
+
+/// Wipe all active sessions for a user, forcing immediate disconnect.
+///
+/// Requires admin platform_role + MANAGE_USERS permission.
+/// Revokes all sessions in Redis (30-day TTL) and broadcasts a
+/// force_disconnect WebSocket event.
+pub async fn wipe_user_sessions(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<WipeSessionsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Validate reason
+    let reason = req.reason.trim().to_string();
+    if reason.len() < 5 {
+        return Err(AppError::BadRequest("Reason must be at least 5 characters".into()));
+    }
+    if reason.len() > 500 {
+        return Err(AppError::BadRequest("Reason must be 500 characters or fewer".into()));
+    }
+
+    // Prevent self-wipe
+    if target_id == caller.user_id {
+        return Err(AppError::BadRequest("Cannot wipe your own sessions".into()));
+    }
+
+    // Verify target exists
+    sqlx::query!(
+        "SELECT id FROM users WHERE id = $1",
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // 1) Fetch all active session IDs for the target user
+    let session_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM sessions WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let wiped_count = session_ids.len();
+
+    // 2) Revoke all sessions in the database
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // 3) Add each session ID to Redis with 30-day TTL so in-flight JWTs are rejected
+    let mut redis_conn = state.redis.clone();
+    for sid in &session_ids {
+        let key = format!("revoked_sessions:{sid}");
+        let set_result: Result<String, _> = redis::cmd("SET")
+            .arg(&key)
+            .arg("1")
+            .arg("EX")
+            .arg(2_592_000_i64) // 30 days
+            .query_async(&mut redis_conn)
+            .await;
+        if let Err(e) = set_result {
+            tracing::debug!("Failed to SET revoked session {sid}: {e}");
+        }
+    }
+
+    // 4) Broadcast force_disconnect to all servers the user is in
+    let server_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT server_id FROM server_members WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for sid in &server_ids {
+        state.ws_broadcast(
+            *sid,
+            json!({
+                "type": "force_disconnect",
+                "user_id": target_id,
+                "reason": "Session revoked by administrator",
+            }),
+        ).await;
+    }
+
+    // 5) Invalidate auth cache
+    crate::discreet_auth::invalidate_user_cache(&state, target_id).await;
+
+    // 6) Record in audit log
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id: Uuid::nil(),
+            actor_id: caller.user_id,
+            action: "SESSION_WIPE",
+            target_type: Some("user"),
+            target_id: Some(target_id),
+            changes: Some(json!({
+                "reason": reason,
+                "sessions_revoked": wiped_count,
+            })),
+            reason: Some(&reason),
+        },
+    ).await;
+
+    tracing::info!(
+        admin = %caller.user_id,
+        target = %target_id,
+        sessions = wiped_count,
+        "Remote session wipe executed"
+    );
+
+    Ok(Json(json!({
+        "wiped_sessions": wiped_count,
+        "user_id": target_id,
+    })))
 }

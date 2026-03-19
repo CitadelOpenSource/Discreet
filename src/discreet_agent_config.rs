@@ -150,12 +150,12 @@ fn default_model(provider: &ProviderType) -> &'static str {
 /// other rows remain secure. The master secret provides the entropy.
 /// HKDF provides proper domain separation and is the standard KDF for
 /// deriving multiple keys from a single master secret.
-fn derive_agent_key(master_secret: &[u8], agent_id: &Uuid) -> [u8; 32] {
+fn derive_agent_key(master_secret: &[u8], agent_id: &Uuid) -> Result<[u8; 32], AgentError> {
     let hk = Hkdf::<Sha256>::new(Some(b"discreet-agent-v1"), master_secret);
     let mut key = [0u8; 32];
     hk.expand(agent_id.as_bytes(), &mut key)
-        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
-    key
+        .map_err(|e| AgentError::Internal(format!("HKDF expand failed: {e}")))?;
+    Ok(key)
 }
 
 /// Derive a 32-byte key commitment tag for AES-GCM ciphertexts.
@@ -163,13 +163,13 @@ fn derive_agent_key(master_secret: &[u8], agent_id: &Uuid) -> [u8; 32] {
 /// Uses the same HKDF as `derive_agent_key` but with info suffix `:commit`.
 /// The commitment is prepended to ciphertext and verified before decryption,
 /// providing key-committing AEAD (prevents key multi-collision attacks).
-fn derive_agent_commitment(master_secret: &[u8], agent_id: &Uuid) -> [u8; 32] {
+fn derive_agent_commitment(master_secret: &[u8], agent_id: &Uuid) -> Result<[u8; 32], AgentError> {
     let hk = Hkdf::<Sha256>::new(Some(b"discreet-agent-v1"), master_secret);
     let mut commit = [0u8; 32];
     let info = [agent_id.as_bytes(), b":commit".as_slice()].concat();
     hk.expand(&info, &mut commit)
-        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
-    commit
+        .map_err(|e| AgentError::Internal(format!("HKDF expand failed: {e}")))?;
+    Ok(commit)
 }
 
 /// Encrypt an API key for storage in the database.
@@ -183,8 +183,8 @@ pub fn encrypt_api_key(
     master_secret: &[u8],
     agent_id: &Uuid,
 ) -> Result<(Vec<u8>, Vec<u8>), AgentError> {
-    let aes_key = derive_agent_key(master_secret, agent_id);
-    let commitment = derive_agent_commitment(master_secret, agent_id);
+    let aes_key = derive_agent_key(master_secret, agent_id)?;
+    let commitment = derive_agent_commitment(master_secret, agent_id)?;
     let cipher = Aes256Gcm::new_from_slice(&aes_key)
         .map_err(|e| AgentError::Internal(format!("AES key init failed: {e}")))?;
 
@@ -232,7 +232,7 @@ pub fn decrypt_api_key(
 
     // Extract and verify key commitment (constant-time comparison)
     let (stored_commit, actual_ciphertext) = ciphertext.split_at(32);
-    let expected_commit = derive_agent_commitment(master_secret, agent_id);
+    let expected_commit = derive_agent_commitment(master_secret, agent_id)?;
     let mismatch = stored_commit
         .iter()
         .zip(expected_commit.iter())
@@ -243,7 +243,7 @@ pub fn decrypt_api_key(
         ));
     }
 
-    let aes_key = derive_agent_key(master_secret, agent_id);
+    let aes_key = derive_agent_key(master_secret, agent_id)?;
     let cipher = Aes256Gcm::new_from_slice(&aes_key)
         .map_err(|e| AgentError::Internal(format!("AES key init failed: {e}")))?;
 
@@ -607,8 +607,8 @@ mod tests {
         let agent1 = Uuid::new_v4();
         let agent2 = Uuid::new_v4();
 
-        let key1 = derive_agent_key(secret, &agent1);
-        let key2 = derive_agent_key(secret, &agent2);
+        let key1 = derive_agent_key(secret, &agent1).unwrap();
+        let key2 = derive_agent_key(secret, &agent2).unwrap();
 
         assert_ne!(key1, key2, "Different agents must derive different keys");
     }
@@ -618,8 +618,8 @@ mod tests {
         let secret = b"test-master-secret-32-bytes-long!";
         let agent = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
-        let key1 = derive_agent_key(secret, &agent);
-        let key2 = derive_agent_key(secret, &agent);
+        let key1 = derive_agent_key(secret, &agent).unwrap();
+        let key2 = derive_agent_key(secret, &agent).unwrap();
 
         assert_eq!(key1, key2, "Same inputs must produce same key");
     }

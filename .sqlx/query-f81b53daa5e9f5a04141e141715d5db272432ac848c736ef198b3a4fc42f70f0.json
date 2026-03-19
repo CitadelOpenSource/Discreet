@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.created_at, u.username as actor_username,\n                          a.action, a.target_type, a.target_id, a.chain_hash\n                   FROM audit_log a\n                   LEFT JOIN users u ON u.id = a.actor_id\n                   ORDER BY a.created_at DESC\n                   LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "target_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "chain_hash",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "f81b53daa5e9f5a04141e141715d5db272432ac848c736ef198b3a4fc42f70f0"
+}

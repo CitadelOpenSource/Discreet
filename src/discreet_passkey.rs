@@ -353,7 +353,7 @@ pub async fn login_finish(
         "PASSKEY_LOGIN_SUCCESS"
     );
 
-    Ok(auth_response_with_cookie(
+    auth_response_with_cookie(
         AuthResponse {
             user: UserInfo {
                 id: user.id,
@@ -371,5 +371,5 @@ pub async fn login_finish(
         &refresh_token,
         state.config.refresh_expiry_secs,
         StatusCode::OK,
-    ))
+    )
 }

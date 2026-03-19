@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id, e.user_id, e.source, e.component, e.error_message,\n                  e.stack_trace, e.browser, e.severity, e.resolved,\n                  e.resolved_by, e.resolved_at, e.created_at,\n                  u.email as user_email\n           FROM error_reports e\n           LEFT JOIN users u ON u.id = e.user_id\n           WHERE ($1::text IS NULL OR e.source = $1)\n             AND ($2::text IS NULL OR e.severity = $2)\n             AND ($3::bool IS NULL OR e.resolved = $3)\n             AND ($4::timestamptz IS NULL OR e.created_at >= $4)\n             AND ($5::timestamptz IS NULL OR e.created_at <= $5)\n           ORDER BY e.created_at DESC\n           LIMIT $6 OFFSET $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "source",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "component",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "stack_trace",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "browser",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "severity",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "resolved",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "user_email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "961b96cfb073a3adf6d88878a4394e9841e7002fc543fa0892cd90c2ef8ee3eb"
+}

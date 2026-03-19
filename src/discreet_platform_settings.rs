@@ -51,6 +51,8 @@ pub struct PlatformSettings {
     /// Whether disappearing messages (TTL) feature is enabled platform-wide.
     /// When false, TTL PUT endpoints return 403 and background cleanup skips.
     pub disappearing_messages_enabled: bool,
+    /// Email address to receive admin security alerts. Empty = disabled.
+    pub admin_alert_email: String,
 }
 
 impl Default for PlatformSettings {
@@ -69,6 +71,7 @@ impl Default for PlatformSettings {
             global_disappearing_default: "off".into(),
             official_server_id: String::new(),
             disappearing_messages_enabled: true,
+            admin_alert_email: String::new(),
         }
     }
 }
@@ -142,6 +145,9 @@ pub async fn get_platform_settings(state: &AppState) -> Result<PlatformSettings,
             "disappearing_messages_enabled" => {
                 settings.disappearing_messages_enabled = v.as_bool().unwrap_or(true);
             }
+            "admin_alert_email" => {
+                settings.admin_alert_email = v.as_str().unwrap_or("").to_string();
+            }
             _ => {}
         }
     }
@@ -201,6 +207,8 @@ pub struct UpdateSettingsRequest {
     pub official_server_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disappearing_messages_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admin_alert_email: Option<String>,
 }
 
 pub async fn update_settings(
@@ -225,6 +233,7 @@ pub async fn update_settings(
         req.global_disappearing_default.as_ref().map(|v| ("global_disappearing_default", json!(v))),
         req.official_server_id.as_ref().map(|v| ("official_server_id", json!(v))),
         req.disappearing_messages_enabled.map(|v| ("disappearing_messages_enabled", json!(v))),
+        req.admin_alert_email.as_ref().map(|v| ("admin_alert_email", json!(v))),
     ]
     .into_iter()
     .flatten()

@@ -75,6 +75,9 @@ openmls_rust_crypto = { version = "0.5.1", optional = true }
 # ── Archive export ────────────────────────────────────────
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
+# ── PDF generation ────────────────────────────────────────
+printpdf = "0.7"
+
 # ── QR code generation ────────────────────────────────────
 qrcode = "0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }

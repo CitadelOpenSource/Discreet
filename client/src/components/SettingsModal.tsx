@@ -172,7 +172,7 @@ function ReauthModal({ onSuccess, onCancel }: ReauthModalProps) {
           onKeyDown={e => { if (e.key === 'Enter') handleVerify(); }}
           placeholder="Your password"
           autoFocus
-          autoComplete="current-password"
+          autoComplete="current-password" name="password" aria-label="Password"
           style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${err ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 6, color: T.tx, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }}
         />
         {err && <div style={{ fontSize: 11, color: T.err, marginBottom: 8 }}>{err}</div>}
@@ -1093,13 +1093,13 @@ function ChangePassword() {
             type="password" placeholder="Current password" value={currentPw}
             onChange={e => setCurrentPw(e.target.value)}
             style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 6, outline: 'none', boxSizing: 'border-box' }}
-            autoFocus autoComplete="current-password" />
+            autoFocus autoComplete="current-password" name="current-password" aria-label="Current password" />
           <input
             type="password" placeholder="New password (min 12 characters)" value={newPw}
             onChange={e => setNewPw(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
             style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginBottom: 8, outline: 'none', boxSizing: 'border-box' }}
-            autoComplete="new-password" />
+            autoComplete="new-password" name="new-password" aria-label="New password" />
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleSubmit} disabled={saving} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>{saving ? 'Saving...' : 'Update Password'}</button>
             <button onClick={() => { setEditing(false); setCurrentPw(''); setNewPw(''); setErr(''); setReauthToken(null); }} className="pill-btn" style={{ background: T.sf, color: T.mt, border: `1px solid ${T.bd}`, padding: '6px 14px', fontSize: 11 }}>Cancel</button>

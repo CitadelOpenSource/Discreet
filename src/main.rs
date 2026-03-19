@@ -40,6 +40,7 @@ use discreet_server::discreet_admin_invite_handlers;
 use discreet_server::discreet_agent_handlers;
 use discreet_server::discreet_announcement_handlers;
 use discreet_server::discreet_audit;
+use discreet_server::discreet_audit_export;
 use discreet_server::discreet_automod;
 use discreet_server::discreet_auth_handlers;
 use discreet_server::discreet_ban_handlers;
@@ -53,6 +54,7 @@ use discreet_server::discreet_discovery_handlers;
 use discreet_server::discreet_dm_handlers;
 use discreet_server::discreet_mls_handlers;
 use discreet_server::discreet_email_handlers;
+use discreet_server::discreet_error_telemetry;
 use discreet_server::discreet_export_handlers;
 use discreet_server::discreet_emoji_handlers;
 use discreet_server::discreet_event_handlers;
@@ -231,7 +233,7 @@ async fn request_id_middleware(
     let mut resp = next.run(req).instrument(span).await;
     resp.headers_mut().insert(
         axum::http::HeaderName::from_static("x-request-id"),
-        axum::http::HeaderValue::from_str(&rid).unwrap(),
+        axum::http::HeaderValue::from_str(&rid).unwrap_or_else(|_| axum::http::HeaderValue::from_static("unknown")),
     );
     resp
 }
@@ -772,18 +774,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/generate-dev-accounts", axum::routing::post(discreet_platform_admin_handlers::generate_dev_accounts))
         .route("/admin/users/:user_id/ban", axum::routing::post(discreet_platform_admin_handlers::ban_user)
             .delete(discreet_platform_admin_handlers::unban_user))
+        .route("/admin/users/:user_id/wipe", axum::routing::post(discreet_platform_admin_handlers::wipe_user_sessions))
         // ── Lockdown ──
         .route("/admin/lockdown", axum::routing::post(discreet_platform_admin_handlers::set_lockdown)
             .get(discreet_platform_admin_handlers::get_lockdown))
         // ── Bug Reports ──
         .route("/bug-reports", axum::routing::post(discreet_bug_report_handlers::submit_bug_report))
+        .route("/errors/report", axum::routing::post(discreet_error_telemetry::report_error))
         .route("/admin/bug-reports", axum::routing::get(discreet_bug_report_handlers::list_bug_reports))
+        .route("/admin/errors", axum::routing::get(discreet_error_telemetry::list_errors))
+        .route("/admin/errors/:error_id/resolve", axum::routing::patch(discreet_error_telemetry::resolve_error))
+        .route("/admin/errors/bulk-resolve", axum::routing::post(discreet_error_telemetry::bulk_resolve_errors))
         // ── Platform settings (kill switches) ──
         // Content reports
         .route("/reports", axum::routing::post(discreet_report_handlers::create_report))
         .route("/admin/reports", axum::routing::get(discreet_report_handlers::list_reports))
         .route("/admin/reports/:report_id", axum::routing::patch(discreet_report_handlers::resolve_report))
         .route("/admin/export", axum::routing::post(discreet_platform_admin_handlers::compliance_export))
+        .route("/admin/audit/export", axum::routing::get(discreet_audit_export::export_audit_log))
         .route("/admin/settings", axum::routing::get(discreet_platform_settings::get_settings)
             .put(discreet_platform_settings::update_settings))
         // Admin invite codes

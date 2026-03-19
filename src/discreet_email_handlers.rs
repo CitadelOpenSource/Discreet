@@ -539,3 +539,88 @@ pub async fn send_lockout_alert_email(state: &AppState, to: &str, ip: &str, logi
     let html = build_branded_email("Account Locked", &body);
     send_html_email(state, to, "Security Alert: Your Discreet account has been locked", &html).await
 }
+
+/// Send an admin security alert email. Rate-limited to 1 per event_type per 10 minutes.
+///
+/// Checks `admin_alert_email` in platform settings. If empty, returns immediately.
+/// Checks Redis `alert_ratelimit:{event_type}`. If set, returns immediately.
+pub async fn send_admin_alert(
+    state: &AppState,
+    event_type: &str,
+    details: &str,
+    source_ips: &[String],
+) {
+    // Load admin alert email from settings
+    let settings = match crate::discreet_platform_settings::get_platform_settings(state).await {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    if settings.admin_alert_email.is_empty() {
+        return;
+    }
+
+    // Rate limit: 1 alert per event_type per 10 minutes
+    let rate_key = format!("alert_ratelimit:{event_type}");
+    let mut redis_conn = state.redis.clone();
+
+    let exists: bool = redis::cmd("EXISTS")
+        .arg(&rate_key)
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(false);
+
+    if exists {
+        return;
+    }
+
+    // Set rate limit key with 600s TTL
+    let set_result: Result<String, _> = redis::cmd("SET")
+        .arg(&rate_key)
+        .arg("1")
+        .arg("EX")
+        .arg(600_i64)
+        .query_async(&mut redis_conn)
+        .await;
+    if let Err(e) = set_result {
+        tracing::debug!("admin alert rate limit SET failed: {e}");
+    }
+
+    // Build IP list HTML
+    let ip_html = if source_ips.is_empty() {
+        "<em>None</em>".to_string()
+    } else {
+        source_ips.iter()
+            .map(|ip| {
+                let esc = ip.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                format!("<code style=\"font-family:'Courier New',monospace;font-size:13px;color:#00D4AA;\">{esc}</code>")
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let details_esc = details.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let event_esc = event_type.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+
+    let body = format!(
+        r#"<table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+<tr><td style="padding:8px 0;font-size:13px;color:#8892a4;vertical-align:top;width:100px;">Event Type</td><td style="padding:8px 0;font-size:14px;color:#e2e8f0;font-weight:600;">{event_type}</td></tr>
+<tr><td style="padding:8px 0;font-size:13px;color:#8892a4;vertical-align:top;">Details</td><td style="padding:8px 0;font-size:14px;color:#e2e8f0;">{details}</td></tr>
+<tr><td style="padding:8px 0;font-size:13px;color:#8892a4;vertical-align:top;">Timestamp</td><td style="padding:8px 0;font-size:14px;color:#e2e8f0;">{timestamp}</td></tr>
+<tr><td style="padding:8px 0;font-size:13px;color:#8892a4;vertical-align:top;">Source IPs</td><td style="padding:8px 0;font-size:14px;color:#e2e8f0;">{ip_html}</td></tr>
+</table>
+<p style="font-size:12px;color:#8892a4;line-height:1.6;margin:0;">This is an automated alert from your Discreet instance.</p>"#,
+        event_type = event_esc,
+        details = details_esc,
+        timestamp = timestamp,
+        ip_html = ip_html,
+    );
+
+    let title = format!("Security Alert: {event_type}");
+    let html = build_branded_email(&title, &body);
+    let subject = format!("[Discreet Security] {event_type}");
+
+    send_html_email(state, &settings.admin_alert_email, &subject, &html).await;
+    tracing::info!(event_type = event_type, "Admin security alert sent");
+}

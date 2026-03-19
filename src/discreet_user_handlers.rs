@@ -562,7 +562,9 @@ pub async fn export_my_data(
             .find(|e| e["server_id"] == row.server_id.to_string())
         {
             if let Some(role_name) = row.role_name {
-                entry["roles"].as_array_mut().unwrap().push(role_name.into());
+                if let Some(arr) = entry["roles"].as_array_mut() {
+                    arr.push(role_name.into());
+                }
             }
         } else {
             let roles: Vec<serde_json::Value> = row

@@ -104,7 +104,7 @@ pub async fn start_stream(
     // Generate stream key using HKDF derivation.
     // PATENT CLAIM 2: stream_key = HKDF-SHA256(salt="discreet-stream-v1", ikm=user_id, info=user_id:channel_id)
     let stream_id = Uuid::new_v4();
-    let stream_key = derive_stream_key(auth.user_id, channel_id);
+    let stream_key = derive_stream_key(auth.user_id, channel_id)?;
     let quality = req.quality.unwrap_or_else(|| "1080p".into());
 
     // Broadcast to channel that a stream is starting.
@@ -217,13 +217,13 @@ pub async fn stream_status(
 /// Uses HKDF-SHA256 for proper domain-separated key derivation.
 /// The stream key authenticates RTMP connections without exposing the JWT.
 /// Output: 64 hex chars (256 bits) — full-strength key matching our standard.
-fn derive_stream_key(user_id: Uuid, channel_id: Uuid) -> String {
+fn derive_stream_key(user_id: Uuid, channel_id: Uuid) -> Result<String, crate::discreet_error::AppError> {
     use hkdf::Hkdf;
     use sha2::Sha256;
     let info = format!("{}:{}", user_id, channel_id);
     let hk = Hkdf::<Sha256>::new(Some(b"discreet-stream-v1"), user_id.as_bytes());
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm)
-        .expect("HKDF expand failed: 32 bytes is within SHA-256 output limit");
-    hex::encode(okm)
+        .map_err(|e| crate::discreet_error::AppError::Internal(format!("HKDF expand failed: {e}")))?;
+    Ok(hex::encode(okm))
 }

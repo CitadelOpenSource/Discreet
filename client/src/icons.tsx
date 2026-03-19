@@ -22,6 +22,8 @@ import {
   Bug as LBug,
   Bookmark as LBookmark,
   Flag as LFlag,
+  MessageSquare as LMessageSquare,
+  LayoutGrid as LLayoutGrid,
 } from 'lucide-react';
 
 // Backward-compatible wrapper: accepts `s` (size) prop
@@ -79,6 +81,8 @@ export const ShieldAlert = w(LShieldAlert);
 export const BugIcon = w(LBug);
 export const Bookmark = w(LBookmark);
 export const Flag = w(LFlag);
+export const MessageSquare = w(LMessageSquare);
+export const Grid = w(LLayoutGrid);
 
 // Bundle export (same as before — import { I } from './icons')
 export const I = {
@@ -87,4 +91,5 @@ export const I = {
   Shield, Clock, Download, Eye, EyeOff, Zap, Bot, Reply, Sliders, At, Bell, BellOff,
   Pin, Check, Vol, Camera, Monitor, Headphones, PhoneOff, UserPlus,
   Link, Globe, ChevD, ChevR, Star, ShieldCheck, ShieldAlert, BugIcon, Bookmark, Flag,
+  MessageSquare, Grid,
 };
