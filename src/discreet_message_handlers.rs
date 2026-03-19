@@ -641,6 +641,201 @@ pub async fn send_message(
         }
     }
 
+    // ── Agent configs auto-response (from agent_configs table) ──
+    // Check for enabled agents in this server and trigger if mentioned.
+    // Rate limited to 1 response per 5 seconds per channel to prevent loops.
+    {
+        let agent_configs = sqlx::query!(
+            r#"SELECT id, name, provider_type, model, endpoint_url, system_prompt,
+                      max_tokens, temperature, encrypted_api_key IS NOT NULL as "has_key!"
+               FROM agent_configs
+               WHERE server_id = $1 AND enabled = TRUE"#,
+            channel.server_id,
+        )
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+        for ac in agent_configs {
+            // Simple mention check: @agent_name in the ciphertext (base64-encoded)
+            let name_lower = ac.name.to_lowercase();
+            let ct_lower = req.content_ciphertext.to_lowercase();
+            let mentioned = ct_lower.contains(&format!("@{name_lower}"))
+                || ct_lower.contains(&name_lower);
+
+            if !mentioned {
+                continue;
+            }
+
+            // Rate limit: 1 agent response per 5 seconds per channel
+            let agent_rate_key = format!("agent_resp:{}:{}", ac.id, channel_id);
+            let mut agent_redis = state.redis.clone();
+            let already_responding: bool = redis::cmd("EXISTS")
+                .arg(&agent_rate_key)
+                .query_async(&mut agent_redis)
+                .await
+                .unwrap_or(false);
+
+            if already_responding {
+                continue;
+            }
+
+            // Set rate limit key (5-second TTL)
+            let _: Result<String, _> = redis::cmd("SET")
+                .arg(&agent_rate_key)
+                .arg("1")
+                .arg("EX")
+                .arg(5_i64)
+                .query_async(&mut agent_redis)
+                .await;
+
+            let state_task = state.clone();
+            let task_channel = channel_id;
+            let server_id = channel.server_id;
+            let agent_id = ac.id;
+            let agent_name = ac.name.clone();
+            let provider_type_str = ac.provider_type.clone();
+            let model_str = ac.model.clone().unwrap_or_default();
+            let endpoint_url = ac.endpoint_url.clone().unwrap_or_default();
+            let system_prompt = ac.system_prompt.clone()
+                .unwrap_or_else(|| "You are a helpful assistant.".into());
+            let max_tokens = ac.max_tokens.unwrap_or(1000) as u32;
+            let temperature = ac.temperature.unwrap_or(0.7);
+
+            tokio::spawn(async move {
+                // 1-second delay to feel natural
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                // Build context from recent messages
+                let mut context = build_context(
+                    &state_task.db,
+                    task_channel,
+                    agent_id, // use agent config id as pseudo user_id for role detection
+                    20,
+                    false,
+                    state_task.config.agent_key_secret.as_bytes(),
+                ).await.unwrap_or_default();
+
+                // Resolve provider
+                let provider_type: crate::discreet_agent_provider::ProviderType = provider_type_str
+                    .parse()
+                    .unwrap_or(crate::discreet_agent_provider::ProviderType::OpenAi);
+                let provider = create_provider(&provider_type);
+
+                // Build model config
+                // Decrypt API key from agent_configs if available
+                let api_key: Option<String> = {
+                    match sqlx::query_scalar!(
+                        "SELECT encrypted_api_key FROM agent_configs WHERE id = $1",
+                        agent_id,
+                    )
+                    .fetch_optional(&state_task.db)
+                    .await
+                    {
+                        Ok(Some(Some(blob))) if blob.len() > 12 => {
+                            crate::discreet_agent_config::decrypt_api_key(
+                                &blob[12..], &blob[..12],
+                                state_task.config.agent_key_secret.as_bytes(), &agent_id,
+                            ).ok()
+                        }
+                        _ => None,
+                    }
+                };
+
+                let model_config = crate::discreet_agent_provider::AgentModelConfig {
+                    model_id: model_str,
+                    api_key,
+                    endpoint_url: if endpoint_url.is_empty() {
+                        match provider_type {
+                            crate::discreet_agent_provider::ProviderType::Anthropic => "https://api.anthropic.com".into(),
+                            crate::discreet_agent_provider::ProviderType::Ollama => "http://localhost:11434".into(),
+                            crate::discreet_agent_provider::ProviderType::OpenJarvis => "http://localhost:8000".into(),
+                            _ => "https://api.openai.com".into(),
+                        }
+                    } else {
+                        endpoint_url
+                    },
+                    max_tokens,
+                    temperature,
+                    timeout_secs: 30,
+                    mcp_tool_urls: vec![],
+                };
+
+                // Call LLM (with tool use loop — max 1 tool round-trip)
+                let mut reply_text = match provider.complete(&system_prompt, context.clone(), &model_config).await {
+                    Ok(result) => result.text,
+                    Err(e) => {
+                        tracing::warn!(
+                            agent_id = %agent_id,
+                            agent_name = %agent_name,
+                            error = %e,
+                            "Agent config LLM call failed"
+                        );
+                        crate::discreet_error_telemetry::log_server_error(
+                            &state_task.db,
+                            &format!("agent:{agent_name}"),
+                            &format!("LLM provider error: {e}"),
+                            None,
+                            "error",
+                        ).await;
+                        return;
+                    }
+                };
+
+                // Check for tool use in the response — execute and re-call LLM
+                if let Some(_tool_result) = crate::discreet_agent_tools::process_tool_use(
+                    &state_task.db,
+                    &reply_text,
+                    &mut context,
+                    task_channel,
+                    server_id,
+                    agent_id,
+                ).await {
+                    // Re-call LLM with tool result appended to context
+                    match provider.complete(&system_prompt, context, &model_config).await {
+                        Ok(result) => { reply_text = result.text; }
+                        Err(e) => {
+                            tracing::warn!(agent_id = %agent_id, error = %e, "LLM re-call after tool use failed");
+                            // Use tool acknowledgment as fallback reply
+                            reply_text = format!("I used a tool but couldn't formulate a final response. Tool: {}", _tool_result.tool_name);
+                        }
+                    }
+                }
+
+                // Store reply as a message (plaintext, epoch 0)
+                let reply_id = Uuid::new_v4();
+                let content_bytes = reply_text.as_bytes().to_vec();
+
+                if let Err(e) = sqlx::query!(
+                    "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch)
+                     VALUES ($1, $2, $3, $4, 0)",
+                    reply_id,
+                    task_channel,
+                    agent_id,
+                    &content_bytes,
+                ).execute(&state_task.db).await {
+                    tracing::error!(agent_id = %agent_id, error = %e, "Failed to insert agent reply");
+                    return;
+                }
+
+                // Broadcast
+                state_task.ws_broadcast(server_id, serde_json::json!({
+                    "type": "message_create",
+                    "channel_id": task_channel,
+                    "message_id": reply_id,
+                    "author_id": agent_id,
+                })).await;
+
+                tracing::info!(
+                    agent_id = %agent_id,
+                    agent_name = %agent_name,
+                    channel_id = %task_channel,
+                    "Agent config auto-response sent"
+                );
+            });
+        }
+    }
+
     Ok((
         StatusCode::CREATED,
         Json(MessageInfo {

@@ -25,7 +25,7 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::discreet_agent_episodic_memory::{build_memory_context, load_memory_store};
@@ -123,12 +123,22 @@ pub async fn build_context(
             continue;
         }
 
-        // Decrypt content (currently plaintext passthrough for bot messages)
-        let content = decrypt_message_content(&msg.content_ciphertext, msg.mls_epoch)?;
+        // Decrypt content using channel HKDF key
+        let content = match decrypt_message_content(&msg.content_ciphertext, msg.mls_epoch, channel_id) {
+            Some(text) if !text.is_empty() => text,
+            Some(_) => continue, // empty after decryption
+            None => {
+                debug!(
+                    message_id = %msg.id,
+                    mls_epoch = msg.mls_epoch,
+                    "Skipping message — decryption failed (epoch mismatch)"
+                );
+                continue;
+            }
+        };
 
-        if content.is_empty() {
-            continue;
-        }
+        // Strip UUIDs and internal metadata
+        let content = strip_internal_metadata(&content);
 
         // Truncate overly long messages
         let content = if content.len() > MAX_MESSAGE_CHARS {
@@ -156,19 +166,18 @@ pub async fn build_context(
             "user".to_string()
         };
 
-        // Anonymize user identity — replace real names with "User 1", "User 2"
-        // The LLM should not know real usernames (privacy protection)
+        // Prefix user messages with sender name in brackets
         let final_content = if msg.author_id == bot_user_id {
             content
         } else {
-            let anon_name = user_map
+            let sender_name = user_map
                 .entry(msg.author_id)
                 .or_insert_with(|| {
                     user_counter += 1;
-                    format!("User {user_counter}")
+                    msg.author_display_name.clone().unwrap_or_else(|| format!("User {user_counter}"))
                 })
                 .clone();
-            format!("[{anon_name}]: {content}")
+            format!("[{sender_name}]: {content}")
         };
 
         context.push(AgentMessage {
@@ -205,10 +214,36 @@ pub async fn build_context(
         _ => {}
     }
 
+    // Token-based trimming: if total estimated tokens exceed 80% of max context,
+    // trim oldest messages first (preserve the most recent conversation).
+    let max_tokens = (DEFAULT_MAX_CONTEXT_TOKENS as f64 * 0.8) as usize;
+    loop {
+        let total_tokens: usize = context.iter()
+            .map(|m| estimate_tokens_heuristic(&m.content))
+            .sum();
+
+        if total_tokens <= max_tokens || context.len() <= 1 {
+            break;
+        }
+
+        // Remove the oldest non-system message
+        if let Some(idx) = context.iter().position(|m| m.role != "system") {
+            debug!(
+                removed_tokens = estimate_tokens_heuristic(&context[idx].content),
+                remaining = context.len() - 1,
+                "Trimming oldest message to fit context window"
+            );
+            context.remove(idx);
+        } else {
+            break;
+        }
+    }
+
     debug!(
         channel_id = %channel_id,
         message_count = context.len(),
         total_chars,
+        estimated_tokens = context.iter().map(|m| estimate_tokens_heuristic(&m.content)).sum::<usize>(),
         "Context built successfully"
     );
 
@@ -265,50 +300,103 @@ async fn load_recent_messages(
     Ok(messages)
 }
 
-/// Decrypt message content.
+/// Decrypt message content using channel HKDF key.
 ///
-/// CURRENT STATE: Bot messages are stored as plaintext bytes in the DB
-/// (mls_epoch = 0). When full MLS integration is wired, this function
-/// will use the agent's X25519 private key to decrypt the ciphertext.
+/// Epoch 0 = plaintext (legacy or bot-authored messages).
+/// Epoch > 0 = AES-256-GCM encrypted with HKDF-derived key:
+///   salt = "discreet-mls-v1"
+///   ikm  = "discreet:{channel_id}:{epoch}"
+///   format = [commitment(32) | iv(12) | ciphertext + GCM tag(16)]
 ///
-/// FUTURE: The agent's MLS leaf key decrypts the application message.
-/// This is the patent claim in action — the agent holds its own key
-/// and decrypts just like any other MLS group member.
+/// If decryption fails (wrong epoch, key rotation), returns None
+/// so the caller can skip with a debug log.
 fn decrypt_message_content(
     ciphertext: &[u8],
     mls_epoch: i64,
-) -> Result<String, AgentError> {
+    channel_id: Uuid,
+) -> Option<String> {
     if mls_epoch == 0 {
         // Epoch 0 = plaintext (legacy or bot-authored messages)
-        String::from_utf8(ciphertext.to_vec()).map_err(|_| {
-            AgentError::Internal("Message content is not valid UTF-8".into())
-        })
-    } else {
-        // TODO: MLS decryption with agent's leaf key
-        // For now, attempt UTF-8 decode — this will work for the legacy
-        // encrypted messages once we wire the AES-GCM decryption here.
-        //
-        // Legacy client encrypts with:
-        //   key = HKDF-SHA256(ikm=`discreet:{channelId}:{epoch}`, salt="discreet-mls-v1")
-        //   AES-256-GCM(key, nonce=first_12_bytes, plaintext)
-        //
-        // MLS upgrade path (OpenMLS 0.8):
-        //   key = HKDF-SHA256(group_epoch_secret, channel_id, "discreet-msg-key-v1")
-        //   AES-256-GCM(key, nonce=first_12_bytes, plaintext)
-        //
-        // To properly decrypt, we need:
-        //   1. The channel epoch key (distributed via MLS group state)
-        //   2. The nonce (prepended to ciphertext)
-        //   3. AES-256-GCM decrypt
-        //
-        // For now, return a placeholder indicating encrypted content.
-        warn!(
-            mls_epoch,
-            "Cannot decrypt MLS epoch > 0 messages yet — MLS key integration pending"
-        );
-        Ok("[Encrypted message — agent MLS key integration pending]".to_string())
+        return String::from_utf8(ciphertext.to_vec()).ok();
+    }
+
+    // HKDF-SHA256 key derivation matching the client's enc() function
+    if ciphertext.len() < 44 {
+        // Too short: need commitment(32) + iv(12) = 44 bytes minimum
+        debug!(mls_epoch, "Ciphertext too short for HKDF decryption");
+        return None;
+    }
+
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let salt = b"discreet-mls-v1";
+    let ikm = format!("discreet:{}:{}", channel_id, mls_epoch);
+
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm.as_bytes());
+    let mut key_bytes = [0u8; 32];
+    if hk.expand(ikm.as_bytes(), &mut key_bytes).is_err() {
+        debug!(mls_epoch, "HKDF expand failed");
+        return None;
+    }
+
+    // Verify key commitment (first 32 bytes)
+    let mut commit_bytes = [0u8; 32];
+    let commit_info = format!("discreet:{}:{}:commit", channel_id, mls_epoch);
+    let hk_commit = Hkdf::<Sha256>::new(Some(salt), ikm.as_bytes());
+    if hk_commit.expand(commit_info.as_bytes(), &mut commit_bytes).is_err() {
+        debug!(mls_epoch, "HKDF commit expand failed");
+        return None;
+    }
+    // Constant-time comparison of commitment
+    let stored_commit = &ciphertext[..32];
+    let mut diff: u8 = 0;
+    for i in 0..32 {
+        diff |= stored_commit[i] ^ commit_bytes[i];
+    }
+    if diff != 0 {
+        debug!(mls_epoch, "Key commitment verification failed");
+        return None;
+    }
+
+    let iv = &ciphertext[32..44];
+    let encrypted_data = &ciphertext[44..];
+
+    let cipher = match Aes256Gcm::new_from_slice(&key_bytes) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    let nonce = Nonce::from_slice(iv);
+
+    match cipher.decrypt(nonce, encrypted_data) {
+        Ok(plaintext) => String::from_utf8(plaintext).ok(),
+        Err(_) => {
+            debug!(mls_epoch, "AES-GCM decryption failed — key epoch mismatch");
+            None
+        }
     }
 }
+
+/// Strip UUIDs and internal metadata from message content.
+fn strip_internal_metadata(content: &str) -> String {
+    let uuid_re = regex_lite::Regex::new(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    );
+    match uuid_re {
+        Ok(re) => re.replace_all(content, "[id]").to_string(),
+        Err(_) => content.to_string(),
+    }
+}
+
+/// Estimate token count using word_count * 1.3 heuristic.
+fn estimate_tokens_heuristic(text: &str) -> usize {
+    let word_count = text.split_whitespace().count();
+    ((word_count as f64) * 1.3).ceil() as usize
+}
+
+/// Default max context size in tokens.
+const DEFAULT_MAX_CONTEXT_TOKENS: usize = 8192;
 
 // ─── Summary Compression ────────────────────────────────────────────────
 
@@ -690,13 +778,13 @@ mod tests {
     #[test]
     fn test_decrypt_plaintext_message() {
         let content = "Hello, this is a test message!";
-        let result = decrypt_message_content(content.as_bytes(), 0);
+        let result = decrypt_message_content(content.as_bytes(), 0, Uuid::new_v4());
         assert_eq!(result.unwrap(), content);
     }
 
     #[test]
     fn test_decrypt_encrypted_message_placeholder() {
-        let result = decrypt_message_content(b"encrypted-data", 5);
-        assert!(result.unwrap().contains("pending"));
+        let result = decrypt_message_content(b"encrypted-data", 5, Uuid::new_v4());
+        assert!(result.is_none(), "Encrypted messages with wrong key should return None");
     }
 }

@@ -259,6 +259,41 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 
 // ─── Component ────────────────────────────────────────────
 
+function TestConnectionButton({ provider, endpoint }: { provider: string; endpoint: string }) {
+  const [status, setStatus] = React.useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [latency, setLatency] = React.useState(0);
+  const [errMsg, setErrMsg] = React.useState('');
+
+  const test = async () => {
+    if (!endpoint) return;
+    setStatus('testing'); setErrMsg('');
+    const url = provider === 'openjarvis'
+      ? `${endpoint.replace(/\/+$/, '')}/health`
+      : `${endpoint.replace(/\/+$/, '')}/v1/models`;
+    const t0 = Date.now();
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      setLatency(Date.now() - t0);
+      if (r.ok) setStatus('ok');
+      else { setErrMsg(`HTTP ${r.status}`); setStatus('fail'); }
+    } catch (e: any) {
+      setLatency(Date.now() - t0);
+      setErrMsg(e?.message || 'Connection failed');
+      setStatus('fail');
+    }
+  };
+
+  return (
+    <button onClick={test} disabled={!endpoint || status === 'testing'} title="Test connection"
+      style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${status === 'ok' ? '#22c55e' : status === 'fail' ? '#ff4757' : T.bd}`,
+        background: status === 'ok' ? 'rgba(34,197,94,0.1)' : status === 'fail' ? 'rgba(255,71,87,0.1)' : T.sf2,
+        color: status === 'ok' ? '#22c55e' : status === 'fail' ? '#ff4757' : T.mt,
+        fontSize: 11, fontWeight: 600, cursor: !endpoint || status === 'testing' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+      {status === 'testing' ? '...' : status === 'ok' ? `✓ ${latency}ms` : status === 'fail' ? `✗ ${errMsg.slice(0, 20)}` : 'Test'}
+    </button>
+  );
+}
+
 export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, showConfirm }: BotConfigModalProps) {
   const [tab, setTab] = useState('general');
   const [activePreset, setActivePreset] = useState<string | null>(null);
@@ -406,7 +441,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
   // All LLM calls happen client-side — preserving E2EE (server never sees
   // plaintext). API keys live in localStorage only, never sent to our server.
 
-  type LlmProvider = 'none' | 'openai' | 'anthropic' | 'ollama' | 'custom' | 'openjarvis';
+  type LlmProvider = 'none' | 'openai' | 'anthropic' | 'ollama' | 'custom' | 'openjarvis' | 'vllm';
 
   // Check if OpenJarvis is configured (env var set on server)
   const openJarvisAvailable = true; // Always show in dropdown — server validates availability
@@ -414,10 +449,11 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
   const PROVIDER_DEFAULTS: Record<LlmProvider, { endpoint: string; model: string; label: string }> = {
     none:        { endpoint: '',                            model: '',                            label: 'None (placeholder responses)' },
     openai:      { endpoint: 'https://api.openai.com/v1',   model: 'gpt-4o',                      label: 'OpenAI' },
-    anthropic:   { endpoint: 'https://api.anthropic.com',   model: 'claude-sonnet-4-6',           label: 'Anthropic' },
-    ollama:      { endpoint: 'http://localhost:11434',       model: 'llama3',                      label: 'Ollama (local)' },
-    custom:      { endpoint: '',                            model: '',                            label: 'Custom (OpenAI-compatible)' },
-    openjarvis:  { endpoint: 'http://localhost:8000',        model: 'default',                     label: 'OpenJarvis (local)' },
+    anthropic:   { endpoint: 'https://api.anthropic.com',   model: 'claude-sonnet-4-20250514',    label: 'Anthropic' },
+    ollama:      { endpoint: 'http://localhost:11434',       model: 'llama3',                      label: 'Ollama (Local)' },
+    custom:      { endpoint: '',                            model: '',                            label: 'Custom' },
+    openjarvis:  { endpoint: 'http://localhost:8000',        model: 'default',                     label: 'OpenJarvis (Local)' },
+    vllm:        { endpoint: 'http://localhost:8000',        model: '',                            label: 'vLLM (Local)' },
   };
 
   // Model catalog with capability badges and pricing
@@ -433,30 +469,16 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
     openai: [
       { id: 'gpt-4o',          name: 'GPT-4o — flagship',            badges: ['Code'],           costPer1k: '$0.0025' },
       { id: 'gpt-4o-mini',     name: 'GPT-4o Mini — fast & cheap',   badges: ['Fast'],           costPer1k: '$0.00015' },
-      { id: 'gpt-4-turbo',     name: 'GPT-4 Turbo — high quality',   badges: ['Code'],           costPer1k: '$0.01' },
       { id: 'gpt-3.5-turbo',   name: 'GPT-3.5 Turbo — legacy',      badges: ['Fast'],           costPer1k: '$0.0005' },
-      { id: 'o1',              name: 'o1 — reasoning',                badges: ['Reason'],         costPer1k: '$0.015' },
-      { id: 'o1-mini',         name: 'o1 Mini — fast reasoning',     badges: ['Fast', 'Reason'], costPer1k: '$0.003' },
     ],
     anthropic: [
-      { id: 'claude-opus-4-6',              name: 'Claude Opus 4.6 — most capable',         badges: ['Code'],   costPer1k: '$0.015' },
-      { id: 'claude-sonnet-4-6',            name: 'Claude Sonnet 4.6 — balanced',           badges: ['Code'],   costPer1k: '$0.003' },
-      { id: 'claude-haiku-4-5-20251001',    name: 'Claude Haiku 4.5 — fastest',             badges: ['Fast'],   costPer1k: '$0.0008' },
+      { id: 'claude-sonnet-4-20250514',     name: 'Claude Sonnet 4 — balanced',    badges: ['Code'],   costPer1k: '$0.003' },
+      { id: 'claude-haiku-4-5-20251001',    name: 'Claude Haiku 4.5 — fastest',    badges: ['Fast'],   costPer1k: '$0.0008' },
     ],
-    ollama: [
-      { id: 'llama3',     name: 'Llama 3 (8B)',       badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
-      { id: 'llama3:70b', name: 'Llama 3 (70B)',      badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
-      { id: 'mistral',    name: 'Mistral 7B',         badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
-      { id: 'mixtral',    name: 'Mixtral 8x7B',       badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
-      { id: 'phi3',       name: 'Phi-3 (Microsoft)',   badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
-      { id: 'codellama',  name: 'Code Llama',          badges: ['Local', 'Private', 'Code'], costPer1k: 'Free' },
-      { id: 'gemma2',     name: 'Gemma 2 (Google)',    badges: ['Local', 'Private'],          costPer1k: 'Free' },
-      { id: 'qwen2',      name: 'Qwen 2',             badges: ['Local', 'Private'],          costPer1k: 'Free' },
-    ],
+    ollama: [],   // User types model name — depends on what's installed locally
     custom: [],
-    openjarvis: [
-      { id: 'default', name: 'Default Model',    badges: ['Local', 'Private', 'Fast'], costPer1k: 'Free' },
-    ],
+    openjarvis: [],  // User types model name — depends on local setup
+    vllm: [],        // User types model name — depends on local setup
   };
 
   const BADGE_STYLES: Record<string, { bg: string; color: string }> = {
@@ -472,7 +494,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
     const catalog = MODEL_CATALOG[provider];
     const found = catalog.find(m => m.id === model);
     if (found) return `${found.costPer1k} / 1K tokens`;
-    if (provider === 'ollama') return 'Free (runs locally)';
+    if (provider === 'ollama' || provider === 'openjarvis' || provider === 'vllm') return 'Free (runs locally)';
     if (provider === 'custom') return 'Cost depends on provider';
     return '~$0.003 / 1K tokens (est.)';
   }
@@ -857,9 +879,9 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
         {/* Provider selector */}
         <label style={lbl}>LLM Provider</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 16 }}>
-          {(['none', 'openai', 'anthropic', 'ollama', 'openjarvis', 'custom'] as LlmProvider[]).map(p => {
-            const icons: Record<LlmProvider, string> = { none: '⊘', openai: '⬡', anthropic: '△', ollama: '🦙', custom: '⚙', openjarvis: '🧠' };
-            const colors: Record<LlmProvider, string> = { none: T.mt, openai: '#10a37f', anthropic: '#d97706', ollama: '#8b5cf6', custom: T.ac, openjarvis: '#06b6d4' };
+          {(['none', 'openai', 'anthropic', 'ollama', 'openjarvis', 'vllm', 'custom'] as LlmProvider[]).map(p => {
+            const icons: Record<LlmProvider, string> = { none: '⊘', openai: '⬡', anthropic: '△', ollama: '🦙', custom: '⚙', openjarvis: '🧠', vllm: '⚡' };
+            const colors: Record<LlmProvider, string> = { none: T.mt, openai: '#10a37f', anthropic: '#d97706', ollama: '#8b5cf6', custom: T.ac, openjarvis: '#06b6d4', vllm: '#f59e0b' };
             const active = llmProvider === p;
             return (
               <button
@@ -888,22 +910,37 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
 
         {llmProvider !== 'none' && (<>
 
-          {/* API Endpoint */}
-          <label style={lbl}>
-            API Endpoint
-            {llmProvider === 'ollama' && <span style={{ color: T.ac, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
-            {llmProvider === 'openjarvis' && <span style={{ color: '#06b6d4', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— local, private, no API key needed</span>}
-            {llmProvider === 'custom' && <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be OpenAI-compatible</span>}
-          </label>
-          <input
-            value={llmEndpoint}
-            onChange={e => setLlmEndpoint(e.target.value)}
-            placeholder={PROVIDER_DEFAULTS[llmProvider].endpoint || 'https://your-endpoint.example.com/v1'}
-            style={{ ...getInp(), marginBottom: 12, fontFamily: 'monospace', fontSize: 12 }}
-          />
+          {/* API Endpoint — only for local/custom providers */}
+          {(llmProvider === 'ollama' || llmProvider === 'openjarvis' || llmProvider === 'vllm' || llmProvider === 'custom') && (
+            <>
+              <label style={lbl}>
+                API Endpoint
+                {llmProvider === 'ollama' && <span style={{ color: T.ac, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
+                {llmProvider === 'openjarvis' && <span style={{ color: '#06b6d4', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— local, private, no API key needed</span>}
+                {llmProvider === 'vllm' && <span style={{ color: '#f59e0b', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
+                {llmProvider === 'custom' && <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be OpenAI-compatible</span>}
+              </label>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                <input
+                  value={llmEndpoint}
+                  onChange={e => setLlmEndpoint(e.target.value)}
+                  placeholder={PROVIDER_DEFAULTS[llmProvider].endpoint || 'https://your-endpoint.example.com/v1'}
+                  style={{ ...getInp(), flex: 1, fontFamily: 'monospace', fontSize: 12, marginBottom: 0 }}
+                />
+                <TestConnectionButton provider={llmProvider} endpoint={llmEndpoint} />
+              </div>
+            </>
+          )}
+
+          {/* No API key notice for local providers */}
+          {(llmProvider === 'ollama' || llmProvider === 'openjarvis' || llmProvider === 'vllm') && (
+            <div style={{ fontSize: 11, color: T.mt, marginBottom: 12, padding: '8px 12px', background: T.sf2, borderRadius: 6, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>🔓</span> No API key needed for local models
+            </div>
+          )}
 
           {/* API Key */}
-          {llmProvider !== 'ollama' && llmProvider !== 'openjarvis' && (
+          {llmProvider !== 'ollama' && llmProvider !== 'openjarvis' && llmProvider !== 'vllm' && (
             <>
               <label style={lbl}>
                 API Key
@@ -979,7 +1016,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <input
               value={llmModel}
               onChange={e => setLlmModel(e.target.value)}
-              placeholder="e.g. gpt-4o, mistral-7b, your-custom-model"
+              placeholder={llmProvider === 'ollama' ? 'e.g. qwen3:8b, llama3, mistral' : llmProvider === 'vllm' ? 'e.g. meta-llama/Llama-3-8b' : llmProvider === 'openjarvis' ? 'e.g. default' : 'e.g. gpt-4o, your-custom-model'}
               style={{ ...getInp(), marginBottom: 8, fontFamily: 'monospace', fontSize: 12 }}
             />
           )}
@@ -1235,7 +1272,8 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
       {tab === 'personality' && (<>
         <label style={lbl}>System Prompt (Instructions)</label>
         <div style={{ fontSize: 10, color: T.mt, marginBottom: 6 }}>Define the bot's personality, knowledge, and behavior.</div>
-        <textarea value={cfg.system_prompt} onChange={e => set('system_prompt', e.target.value)} rows={6} placeholder="You are a helpful gaming expert who knows all about strategies, meta, patch notes..." style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', marginBottom: 12, fontFamily: 'monospace', lineHeight: 1.5, boxSizing: 'border-box' }} />
+        <textarea value={cfg.system_prompt} onChange={e => { if (e.target.value.length <= 2000) set('system_prompt', e.target.value); }} rows={6} maxLength={2000} placeholder="You are a helpful gaming expert who knows all about strategies, meta, patch notes..." style={{ width: '100%', padding: '10px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 12, resize: 'vertical', marginBottom: 4, fontFamily: 'monospace', lineHeight: 1.5, boxSizing: 'border-box' }} />
+        <div style={{ fontSize: 10, color: (cfg.system_prompt?.length || 0) > 1800 ? T.err : T.mt, textAlign: 'right', marginBottom: 12 }}>{cfg.system_prompt?.length || 0} / 2000</div>
 
         <label style={lbl}>Voice Style</label>
         <select value={cfg.voice_style} onChange={e => set('voice_style', e.target.value)} style={sel}>
@@ -1309,13 +1347,15 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
 
       {tab === 'limits' && (<>
         <label style={lbl}>Max Response Length (tokens)</label>
-        <select value={cfg.max_tokens} onChange={e => set('max_tokens', parseInt(e.target.value))} style={sel}>
-          <option value="256">Short (256 tokens)</option>
-          <option value="500">Medium (500 tokens)</option>
-          <option value="1000">Standard (1000 tokens)</option>
-          <option value="2000">Long (2000 tokens)</option>
-          <option value="4000">Very Long (4000 tokens)</option>
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <input type="number" min={100} max={16000} step={100} value={cfg.max_tokens}
+            onChange={e => { const v = Math.max(100, Math.min(16000, parseInt(e.target.value) || 1000)); set('max_tokens', v); }}
+            style={{ ...getInp(), width: 100, fontFamily: 'monospace', textAlign: 'center', marginBottom: 0 }} />
+          <input type="range" min={100} max={16000} step={100} value={cfg.max_tokens}
+            onChange={e => set('max_tokens', parseInt(e.target.value))}
+            style={{ flex: 1, accentColor: T.ac } as React.CSSProperties} />
+          <span style={{ fontSize: 10, color: T.mt, whiteSpace: 'nowrap' }}>{cfg.max_tokens.toLocaleString()} tokens</span>
+        </div>
 
         <label style={lbl}>Rate Limit (responses per minute)</label>
         <select value={cfg.rate_limit_per_min} onChange={e => set('rate_limit_per_min', parseInt(e.target.value))} style={sel}>

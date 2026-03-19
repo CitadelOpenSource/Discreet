@@ -172,53 +172,84 @@ gunzip -c /backups/discreet-20260316.sql.gz | docker exec -i $(docker ps -qf nam
 Redis does not need backup — it contains only ephemeral rate limit counters
 and short-lived cache entries that regenerate automatically.
 
-## OpenJarvis (Local AI)
+## AI Agents
 
-OpenJarvis provides local AI agent capabilities without sending data to
-external providers. To enable:
+Discreet supports AI agents powered by multiple LLM providers. You can
+use cloud providers (OpenAI, Anthropic) or run models locally with zero
+data leaving your network.
 
-### Docker Compose
+### Supported Providers
 
-Add to your `docker-compose.yml` or `docker-compose.prod.yml`:
+| Provider | Type | API Key | Default Endpoint |
+|----------|------|---------|-----------------|
+| OpenAI | Cloud | Required | `https://api.openai.com` |
+| Anthropic | Cloud | Required | `https://api.anthropic.com` |
+| OpenJarvis | Local | Not needed | `http://localhost:8000` |
+| Ollama | Local | Not needed | `http://localhost:11434` |
+| vLLM | Local | Not needed | `http://localhost:8000` |
+| Custom | Any | Optional | User-configured |
 
-```yaml
-services:
-  openjarvis:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
+### Local AI with Docker Compose (OpenJarvis / Ollama)
 
-volumes:
-  ollama_data:
+The `docker-compose.yml` includes optional services behind the `openjarvis`
+profile. These do NOT start with the default `docker compose up`.
+
+**Start local AI services:**
+
+```bash
+docker compose --profile openjarvis up -d
 ```
 
-### Environment
+This starts:
+- **Ollama** on port 11434 — runs local LLM models on your hardware (GPU supported)
+- **OpenJarvis API** on port 8000 — OpenAI-compatible proxy for Ollama
 
-Add to your `.env`:
+**Pull a model:**
+
+```bash
+docker exec -it $(docker ps -qf name=ollama) ollama pull qwen3:8b
+```
+
+Popular models: `qwen3:8b` (fast, multilingual), `llama3` (Meta), `mistral` (7B),
+`codellama` (code), `phi3` (Microsoft, small), `gemma2` (Google).
+
+**Configure in Discreet:**
+
+1. Go to your server's **Settings → AI Bots** or **Settings → Agents**
+2. Add a new agent with:
+   - **Provider:** OpenJarvis (Local) or Ollama (Local)
+   - **Endpoint:** `http://localhost:8000` (OpenJarvis) or `http://localhost:11434` (Ollama)
+   - **Model:** the model you pulled (e.g., `qwen3:8b`)
+3. No API key is needed for local models
+
+**Environment variables** (add to `.env`):
 
 ```bash
 AGENTS_ENABLED=true
-AGENT_LLM_ENDPOINT=http://openjarvis:11434/api/generate
+OPENJARVIS_URL=http://localhost:8000
 ```
 
-Or if running outside Docker:
+If running the Discreet server inside Docker alongside OpenJarvis, use the
+Docker network hostnames instead:
 
 ```bash
-AGENT_LLM_ENDPOINT=http://localhost:11434/api/generate
+OPENJARVIS_URL=http://openjarvis-server:8000
 ```
 
-### Pull a Model
+### Cloud Providers (OpenAI / Anthropic)
 
-```bash
-docker exec -it $(docker ps -qf name=openjarvis) ollama pull llama3.2
-```
+1. Get an API key from [OpenAI](https://platform.openai.com/api-keys) or
+   [Anthropic](https://console.anthropic.com/)
+2. In server settings, add an agent with the cloud provider
+3. Enter your API key — it is encrypted with AES-256-GCM before storage
+   (HKDF-SHA256, salt `discreet-agent-v1`)
+4. The plaintext key is never stored on disk or logged
 
-AI agents will use the local model for all completions. No data leaves
-your network. Model responses are encrypted with the channel's MLS group
-key before storage — the server cannot read agent responses.
+### Privacy Guarantee
+
+All agent responses are encrypted with the channel's MLS group key before
+storage. The server cannot read agent responses. When using local providers
+(OpenJarvis, Ollama, vLLM), no data leaves your network at any point.
 
 ## Updating
 

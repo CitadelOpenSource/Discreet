@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_configs (id, server_id, name, provider_type, model, encrypted_api_key, endpoint_url, system_prompt, max_tokens, temperature, created_by)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n         RETURNING created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Bytea",
+        "Text",
+        "Text",
+        "Int4",
+        "Float4",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e3a3666d33a73d863370ee3c6e17f2bcb5839d987e997d5c5c4ca58f9de2d80c"
+}

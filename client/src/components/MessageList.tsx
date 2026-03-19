@@ -64,6 +64,11 @@ export interface Msg {
   is_auto_reply?: boolean;
   voice_duration_ms?: number;
   voice_waveform?: number[];
+  is_translation?: boolean;
+  original_message_id?: string;
+  translation_language?: string;
+  sticker_id?: string;
+  sticker_url?: string;
 }
 
 export interface MessageListProps {
@@ -298,8 +303,24 @@ export function MessageList(props: MessageListProps) {
                   })()}
                 </div>
 
-                {/* Voice message player */}
-                {m.voice_duration_ms != null && m.voice_duration_ms > 0 ? (
+                {/* Sticker message */}
+                {m.sticker_url ? (
+                  <div style={{ marginTop: 4 }}>
+                    <img src={m.sticker_url} alt={m.sticker_id || 'sticker'} style={{ maxWidth: 128, maxHeight: 128, borderRadius: 4 }} />
+                  </div>
+                ) : /* Translation message */
+                m.is_translation ? (
+                  <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: `2px solid ${T.ac}`, marginLeft: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                      <I.Globe s={14} />
+                      <span style={{ fontSize: 10, color: T.mt, fontWeight: 600 }}>{m.translation_language || 'Translation'}</span>
+                    </div>
+                    <div className="msg-text" style={{ fontSize: chatFontSize, lineHeight: msgDensity === 'compact' ? 1.3 : msgDensity === 'cozy' ? 1.6 : 1.5, wordBreak: 'break-word', opacity: failedMessages[m.id] ? 0.5 : 1 }}>
+                      <Markdown text={msgText} onMention={onMention} mentionStyle={mentionStyle} />
+                    </div>
+                  </div>
+                ) : /* Voice message player */
+                m.voice_duration_ms != null && m.voice_duration_ms > 0 ? (
                   <VoicePlayer
                     audioUrl={`${voiceBaseUrl}/channels/${channelId}/voice/${m.id}`}
                     durationMs={m.voice_duration_ms}

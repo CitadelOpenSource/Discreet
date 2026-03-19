@@ -56,6 +56,7 @@ export interface SlashContext {
   setToast?:         (msg: string) => void;
   logout?:           () => void;
   clearMessages?:    () => void;
+  replyToId?:        string | null;
 }
 
 export interface SlashCommandDef {
@@ -244,6 +245,26 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
     handler: async (_args, ctx) => {
       ctx.clearMessages?.();
       ctx.setToast?.('Chat view cleared');
+      return { handled: true };
+    },
+  },
+  {
+    name: '/translate', description: 'Translate a replied-to message', icon: '🌐', args: '<language>',
+    visibleToOthers: false, guestAllowed: false,
+    handler: async (args, ctx) => {
+      const language = (args || '').trim();
+      if (!language) { ctx.setToast?.('Usage: reply to a message and type /translate Spanish'); return { handled: true }; }
+      if (!ctx.replyToId) { ctx.setToast?.('Reply to a message first, then use /translate'); return { handled: true }; }
+      if (!ctx.curChannel) { ctx.setToast?.('No channel selected'); return { handled: true }; }
+      try {
+        const r = await api.fetch(`/channels/${ctx.curChannel.id}/translate`, {
+          method: 'POST',
+          body: JSON.stringify({ message_id: ctx.replyToId, language }),
+        });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); ctx.setToast?.((e as any).error || `Translation failed (${r.status})`); return { handled: true }; }
+        ctx.loadMsgs();
+        ctx.setToast?.(`Translated to ${language}`);
+      } catch { ctx.setToast?.('Translation failed'); }
       return { handled: true };
     },
   },

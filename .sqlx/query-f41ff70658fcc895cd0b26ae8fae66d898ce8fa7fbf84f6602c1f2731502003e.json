@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_configs SET temperature = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f41ff70658fcc895cd0b26ae8fae66d898ce8fa7fbf84f6602c1f2731502003e"
+}

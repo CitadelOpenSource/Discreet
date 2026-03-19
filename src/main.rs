@@ -37,6 +37,7 @@ use uuid::Uuid;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use discreet_server::discreet_admin_invite_handlers;
+use discreet_server::discreet_agent_config_handlers;
 use discreet_server::discreet_agent_handlers;
 use discreet_server::discreet_announcement_handlers;
 use discreet_server::discreet_audit;
@@ -79,6 +80,7 @@ use discreet_server::discreet_soundboard_handlers;
 use discreet_server::discreet_stream_handlers;
 use discreet_server::discreet_state::AppState;
 use discreet_server::discreet_turn;
+use discreet_server::discreet_translate_handlers;
 use discreet_server::discreet_typing;
 use discreet_server::discreet_user_handlers;
 use discreet_server::discreet_voice_handlers;
@@ -642,6 +644,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/ai-bots/:bot_id/prompt", axum::routing::post(discreet_bot_spawn_handlers::prompt_bot))
         .route("/servers/:server_id/ai-bots/:bot_id/config", axum::routing::get(discreet_bot_spawn_handlers::get_agent_config).put(discreet_bot_spawn_handlers::update_agent_config))
         .route("/servers/:server_id/ai-bots/:bot_id/memory", axum::routing::delete(discreet_bot_spawn_handlers::delete_agent_memory))
+        // ── Agent Configs ──
+        .route("/servers/:server_id/agents", axum::routing::post(discreet_agent_config_handlers::create_agent).get(discreet_agent_config_handlers::list_agents))
+        .route("/servers/:server_id/agents/:agent_id", axum::routing::put(discreet_agent_config_handlers::update_agent).delete(discreet_agent_config_handlers::delete_agent))
         // Voice / TURN
         .route("/voice/turn-credentials", axum::routing::get(discreet_turn::turn_credentials))
         // Meetings (Zoom-style)
@@ -681,6 +686,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Voice ──
         .route("/channels/:channel_id/voice", axum::routing::post(discreet_voice_handlers::send_voice_message))
         .route("/channels/:channel_id/voice/:message_id", axum::routing::get(discreet_voice_handlers::get_voice_audio))
+        .route("/channels/:channel_id/translate", axum::routing::post(discreet_translate_handlers::translate_message))
+        // ── Stickers ──
+        .route("/sticker-packs", axum::routing::post(discreet_translate_handlers::create_sticker_pack).get(discreet_translate_handlers::list_sticker_packs))
+        .route("/sticker-packs/:pack_id/stickers", axum::routing::post(discreet_translate_handlers::upload_sticker).get(discreet_translate_handlers::list_stickers))
         // ── Roles ──
         .route("/servers/:server_id/roles", axum::routing::post(discreet_role_handlers::create_role).get(discreet_role_handlers::list_roles))
         .route("/roles/:role_id", axum::routing::patch(discreet_role_handlers::update_role).delete(discreet_role_handlers::delete_role))

@@ -1490,6 +1490,7 @@ export default function App() {
           setToast: (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); },
           logout: async () => { await api.logout(); setAuthed(false); },
           clearMessages: () => setMessages([]),
+          replyToId: replyTo?.id || null,
         };
         const result = await processSlashCommand(msgInput, slashCtx);
         if (result.handled) {
