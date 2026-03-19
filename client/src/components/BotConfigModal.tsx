@@ -500,6 +500,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
   }
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('none');
+  const [providerComingSoon, setProviderComingSoon] = useState(false);
   const [llmEndpoint, setLlmEndpoint] = useState('');
   const [llmApiKey,   setLlmApiKey]   = useState('');
   const [llmModel,    setLlmModel]    = useState('');
@@ -878,20 +879,30 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
 
         {/* Provider selector */}
         <label style={lbl}>LLM Provider</label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6 }}>
           {(['none', 'openai', 'anthropic', 'ollama', 'openjarvis', 'vllm', 'custom'] as LlmProvider[]).map(p => {
             const icons: Record<LlmProvider, string> = { none: '⊘', openai: '⬡', anthropic: '△', ollama: '🦙', custom: '⚙', openjarvis: '🧠', vllm: '⚡' };
             const colors: Record<LlmProvider, string> = { none: T.mt, openai: '#10a37f', anthropic: '#d97706', ollama: '#8b5cf6', custom: T.ac, openjarvis: '#06b6d4', vllm: '#f59e0b' };
             const active = llmProvider === p;
+            const isComingSoon = p === 'openjarvis';
             return (
               <button
                 key={p}
-                onClick={() => selectProvider(p)}
+                onClick={() => {
+                  if (isComingSoon) {
+                    setProviderComingSoon(true);
+                    setTimeout(() => setProviderComingSoon(false), 3000);
+                    return;
+                  }
+                  selectProvider(p);
+                }}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                  padding: '10px 6px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  padding: '10px 6px', borderRadius: 10, border: 'none',
+                  cursor: isComingSoon ? 'default' : 'pointer',
                   background: active ? `${colors[p]}18` : T.sf2,
                   outline: active ? `2px solid ${colors[p]}` : `1px solid ${T.bd}`,
+                  opacity: isComingSoon ? 0.55 : 1,
                 }}
               >
                 <span style={{ fontSize: 20, color: colors[p], position: 'relative' }}>
@@ -902,11 +913,17 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
                 <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? colors[p] : T.mt, textAlign: 'center', lineHeight: 1.3 }}>
                   {PROVIDER_DEFAULTS[p].label.split('(')[0].trim()}
                 </span>
-                {active && <span style={{ fontSize: 8, fontWeight: 700, color: colors[p], background: `${colors[p]}20`, borderRadius: 3, padding: '1px 4px' }}>ACTIVE</span>}
+                {isComingSoon && <span style={{ fontSize: 8, fontWeight: 600, color: T.mt, background: `${T.mt}18`, borderRadius: 3, padding: '1px 5px' }}>Coming Soon</span>}
+                {active && !isComingSoon && <span style={{ fontSize: 8, fontWeight: 700, color: colors[p], background: `${colors[p]}20`, borderRadius: 3, padding: '1px 4px' }}>ACTIVE</span>}
               </button>
             );
           })}
         </div>
+        {providerComingSoon && (
+          <div style={{ fontSize: 11, color: '#06b6d4', background: '#06b6d410', borderRadius: 6, padding: '6px 10px', marginBottom: 10, textAlign: 'center' }}>
+            OpenJarvis integration coming in a future update
+          </div>
+        )}
 
         {llmProvider !== 'none' && (<>
 
