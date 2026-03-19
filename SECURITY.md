@@ -124,6 +124,26 @@ Reducing metadata leakage (traffic padding, onion routing) is on the roadmap.
 - **File uploads:** MIME whitelist, configurable size cap, encrypted blob storage
 - **XSS:** React escapes all output by default. No `dangerouslySetInnerHTML` on user content.
 
+## Client-Side Search
+
+Search is performed entirely in the browser on messages already decrypted
+by the client. No search queries are ever sent to the server. The server
+has no knowledge of what users search for. This design ensures zero
+metadata leakage from search activity.
+
+- **How it works:** The client holds decrypted messages in React state.
+  Search filters this in-memory array using case-insensitive substring
+  matching. Results are rendered with highlighted context (20 chars around
+  each match). Clicking a result scrolls to the message in the chat view.
+- **No server involvement:** The server stores only ciphertext. It cannot
+  search, index, or rank messages because it cannot decrypt them.
+- **Older messages:** Users can load older messages from the server (still
+  encrypted), decrypt them client-side, and search again. The server sees
+  a pagination request but not the search query.
+- **Privacy guarantee:** Even under legal compulsion, the server cannot
+  produce search logs, query histories, or search analytics because none
+  exist.
+
 ## OWASP Top 10 2025 Compliance
 
 | # | Category | Discreet Mitigation |

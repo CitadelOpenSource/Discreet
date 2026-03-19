@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE meeting_rooms SET join_code = $1 WHERE id = $2 AND join_code IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdc918d4bc6a16b5d0347a75e799a50b3c5f81e1c9e71936caaa2c5cafab7d51"
+}

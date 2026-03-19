@@ -1075,6 +1075,84 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
               </div>
             )}
 
+            {/* ── SAML Configuration ── */}
+            <div style={{ marginBottom: 20 }}>
+              <SectionHeader label="SAML SSO (Enterprise)" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <Toggle on={!!(settings as any)?.saml_enabled} label="Enable SAML SSO" desc="Allow users to log in via enterprise identity provider (Okta, Azure AD, etc.)" disabled={settingsSaving}
+                  onToggle={() => toggleSetting('saml_enabled' as any, !(settings as any)?.saml_enabled)} />
+                {(settings as any)?.saml_enabled && (<>
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>IdP Metadata URL</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input value={(settings as any)?.saml_idp_metadata_url || ''} onChange={e => toggleSetting('saml_idp_metadata_url' as any, e.target.value)}
+                        placeholder="https://login.microsoftonline.com/.../metadata" style={{ ...getInp(), flex: 1, fontSize: 12, marginBottom: 0 }} />
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>IdP SSO Login URL</label>
+                    <input value={(settings as any)?.saml_sso_url || ''} onChange={e => toggleSetting('saml_sso_url' as any, e.target.value)}
+                      placeholder="https://login.microsoftonline.com/.../saml2" style={{ ...getInp(), fontSize: 12 }} />
+                  </div>
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>IdP Certificate (PEM)</label>
+                    <textarea value={(settings as any)?.saml_idp_certificate || ''} onChange={e => toggleSetting('saml_idp_certificate' as any, e.target.value)}
+                      placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" rows={4}
+                      style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 11, fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ fontSize: 10, color: T.mt, lineHeight: 1.6, padding: '4px 14px' }}>
+                    SP Metadata URL: <code style={{ color: T.ac }}>{window.location.origin}/api/v1/auth/saml/metadata</code>
+                  </div>
+                </>)}
+              </div>
+            </div>
+
+            {/* ── LDAP Configuration ── */}
+            <div style={{ marginBottom: 20 }}>
+              <SectionHeader label="LDAP Directory Sync (Enterprise)" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <Toggle on={!!(settings as any)?.ldap_enabled} label="Enable LDAP Sync" desc="Automatically provision and update users from your LDAP/Active Directory." disabled={settingsSaving}
+                  onToggle={() => toggleSetting('ldap_enabled' as any, !(settings as any)?.ldap_enabled)} />
+                {(settings as any)?.ldap_enabled && (<>
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>LDAP URL</label>
+                    <input value={(settings as any)?.ldap_url || ''} onChange={e => toggleSetting('ldap_url' as any, e.target.value)}
+                      placeholder="ldaps://ldap.example.com:636" style={{ ...getInp(), fontSize: 12 }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Bind DN</label>
+                      <input value={(settings as any)?.ldap_bind_dn || ''} onChange={e => toggleSetting('ldap_bind_dn' as any, e.target.value)}
+                        placeholder="cn=admin,dc=example,dc=com" style={{ ...getInp(), fontSize: 11 }} />
+                    </div>
+                    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Bind Password</label>
+                      <input type="password" value={(settings as any)?.ldap_bind_password || ''} onChange={e => toggleSetting('ldap_bind_password' as any, e.target.value)}
+                        placeholder="••••••••" style={{ ...getInp(), fontSize: 11 }} autoComplete="off" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Base DN</label>
+                      <input value={(settings as any)?.ldap_base_dn || ''} onChange={e => toggleSetting('ldap_base_dn' as any, e.target.value)}
+                        placeholder="ou=people,dc=example,dc=com" style={{ ...getInp(), fontSize: 11 }} />
+                    </div>
+                    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>User Filter</label>
+                      <input value={(settings as any)?.ldap_user_filter || '(objectClass=person)'} onChange={e => toggleSetting('ldap_user_filter' as any, e.target.value)}
+                        placeholder="(objectClass=person)" style={{ ...getInp(), fontSize: 11, fontFamily: 'monospace' }} />
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Sync Interval (seconds)</label>
+                    <input type="number" min={60} value={(settings as any)?.ldap_sync_interval || 3600} onChange={e => toggleSetting('ldap_sync_interval' as any, Number(e.target.value))}
+                      style={{ ...getInp(), fontSize: 12, width: 120 }} />
+                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 8 }}>Default: 3600 (1 hour). Minimum: 60.</span>
+                  </div>
+                </>)}
+              </div>
+            </div>
+
             {/* ── Inactive Servers ── */}
             <InactiveServersPanel />
           </div>

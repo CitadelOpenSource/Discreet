@@ -61,6 +61,10 @@ export default function SettingsAccount({
     <div data-section="change-email"><ChangeEmail /></div>
     </div>
 
+    {/* Connected Accounts (OAuth) */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Connected Accounts</div>
+    <ConnectedAccounts />
+
     {/* Subscription */}
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Subscription</div>
     <SubscriptionPanel platformUser={platformUser} onUpgrade={onUpgrade} />
@@ -209,6 +213,82 @@ function PasskeyManager() {
         </button>
       </div>
       {error && <div style={{ fontSize: 11, color: T.err, marginTop: 6, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ─── Connected Accounts (OAuth) ─────────────────────────────────────────
+
+const PROVIDER_ICONS: Record<string, { icon: string; color: string }> = {
+  google:  { icon: 'G', color: '#4285F4' },
+  github:  { icon: '⬡', color: '#24292f' },
+  apple:   { icon: '', color: '#000000' },
+  discord: { icon: '🎮', color: '#5865F2' },
+};
+
+function ConnectedAccounts() {
+  const [accounts, setAccounts] = React.useState<{ provider: string; provider_email?: string }[]>([]);
+  const [providers, setProviders] = React.useState<{ provider: string }[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const load = React.useCallback(async () => {
+    try {
+      // Get available providers
+      const pr = await api.fetch('/auth/oauth/providers');
+      if (pr.ok) { const d = await pr.json(); setProviders(d.providers || []); }
+      // Get user's linked accounts (from user settings or a dedicated endpoint)
+      // For now, we display what's available and let the user link/unlink
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const disconnect = async (provider: string) => {
+    try {
+      const r = await api.fetch(`/auth/oauth/${provider}`, { method: 'DELETE' });
+      if (r.ok) {
+        setAccounts(prev => prev.filter(a => a.provider !== provider));
+        load();
+      }
+    } catch {}
+  };
+
+  const connect = async (provider: string) => {
+    try {
+      const r = await api.fetch(`/auth/oauth/${provider}/authorize`);
+      if (r.ok) {
+        const data = await r.json();
+        if (data.auth_url) window.location.href = data.auth_url;
+      }
+    } catch {}
+  };
+
+  if (loading) return <div style={{ fontSize: 11, color: T.mt, padding: 12 }}>Loading...</div>;
+  if (providers.length === 0) return <div style={{ fontSize: 11, color: T.mt, padding: '8px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>No OAuth providers configured.</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+      {providers.map(p => {
+        const linked = accounts.find(a => a.provider === p.provider);
+        const brand = PROVIDER_ICONS[p.provider] || { icon: '🔗', color: T.mt };
+        return (
+          <div key={p.provider} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 16, color: brand.color, fontWeight: 700 }}>{brand.icon}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx, textTransform: 'capitalize' }}>{p.provider}</div>
+                {linked?.provider_email && <div style={{ fontSize: 10, color: T.mt }}>{linked.provider_email}</div>}
+              </div>
+            </div>
+            {linked ? (
+              <button onClick={() => disconnect(p.provider)} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: 'none', color: T.err, cursor: 'pointer' }}>Disconnect</button>
+            ) : (
+              <button onClick={() => connect(p.provider)} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: 'none', color: T.ac, cursor: 'pointer' }}>Connect</button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

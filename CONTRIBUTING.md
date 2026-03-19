@@ -1,29 +1,23 @@
 # Contributing to Discreet
 
-Thank you for your interest in contributing to Discreet. This project is an
-end-to-end encrypted community platform licensed under AGPL-3.0-or-later.
-Every contribution — code, documentation, bug reports, security research —
-makes the platform stronger for everyone.
-
-We do not require a Contributor License Agreement (CLA). Your contributions
-are licensed under the same AGPL-3.0-or-later terms as the project.
+Thank you for considering a contribution to Discreet. Whether this is your first open-source PR or your hundredth, you are welcome here. Every contribution — a bug fix, a typo correction, a security report, or a major feature — makes encrypted communication more accessible for everyone. No Contributor License Agreement (CLA) is required. Your code is licensed under the same AGPL-3.0-or-later terms as the project.
 
 ## Prerequisites
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Rust | 1.85+ | Backend server, WASM crypto module |
-| Node.js | 20+ | Vite frontend build |
-| Docker | Latest | PostgreSQL 16 and Redis 7 (via Compose) |
-| PostgreSQL | 16 | Primary database (runs in Docker) |
-| Redis | 7 | Rate limiting, caching, presence (runs in Docker) |
+| Rust | 1.75+ | Backend server, WASM crypto module |
+| Node.js | 18+ | Vite frontend build and dev server |
+| Docker | Latest | PostgreSQL and Redis via Compose |
 
 Optional:
-- `wasm-pack` — for building the MLS crypto WASM module
-- `cargo-audit` — for dependency vulnerability scanning
-- `cargo-sqlx` — for offline query metadata (`cargo sqlx prepare`)
 
-## Getting Started
+- `cargo-sqlx` — offline query metadata (`cargo sqlx prepare`)
+- `cargo-audit` — dependency vulnerability scanning
+- `wasm-pack` — building the MLS crypto WASM module
+- Perl (Windows only) — required by OpenSSL build scripts
+
+## Dev Setup
 
 ```bash
 # Clone the repository
@@ -31,25 +25,58 @@ git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
 
 # Start PostgreSQL and Redis
-docker compose up -d
+docker compose up postgres redis -d
 
-# Apply database migrations
-for f in migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+# Copy environment template and configure
+cp .env.example .env
 
-# Build and run the backend
-cp .env.example .env   # Edit with your local settings
-cargo build
-cargo run
+# Verify the backend compiles
+cargo check
 
-# In a separate terminal — build the frontend
+# Start the frontend dev server (hot-reloading)
 cd client
 npm install
-npm run build
+npm run dev
 ```
 
-The server starts at `http://localhost:3000`. The Vite client is served at `/app`.
+The backend runs at `http://localhost:3000` and the Vite dev server at `http://localhost:5173`.
 
-## Branch Workflow
+If you use VS Code or a compatible editor, a dev container configuration is available in `.devcontainer/` for a fully pre-configured environment with Rust, Node, PostgreSQL, and Redis ready to go.
+
+## Code Standards
+
+### Rust Backend
+
+- `cargo clippy -- -D warnings` — zero warnings policy, enforced in CI
+- No `.unwrap()` in handler code — use `?` with proper error types
+- No `.unwrap_or_default()` to silence type mismatches — fix the root cause
+- All database queries use `sqlx::query!` or `sqlx::query_as!` macros (compile-time validated)
+- All handlers return `Result<impl IntoResponse, AppError>`
+- Errors logged with `tracing::{error, warn, info, debug}` — no `println!` or `eprintln!`
+
+### React Frontend (client/)
+
+- TypeScript strict mode — no `any` types unless interfacing with JS libraries
+- Functional components with hooks (no class components)
+- No `console.log` in committed code — remove before opening a PR
+- API calls wrapped in try/catch with user-visible error handling
+- Loading states for every async operation
+
+### New Files
+
+All new source files should include the AGPL-3.0 license header:
+
+```rust
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Citadel Open Source LLC
+```
+
+```typescript
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Citadel Open Source LLC
+```
+
+## Branch Naming
 
 Create a branch from `main` with a descriptive prefix:
 
@@ -57,55 +84,32 @@ Create a branch from `main` with a descriptive prefix:
 |--------|----------|---------|
 | `feat/` | New features | `feat/voice-noise-gate` |
 | `fix/` | Bug fixes | `fix/websocket-reconnect` |
-| `security/` | Security improvements | `security/input-validation` |
-| `docs/` | Documentation only | `docs/threat-model-update` |
-| `deps/` | Dependency updates | `deps/openmls-0.8` |
-| `quality/` | Refactoring, cleanup | `quality/extract-message-list` |
+| `docs/` | Documentation | `docs/threat-model-update` |
+| `chore/` | Tooling, CI, cleanup | `chore/update-ci-runners` |
 
-Commit messages follow `type: description` format:
+## Commit Messages
+
+Follow the conventional format `type: description`:
+
 ```
 feat: notification inbox with unread count
 fix: timezone rendering in event reminders
-security: input validation on all auth endpoints
-deps: redis 1.0 + audit exception for rsa
+docs: add self-hosting backup instructions
+chore: update CI to Node 20
 ```
 
-## Code Standards
+Types: `feat`, `fix`, `security`, `docs`, `deps`, `quality`, `chore`, `branding`.
 
-### Rust Backend
+## Pull Request Process
 
-- All handlers return `Result<impl IntoResponse, AppError>`
-- All database queries use `sqlx::query!` or `sqlx::query_as!` macros (compile-time validated)
-- No `.unwrap()` in handler code — use `?` with proper error types
-- No `.unwrap_or_default()` to silence type mismatches — fix the root cause
-- Errors logged with `tracing::{error, warn, info, debug}` — no `println!`
-- `cargo clippy -- -D warnings` must pass with zero warnings
-
-### Cryptography
-
-- All key derivation uses HKDF-SHA256 — no raw SHA-256 hashing for key material
-- All AES-256-GCM ciphertexts include a 32-byte key commitment tag
-- Commitment info string: append `:commit` to the HKDF info parameter
-- Wire format: `[commitment(32) | iv(12) | ciphertext+tag]`
-- No custom cryptographic primitives — use audited libraries only
-- WASM crypto module: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`
-
-### React Frontend (client/)
-
-- TypeScript strict mode — no `any` types unless interfacing with JS libraries
-- Functional components with hooks (no class components)
-- API calls wrapped in try/catch with user-visible error handling
-- Loading states for every async operation
-- No `console.log` in committed code
-
-### CSS / Styling
-
-- Use existing CSS variables and theme system (`T.ac`, `T.bg`, `T.sf`, etc.)
-- Dark theme is default — test all changes in dark mode first
+1. **One concern per PR.** A bug fix and a new feature should be separate PRs.
+2. **CI must pass.** All checks (clippy, tests, frontend build) must be green before review.
+3. **Describe what and why.** The PR description should explain what changed and the motivation behind it. Reviewers should not need to read every line to understand the purpose.
+4. **Keep it reviewable.** PRs under 400 lines get reviewed faster. If your change is larger, consider splitting it into incremental PRs.
 
 ## Testing
 
-### Before Every Pull Request
+Before opening a PR:
 
 ```bash
 # Backend
@@ -118,27 +122,22 @@ cargo clippy -- -D warnings # Zero warnings
 cd client && npm run build  # Must complete with zero errors
 ```
 
-### What to Test
-
-- Every crypto function: encrypt/decrypt roundtrip, wrong key rejection
-- Every input validator: valid input passes, invalid input rejected
-- Every new module: at minimum 3 unit tests (happy path, error path, edge case)
-- Rate limiters: verify they fail-closed when Redis is unavailable
+Every new module should have at minimum 3 unit tests covering the happy path, an error path, and an edge case. Every crypto function needs encrypt/decrypt roundtrip tests and wrong-key rejection tests.
 
 ## Security Reporting
 
-If you discover a security vulnerability, please report it responsibly:
+If you discover a security vulnerability:
 
 - **Email:** security@discreetai.net
-- **PGP key:** Available at https://discreetai.net/.well-known/pgp-key.txt
-- **Do not** open a public GitHub issue for security vulnerabilities
-- We aim to acknowledge reports within 48 hours and provide a fix within 7 days
+- **PGP key:** https://discreetai.net/.well-known/pgp-key.txt
+- **Do NOT open a public GitHub issue for security vulnerabilities**
 
-See [SECURITY.md](SECURITY.md) for our full disclosure policy.
+We follow 90-day responsible disclosure. Reports are acknowledged within 48 hours, and critical fixes ship within 7 days. We will not pursue legal action against researchers who report in good faith.
+
+See [SECURITY.md](SECURITY.md) for our full disclosure policy, PGP fingerprint, and cryptographic specification.
 
 ## License
 
-Discreet is licensed under [AGPL-3.0-or-later](LICENSE). By contributing,
-you agree that your contributions will be licensed under the same terms.
+Discreet is licensed under [AGPL-3.0-or-later](LICENSE). By contributing, you agree that your contributions will be licensed under the same terms.
 
 Copyright (C) 2026 Citadel Open Source LLC.

@@ -25,6 +25,7 @@ export interface MeetingRoomProps {
 interface Meeting {
   id:        string;
   code:      string;
+  join_code?: string;
   title:     string;
   host_id?:  string;
   password?: string;
@@ -240,7 +241,14 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
   };
 
   const copyCode = () => {
-    if (meeting) navigator.clipboard?.writeText(meeting.code);
+    if (meeting) navigator.clipboard?.writeText(meeting.join_code || meeting.code);
+  };
+
+  const shareUrl = () => {
+    if (!meeting) return;
+    const code = meeting.join_code || meeting.code;
+    const url = `${window.location.origin}/meet/${code}`;
+    navigator.clipboard?.writeText(url);
   };
 
   // ── Render ────────────────────────────────────────────
@@ -477,27 +485,34 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                 </div>
               </div>
 
-              {/* Meeting code pill + copy */}
+              {/* Join code pill + copy + share */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div
                   onClick={copyCode}
-                  title="Click to copy meeting code"
+                  title="Click to copy join code"
                   style={{
                     background: `${ta(T.ac,'15')}`, border: `1px solid ${ta(T.ac,'40')}`,
-                    borderRadius: 8, padding: '4px 12px',
-                    fontSize: 16, fontWeight: 700, color: T.ac,
-                    letterSpacing: 3, fontFamily: "'JetBrains Mono', monospace",
+                    borderRadius: 8, padding: '6px 16px',
+                    fontSize: 24, fontWeight: 700, color: T.ac,
+                    letterSpacing: 4, fontFamily: "'JetBrains Mono', monospace",
                     cursor: 'pointer',
                   }}
                 >
-                  {formatCode(meeting.code)}
+                  {meeting.join_code || formatCode(meeting.code)}
                 </div>
                 <button
                   onClick={copyCode}
-                  title="Copy meeting code"
-                  style={{ background: `${ta(T.ac,'22')}`, border: `1px solid ${ta(T.ac,'33')}`, borderRadius: 6, color: T.ac, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '4px 10px' }}
+                  title="Copy join code"
+                  style={{ background: `${ta(T.ac,'22')}`, border: `1px solid ${ta(T.ac,'33')}`, borderRadius: 6, color: T.ac, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '6px 10px' }}
                 >
                   Copy
+                </button>
+                <button
+                  onClick={shareUrl}
+                  title="Copy share link"
+                  style={{ background: `${ta(T.ac,'22')}`, border: `1px solid ${ta(T.ac,'33')}`, borderRadius: 6, color: T.ac, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '6px 10px' }}
+                >
+                  Share
                 </button>
               </div>
             </div>

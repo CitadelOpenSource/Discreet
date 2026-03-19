@@ -1,157 +1,112 @@
 <h1 align="center">Discreet</h1>
 
 <p align="center">
-  <strong>End-to-end encrypted communication for communities.</strong>
+  <strong>Communication Without Compromise</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/CitadelOpenSource/Discreet/actions"><img src="https://img.shields.io/github/actions/workflow/status/CitadelOpenSource/Discreet/ci.yml?branch=main&label=CI&logo=github" alt="CI" /></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0" /></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.85+-orange.svg?logo=rust" alt="Rust" /></a>
-  <a href="https://www.rfc-editor.org/rfc/rfc9420"><img src="https://img.shields.io/badge/MLS-RFC_9420-green.svg" alt="MLS RFC 9420" /></a>
-  <img src="https://img.shields.io/badge/Tests-85+-brightgreen.svg" alt="Tests" />
-  <img src="https://img.shields.io/badge/Patent-Pending-yellow.svg" alt="Patent Pending" />
+  <img src="https://img.shields.io/badge/Release-Alpha-orange.svg" alt="Alpha" />
 </p>
 
 <p align="center">
-  <a href="https://discreetai.net">Website</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/SELF_HOSTING.md">Self-Host</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="CONTRIBUTING.md">Contribute</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="SECURITY.md">Security</a>
+  <a href="https://discreetai.net">Website</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/SELF_HOSTING.md">Self-Host</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="CONTRIBUTING.md">Contribute</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="SECURITY.md">Security</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/BAA_TEMPLATE.md">BAA Template</a>
 </p>
 
 ---
 
-## What is Discreet?
-
-Discreet is an open-source, end-to-end encrypted messaging platform that
-combines community features with verifiable cryptography. The server stores
-only ciphertext — it cannot read your messages, even under legal compulsion.
+Discreet is an open-source, end-to-end encrypted messenger that combines Discord-quality community features with Signal-grade cryptography. Every message is encrypted on the sender's device before it leaves — the server stores and relays ciphertext it cannot decrypt. No phone number required. No tracking. No analytics. Fully self-hostable on a single server with Docker Compose.
 
 ## Features
 
-| | |
-|---|---|
-| **Encrypted messaging** | HKDF-SHA256 + AES-256-GCM with key commitment tags |
-| **MLS group encryption** | RFC 9420 via OpenMLS 0.8.1 with forward secrecy |
-| **E2EE voice and video** | Peer-to-peer WebRTC with SFrame (RFC 9605) |
-| **AI agents** | 5 providers, local-first with OpenJarvis, agents hold their own keys |
-| **Servers and channels** | Roles, permissions, categories, threads, polls, events |
-| **Direct messages** | X3DH + Double Ratchet, zero-knowledge architecture |
-| **Live streaming** | Standard RTMP ingest, re-encrypted with MLS group keys |
-| **Desktop and mobile** | Tauri desktop shell, React Native mobile app |
-| **Self-hostable** | Single binary + Docker Compose, runs on a $5 VPS |
+| Feature | Details |
+|---------|---------|
+| E2EE messaging | MLS (RFC 9420) group encryption via OpenMLS, HKDF-SHA256 + AES-256-GCM with key commitment tags |
+| Encrypted voice and video | Peer-to-peer WebRTC with SFrame (RFC 9605) media encryption |
+| AI agents | Multi-provider support (Anthropic, OpenAI, Google Gemini, Ollama, custom endpoints) with per-agent encryption keys |
+| Authentication | Passkeys (FIDO2 WebAuthn), OAuth 2.0 (Google, GitHub, Discord, Apple), TOTP 2FA, SAML SSO |
+| Post-quantum cryptography | ML-KEM and ML-DSA behind feature flags for forward-secure key exchange |
+| Themes and layouts | 4 built-in themes (Midnight, Dawn, Terminal, Obsidian) with 3 layout density modes and a custom theme editor |
+| Disappearing messages | Per-channel TTL with automatic server-side cleanup and enterprise data retention policies |
+| Sticker packs and translation | Custom sticker uploads with multi-language message translation via AI agents |
+| Servers and channels | Roles, permissions, categories, threads, polls, events, bookmarks, and pinned messages |
+| Admin dashboard | Platform-wide analytics, audit logs with hash-chain integrity, CSV/PDF export, remote session wipe |
+| Direct messages | X3DH + Double Ratchet with zero-knowledge architecture |
+| Self-hostable | Single binary + Docker Compose, runs on a $5 VPS with automatic TLS via Caddy |
+
+## How Discreet Compares
+
+| Feature | Signal | Discord | Element | Wire | Discreet |
+|---------|--------|---------|---------|------|----------|
+| E2EE by default | Yes | No | Yes | Yes | Yes |
+| Servers and channels | No | Yes | Yes (Spaces) | No | Yes |
+| AI agents | No | Bots (unencrypted) | No | No | Yes (E2EE) |
+| OAuth login | No | Yes | No | No | Yes |
+| Passkeys (FIDO2) | No | No | No | No | Yes |
+| No phone number required | No | Yes | Yes | No | Yes |
+| Self-hostable | No | No | Yes | No | Yes |
+| Post-quantum ready | No | No | No | No | Yes |
+| Open source | Yes | No | Yes | Partial | Yes |
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
-docker compose up -d          # PostgreSQL + Redis
-cp .env.example .env          # Configure secrets
-cargo run                     # Start server at localhost:3000
+cp .env.example .env
+docker compose up -d
 ```
 
-See [GUIDE/QUICKSTART.md](GUIDE/QUICKSTART.md) for detailed setup instructions.
+Open [localhost:5173](http://localhost:5173) in your browser. The default Docker Compose starts PostgreSQL, Redis, the Rust backend, and the Vite dev server.
+
+## Developer Setup
+
+For hot-reloading and development tooling:
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+Run the test suite before submitting changes:
+
+```bash
+cargo test --lib              # Unit tests
+cargo clippy -- -D warnings   # Zero warnings policy
+cd client && npm run build    # Frontend must compile clean
+```
 
 ## Architecture
 
 ```
- Client (React/Vite)          Server (Rust/Axum)           Storage
-┌─────────────────────┐    ┌──────────────────────┐    ┌──────────────┐
-│                     │    │                      │    │              │
-│  HKDF-SHA256        │───▷│  Axum + Tower        │───▷│  PostgreSQL  │
-│  AES-256-GCM        │    │  middleware stack     │    │  (ciphertext │
-│  key commitment     │    │                      │    │   only)      │
-│                     │    │  JWT auth             │    │              │
-│  MLS (RFC 9420)     │    │  Rate limiting        │    ├──────────────┤
-│  via WASM module    │    │  Input validation     │    │              │
-│                     │    │  Security headers     │───▷│  Redis       │
-│  SFrame (RFC 9605)  │    │  Audit logging        │    │  (rate limit │
-│  voice encryption   │    │                      │    │   + cache)   │
-│                     │    │  WebSocket relay      │    │              │
-└─────────────────────┘    └──────────────────────┘    └──────────────┘
-         │                          │
-         │    WebRTC (P2P)          │
-         └──────────────────────────┘
-              Voice/Video
-         (never touches server)
+ Client (React 18 / Vite 5)       Server (Rust / Axum 0.7)        Storage
+┌──────────────────────────┐    ┌──────────────────────────┐    ┌──────────────┐
+│  MLS (RFC 9420) via WASM │───▷│  Axum + Tower middleware │───▷│  PostgreSQL   │
+│  HKDF-SHA256 + AES-256-GCM│   │  JWT + Passkey auth      │    │  (ciphertext  │
+│  key commitment tags     │    │  Redis rate limiting     │    │   only)       │
+│  SFrame (RFC 9605)       │    │  Input validation        │    ├──────────────┤
+│  voice/video encryption  │    │  Security headers        │───▷│  Redis        │
+│                          │    │  Audit logging           │    │  (rate limits │
+│  Tauri desktop           │    │  WebSocket relay         │    │   + sessions) │
+│  React Native mobile     │    │  AI agent orchestration  │    │              │
+└──────────────────────────┘    └──────────────────────────┘    └──────────────┘
+         │                               │
+         │       WebRTC (peer-to-peer)   │
+         └───────────────────────────────┘
+              Voice/Video — never touches server
 ```
 
-**Stack:** Rust 1.85+ / Axum 0.7, PostgreSQL 16, Redis 7, React 18 / Vite 5,
-OpenMLS 0.8.1, sqlx 0.8 (compile-time validated queries).
+## Documentation
 
-## Security
-
-All cryptographic operations happen on the client. The server is a
-relay for ciphertext it cannot decrypt.
-
-| Layer | Algorithm | Standard |
-|-------|-----------|----------|
-| Key derivation | HKDF-SHA256 | RFC 5869 |
-| Symmetric encryption | AES-256-GCM with 32-byte key commitment | NIST SP 800-38D |
-| Group key exchange | MLS | RFC 9420 |
-| Voice/video frames | SFrame | RFC 9605 |
-| Password hashing | Argon2id | OWASP recommendation |
-| Transport | TLS 1.3 with HSTS preload | RFC 8446 |
-
-Key commitment prevents multi-key attacks on AES-GCM. Every ciphertext
-is prefixed with a 32-byte HKDF-derived commitment tag verified before
-decryption.
-
-Rate limiting is fail-closed: if Redis is unavailable, requests are
-rejected (503), not allowed through. All 692 SQL queries are compile-time
-validated — SQL injection is structurally impossible.
-
-Full details: [SECURITY.md](SECURITY.md) | [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
-
-## AI Agents
-
-AI agents participate as real members in encrypted channels. Each agent
-holds its own cryptographic keys and decrypts only messages addressed to it.
-
-| Provider | Type | Data leaves your network? |
-|----------|------|--------------------------|
-| OpenJarvis (Ollama) | Local | No |
-| Anthropic | Cloud | Yes (HTTPS, metadata stripped) |
-| OpenAI | Cloud | Yes (HTTPS, metadata stripped) |
-| Google Gemini | Cloud | Yes (HTTPS, metadata stripped) |
-| Custom endpoint | Configurable | Depends on endpoint |
-
-Every channel with an active agent displays a visible disclosure banner.
-Agent responses are encrypted with the channel's group key before storage.
-Agent episodic memory is AES-256-GCM encrypted per-channel.
-
-For fully offline AI: deploy OpenJarvis (Ollama) alongside Discreet.
-Zero data leaves your infrastructure.
-
-## Self-Hosting
-
-Discreet runs on any Linux server with Docker:
-
-```bash
-./scripts/setup.sh
-```
-
-Minimum: 2 CPU, 4 GB RAM, domain with DNS. The setup script generates
-secrets, starts infrastructure, applies migrations, and builds the client.
-
-Full guide: [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
-
-## Contributing
-
-We welcome contributions. No CLA required — your code is licensed under
-the same AGPL-3.0-or-later terms as the project.
-
-```bash
-cargo test --lib              # 85+ tests must pass
-cargo clippy -- -D warnings   # Zero warnings
-cd client && npm run build    # Frontend must compile
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branch workflow, code standards,
-and security reporting instructions.
+| Document | Description |
+|----------|-------------|
+| [SECURITY.md](SECURITY.md) | Cryptographic specification, wire format, OWASP compliance, dependency audit |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch workflow, code standards, commit conventions |
+| [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) | Production deployment guide with Caddy, systemd, and backup procedures |
+| [docs/BAA_TEMPLATE.md](docs/BAA_TEMPLATE.md) | Business Associate Agreement template for healthcare deployments |
 
 ## License
 
-**AGPL-3.0-or-later** — You can read, audit, and verify every line of code
-that handles your data. If you modify and deploy Discreet, you must share
-your changes under the same license.
+**AGPL-3.0-or-later** — You can read, audit, and verify every line of code that handles your data. If you modify and deploy Discreet, you must share your changes under the same license.
 
 Patent Pending. Copyright (C) 2026 Citadel Open Source LLC.

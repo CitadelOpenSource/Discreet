@@ -64,6 +64,7 @@ use discreet_server::discreet_forum_handlers;
 use discreet_server::discreet_friend_handlers;
 use discreet_server::discreet_group_dm_handlers;
 use discreet_server::discreet_health;
+use discreet_server::discreet_ldap_sync;
 use discreet_server::discreet_meeting_handlers;
 use discreet_server::discreet_oauth;
 use discreet_server::discreet_passkey;
@@ -90,6 +91,7 @@ use discreet_server::discreet_disappearing_handlers;
 use discreet_server::discreet_platform_admin_handlers;
 use discreet_server::discreet_premium;
 use discreet_server::discreet_qr_handlers;
+use discreet_server::discreet_saml;
 use discreet_server::discreet_platform_settings;
 use discreet_server::discreet_waitlist;
 use discreet_server::discreet_websocket;
@@ -476,6 +478,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(discreet_disappearing_handlers::disappearing_cleanup_loop(db, redis));
     }
 
+    // Background task: LDAP directory sync (enterprise user provisioning).
+    {
+        let db = state.db.clone();
+        let redis = state.redis.clone();
+        tokio::spawn(discreet_ldap_sync::ldap_sync_loop(db, redis));
+    }
+
     // Background task: execute scheduled server deletions every 5 minutes.
     // Servers past their scheduled_deletion_at are fully deleted:
     // messages/channels/roles removed, audit tombstone preserved.
@@ -573,6 +582,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/oauth/:provider/authorize", axum::routing::get(discreet_oauth::authorize))
         .route("/auth/oauth/:provider/callback", axum::routing::get(discreet_oauth::oauth_callback))
         .route("/auth/oauth/:provider", axum::routing::delete(discreet_oauth::unlink_provider))
+        // SAML SSO
+        .route("/auth/saml/metadata", axum::routing::get(discreet_saml::sp_metadata))
+        .route("/auth/saml/acs", axum::routing::post(discreet_saml::assertion_consumer_service))
         // Server discovery
         .route("/discover", axum::routing::get(discreet_discovery_handlers::discover_servers))
         .route("/servers/:server_id/publish", axum::routing::post(discreet_discovery_handlers::publish_server))
@@ -657,6 +669,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/voice/turn-credentials", axum::routing::get(discreet_turn::turn_credentials))
         // Meetings (Zoom-style)
         .route("/meetings", axum::routing::post(discreet_meeting_handlers::create_meeting).get(discreet_meeting_handlers::list_my_meetings))
+        .route("/meetings/join/:code", axum::routing::get(discreet_meeting_handlers::get_meeting_by_join_code))
         .route("/meetings/:code", axum::routing::get(discreet_meeting_handlers::get_meeting_info).delete(discreet_meeting_handlers::end_meeting))
         .route("/meetings/:code/join", axum::routing::post(discreet_meeting_handlers::join_meeting))
         // Polls
@@ -912,6 +925,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }),
         )
+        // Meeting deep-links — serve Vite client so it can handle /meet/:code
+        .route(
+            "/meet/:code",
+            axum::routing::get(|| async {
+                match tokio::fs::read_to_string("client/dist/index.html").await {
+                    Ok(html) => axum::response::Html(html).into_response(),
+                    Err(_) => axum::response::Redirect::temporary("/app").into_response(),
+                }
+            }),
+        )
         // Vite client — serves client/dist/ at /app and returns index.html
         // for any path that doesn't match a static asset, enabling
         // React Router client-side navigation.
@@ -926,6 +949,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/",
             axum::routing::get(|| async {
                 match tokio::fs::read_to_string("client/public/landing.html").await {
+                    Ok(html) => axum::response::Html(html).into_response(),
+                    Err(_) => axum::response::Redirect::temporary("/app").into_response(),
+                }
+            }),
+        )
+        // Download page — platform installers and checksums.
+        .route(
+            "/download",
+            axum::routing::get(|| async {
+                match tokio::fs::read_to_string("client/public/download.html").await {
                     Ok(html) => axum::response::Html(html).into_response(),
                     Err(_) => axum::response::Redirect::temporary("/app").into_response(),
                 }

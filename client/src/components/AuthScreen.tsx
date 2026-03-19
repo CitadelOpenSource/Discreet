@@ -2,7 +2,7 @@
  * AuthScreen — Login / Register / Guest / Meeting Join screen.
  * First thing users see before authentication.
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { T, getInp, btn } from '../theme';
 import { api, storageBlocked, _storage } from '../api/CitadelAPI';
 
@@ -119,6 +119,45 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [email, setEmail]         = useState('');
   const [dob, setDob]             = useState('');
   const [termsOk, setTermsOk]     = useState(false);
+
+  // OAuth providers + SAML SSO
+  const [oauthProviders, setOauthProviders] = useState<{ provider: string; client_id: string }[]>([]);
+  const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  const [samlLoading, setSamlLoading] = useState(false);
+
+  useEffect(() => {
+    api.fetch('/auth/oauth/providers').then(r => r.json()).then((data: any) => {
+      if (Array.isArray(data?.providers)) setOauthProviders(data.providers);
+    }).catch(() => {});
+    // Check SAML
+    api.fetch('/info').then(r => r.json()).then((info: any) => {
+      // Read saml_enabled from platform settings via info or separate call
+    }).catch(() => {});
+    api.fetch('/admin/settings').then(r => { if (r.ok) return r.json(); return null; }).then((s: any) => {
+      if (s?.saml_enabled) setSamlEnabled(true);
+    }).catch(() => {
+      // Non-admin: try reading from a public endpoint instead
+      // For now, check if SAML metadata endpoint exists
+      fetch(`${window.location.origin}/api/v1/auth/saml/metadata`, { method: 'HEAD' })
+        .then(r => { if (r.ok) setSamlEnabled(true); })
+        .catch(() => {});
+    });
+  }, []);
+
+  const handleOAuthLogin = async (provider: string) => {
+    setOauthLoading(provider);
+    setError('');
+    try {
+      const r = await api.fetch(`/auth/oauth/${provider}/authorize`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      if (data.auth_url) window.location.href = data.auth_url;
+    } catch (e: any) {
+      setError(e?.message || 'OAuth login failed');
+    }
+    setOauthLoading(null);
+  };
 
   // Verification code modal (shown after registration with email)
   const [verifyModal, setVerifyModal] = useState(false);
@@ -238,6 +277,53 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             </button>
           ))}
         </div>
+
+        {/* ── SAML SSO button ── */}
+        {mode === 'login' && samlEnabled && (
+          <div style={{ marginBottom: oauthProviders.length > 0 ? 8 : 16 }}>
+            <button type="button" onClick={async () => {
+              setSamlLoading(true);
+              try {
+                // Read SSO URL from settings and redirect
+                const r = await api.fetch('/admin/settings').catch(() => null);
+                const s = r && r.ok ? await r.json() : null;
+                const ssoUrl = s?.saml_sso_url;
+                if (ssoUrl) {
+                  window.location.href = ssoUrl;
+                } else {
+                  setError('SSO is enabled but no IdP login URL is configured. Contact your administrator.');
+                }
+              } catch { setError('SSO login failed'); }
+              setSamlLoading(false);
+            }} disabled={samlLoading} style={{
+              height: 44, width: '100%', borderRadius: 8, border: 'none',
+              background: `linear-gradient(135deg,${T.ac},${T.ac2 || T.ac})`,
+              color: '#000', fontSize: 14, fontWeight: 600,
+              cursor: samlLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', gap: 10, opacity: samlLoading ? 0.7 : 1,
+              fontFamily: "'DM Sans',sans-serif",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              {samlLoading ? 'Redirecting to SSO...' : 'Sign in with SSO'}
+            </button>
+          </div>
+        )}
+
+        {/* ── OAuth social login buttons ── */}
+        {mode === 'login' && oauthProviders.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {oauthProviders.map(p => (
+                <OAuthButton key={p.provider} provider={p.provider} loading={oauthLoading === p.provider} onClick={() => handleOAuthLogin(p.provider)} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+              <div style={{ flex: 1, height: 1, background: T.bd }} />
+              <span style={{ fontSize: 12, color: T.mt, fontWeight: 500 }}>or</span>
+              <div style={{ flex: 1, height: 1, background: T.bd }} />
+            </div>
+          </div>
+        )}
 
         <form onSubmit={submit} noValidate>
           {/* ── Login form ── */}
@@ -623,6 +709,112 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── OAuth branded buttons ──────────────────────────────────────────────────
+
+const OAUTH_BRANDS: Record<string, { bg: string; color: string; border: string; label: string; logo: React.ReactNode }> = {
+  google: {
+    bg: '#ffffff', color: '#3c4043', border: '1px solid #dadce0', label: 'Continue with Google',
+    logo: <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A11.96 11.96 0 001 12c0 1.94.46 3.77 1.18 5.39l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>,
+  },
+  github: {
+    bg: '#24292f', color: '#ffffff', border: 'none', label: 'Continue with GitHub',
+    logo: <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>,
+  },
+  apple: {
+    bg: '#000000', color: '#ffffff', border: 'none', label: 'Continue with Apple',
+    logo: <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>,
+  },
+  discord: {
+    bg: '#5865F2', color: '#ffffff', border: 'none', label: 'Continue with Discord',
+    logo: <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>,
+  },
+};
+
+function OAuthButton({ provider, loading, onClick }: { provider: string; loading: boolean; onClick: () => void }) {
+  const brand = OAUTH_BRANDS[provider];
+  if (!brand) return null;
+  return (
+    <button type="button" onClick={onClick} disabled={loading} style={{
+      height: 44, width: '100%', borderRadius: 8, border: brand.border,
+      background: brand.bg, color: brand.color, fontSize: 14, fontWeight: 500,
+      cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', gap: 10, opacity: loading ? 0.7 : 1,
+      fontFamily: "'DM Sans',sans-serif", transition: 'opacity .15s',
+    }}>
+      {brand.logo}
+      {loading ? 'Redirecting...' : brand.label}
+    </button>
+  );
+}
+
+// ─── OAuth callback page ────────────────────────────────────────────────────
+
+export function OAuthCallback({ onAuth }: { onAuth: () => void }) {
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    const pathParts = window.location.pathname.split('/');
+    const provider = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2];
+
+    if (!code || !state) {
+      setError('Missing authorization code or state parameter.');
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const r = await fetch(`${window.location.origin}/api/v1/auth/oauth/${provider}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`);
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          throw new Error((e as any).error || `Authentication failed (${r.status})`);
+        }
+        const data = await r.json();
+        if (data.access_token) {
+          (api as any).token = data.access_token;
+          if (data.user) {
+            api.userId = data.user.id;
+            api.username = data.user.username;
+            _storage.setItem('d_uid', data.user.id);
+            _storage.setItem('d_uname', data.user.username);
+          }
+          window.history.replaceState({}, '', '/app');
+          onAuth();
+        } else {
+          throw new Error('No access token in response');
+        }
+      } catch (e: any) {
+        setError(e?.message || 'OAuth login failed');
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans',sans-serif" }}>
+      <div style={{ maxWidth: 400, width: '100%', padding: 32, textAlign: 'center' }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: T.ac, marginBottom: 24 }}>Discreet</div>
+        {loading && (
+          <div style={{ color: T.mt, fontSize: 14 }}>Completing login...</div>
+        )}
+        {error && (
+          <div>
+            <div style={{ color: T.err, fontSize: 14, marginBottom: 16, lineHeight: 1.6 }}>{error}</div>
+            <button onClick={() => { window.location.href = '/app'; }} style={{
+              padding: '10px 24px', borderRadius: 8, border: 'none',
+              background: T.ac, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>Back to Login</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -23,6 +23,7 @@ const _isPrivacy = _path === '/app/privacy';
 const _isTerms   = _path === '/app/terms';
 const _isTiers   = _path === '/app/tiers';
 const _isSupport = _path === '/app/support';
+const _isOAuthCallback = _path.startsWith('/auth/callback/');
 
 const App = React.lazy(() => import('./App'));
 const GuestMeetingJoin = React.lazy(() =>
@@ -34,6 +35,9 @@ const TierComparisonPage = React.lazy(() =>
   import('./components/TierComparisonPage').then(m => ({ default: m.TierComparisonPage }))
 );
 const SupportPage = React.lazy(() => import('./pages/SupportPage'));
+const OAuthCallback = React.lazy(() =>
+  import('./components/AuthScreen').then(m => ({ default: m.OAuthCallback }))
+);
 
 const Spinner = (
   <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, background:'#07090f', color:'#e0e4ea' }}>
@@ -54,6 +58,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           ? <TierComparisonPage onBack={() => window.history.back()} isGuest />
           : _isSupport
           ? <SupportPage />
+          : _isOAuthCallback
+          ? <OAuthCallback onAuth={() => { window.location.href = '/app'; }} />
           : _meetCode
           ? <GuestMeetingJoin code={_meetCode} />
           : <MobileProvider><TimezoneProvider><App /></TimezoneProvider></MobileProvider>

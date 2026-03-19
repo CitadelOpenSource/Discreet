@@ -19,6 +19,8 @@ import { EmojiPicker, getQuickReact, type CustomEmoji } from './components/Emoji
 import { FriendsView } from './components/FriendsView';
 import { VideoGrid } from './components/VideoGrid';
 import { SearchPanel } from './components/SearchPanel';
+import { ChannelSearch } from './components/ChannelSearch';
+import { OnboardingModal } from './components/OnboardingModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpgradeModal } from './components/UpgradeModal';
 import { MaintenancePage, ErrorBoundary as SectionBoundary } from './components/ErrorBoundary';
@@ -793,6 +795,8 @@ export default function App() {
 
   // ── Mobile nav ───────────────────────────────────────────
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [channelSearchOpen, setChannelSearchOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAppBanner, setShowAppBanner] = useState(() => isMobile && localStorage.getItem('app_banner_dismissed') !== 'true');
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
@@ -873,7 +877,10 @@ export default function App() {
         if (expiresIn < 5 * 60 * 1000) api.tryRefresh();
       }
     } catch {}
-    loadServers(true); loadDms(); api.getMe().then(setMe).catch(() => {});
+    loadServers(true); loadDms(); api.getMe().then((u: any) => {
+      setMe(u);
+      if (!localStorage.getItem('onboarding_complete')) setShowOnboarding(true);
+    }).catch(() => {});
     api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
     api.listSessions().then((ss: any[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
     api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null, platform_role: d.platform_role ?? null } })); } }).catch(() => {});
@@ -951,6 +958,27 @@ export default function App() {
         setToast('Invalid or expired invite link'); setTimeout(() => setToast(''), 3000);
       });
       // Clean up URL without reload
+      window.history.replaceState({}, '', '/app');
+    }
+  }, [authed]);
+
+  // ── Handle /meet/:code deep links (meeting join codes) ──
+  useEffect(() => {
+    if (!authed) return;
+    const m = window.location.pathname.match(/^\/meet\/([A-Za-z0-9]{6,8})\/?$/);
+    if (m) {
+      const joinCode = m[1];
+      // Look up by join code, then open MeetingRoom with the meeting's numeric code
+      api.fetch(`/meetings/join/${encodeURIComponent(joinCode)}`).then(r => r.json()).then((info: any) => {
+        if (info?.code) {
+          setMeetingCode(info.code);
+          setShowMeeting(true);
+        } else {
+          setToast('Meeting not found or expired'); setTimeout(() => setToast(''), 3000);
+        }
+      }).catch(() => {
+        setToast('Meeting not found or expired'); setTimeout(() => setToast(''), 3000);
+      });
       window.history.replaceState({}, '', '/app');
     }
   }, [authed]);
@@ -2484,7 +2512,8 @@ export default function App() {
             {view === 'server' && (<>
               <div className="touch-target" onClick={() => setShowWatchParty(p => !p)} style={{ cursor: 'pointer', color: showWatchParty ? T.ac : T.mt, padding: 4, fontSize: 16, lineHeight: 1 }} title="Watch Party">🎬</div>
               <div className="touch-target" onClick={async () => { setShowPinned(p => !p); if (!showPinned && curServer && curChannel) { try { const pins = await api.getPinnedMessages(curServer.id, curChannel.id); setPinnedMsgs(Array.isArray(pins) ? pins : []); } catch { setPinnedMsgs([]); } } }} style={{ cursor: 'pointer', color: showPinned ? T.ac : T.mt, padding: 4, fontSize: 16, lineHeight: 1 }} title="Pinned Messages">📌</div>
-              <div className="touch-target" onClick={() => setPanel(panel === 'search' ? null : 'search')} style={{ cursor: 'pointer', color: panel === 'search' ? T.ac : T.mt, padding: 4 }} title="Search"><I.Search /></div>
+              <div className="touch-target" onClick={() => setChannelSearchOpen(p => !p)} style={{ cursor: 'pointer', color: channelSearchOpen ? T.ac : T.mt, padding: 4 }} title="Search messages (client-side)"><I.Search /></div>
+              <div className="touch-target" onClick={() => setPanel(panel === 'search' ? null : 'search')} style={{ cursor: 'pointer', color: panel === 'search' ? T.ac : T.mt, padding: 4 }} title="Advanced search"><I.Sliders /></div>
               <div className="touch-target" onClick={() => setPanel(panel === 'members' ? null : 'members')} style={{ cursor: 'pointer', color: panel === 'members' ? T.ac : T.mt, padding: 4, display: 'flex', alignItems: 'center', gap: 4 }} title="Members"><I.Users /> <span style={{ fontSize: 11 }}>{members.length}</span></div>
             </>)}
           </div>
@@ -2948,6 +2977,30 @@ export default function App() {
               peers={Array.from(vc.streams.keys()).map(id => ({ id, name: getName(id), speaking: false }))}
             />
           )}
+          {/* Client-side channel search */}
+          {channelSearchOpen && curChannel && (
+            <ChannelSearch
+              messages={messages}
+              getName={getName}
+              onClose={() => setChannelSearchOpen(false)}
+              channelId={curChannel.id}
+              onLoadOlder={async () => {
+                if (messages.length > 0) {
+                  const oldest = messages[0];
+                  try {
+                    const r = await api.fetch(`/channels/${curChannel.id}/messages?before=${oldest.id}&limit=50`);
+                    if (r.ok) {
+                      const older = await r.json();
+                      if (Array.isArray(older) && older.length > 0) {
+                        setMessages(prev => [...older, ...prev]);
+                      }
+                    }
+                  } catch {}
+                }
+              }}
+            />
+          )}
+
           <MessageList
             messages={messages}
             currentUserId={api.userId || ''}
@@ -4337,6 +4390,33 @@ export default function App() {
 
       {/* CSS for hover actions */}
       <style>{`.msg-row:hover .msg-actions, div:hover > .msg-actions { display: flex !important; }`}</style>
+
+      {/* Onboarding wizard overlay (first-run only — renders over app) */}
+      {showOnboarding && (
+        <OnboardingModal username={api.username || ''} onThemeChange={handleThemeChange} onLayoutChange={(id) => {
+          localStorage.setItem('d_layout', id);
+        }} onComplete={async (data) => {
+          if (data.selectedTheme) handleThemeChange(data.selectedTheme);
+          if (data.displayName) {
+            try { await api.updateProfile({ display_name: data.displayName }); } catch { /* best-effort */ }
+          }
+          if (data.avatarFile) {
+            try {
+              const reader = new FileReader();
+              reader.onload = async () => {
+                const dataUrl = reader.result as string;
+                try {
+                  const res = await api.updateProfile({ avatar: dataUrl });
+                  const json = await res?.json().catch(() => null);
+                  api.ws?.send(JSON.stringify({ type: 'user_profile_update', avatar_url: json?.avatar_url ?? dataUrl }));
+                } catch { /* best-effort */ }
+              };
+              reader.readAsDataURL(data.avatarFile);
+            } catch { /* best-effort */ }
+          }
+          setShowOnboarding(false);
+        }} />
+      )}
 
       <BugReportButton />
 
