@@ -71,7 +71,7 @@ export default function SettingsAccount({
     <ChangePassword />
     <div data-section="2fa" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
       <div><div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>Two-Factor Authentication (2FA) <I.Lock s={10} /></div><div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Add TOTP-based 2FA for extra account security</div></div>
-      <button onClick={() => { alert('2FA setup will be available in a future update. Your account is still protected by password-based authentication and session management.'); }} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
+      <TwoFactorSetupButton />
     </div>
     <PasskeyManager />
     <div data-section="recovery-key" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
@@ -210,6 +210,23 @@ function PasskeyManager() {
       </div>
       {error && <div style={{ fontSize: 11, color: T.err, marginTop: 6, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>{error}</div>}
     </div>
+  );
+}
+
+// ─── 2FA Setup Button (pending implementation) ─────────────────────────
+
+function TwoFactorSetupButton() {
+  const [showMsg, setShowMsg] = useState(false);
+  return (
+    <>
+      <button onClick={() => setShowMsg(true)} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '6px 14px', fontSize: 11, fontWeight: 700 }}>Setup 2FA</button>
+      {showMsg && (
+        <div style={{ fontSize: 11, color: T.mt, marginTop: 6, padding: '8px 12px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}`, lineHeight: 1.5 }}>
+          2FA setup will be available in a future update. Your account is protected by password-based authentication, session management, and optional passkey support.
+          <span onClick={() => setShowMsg(false)} style={{ marginLeft: 8, color: T.mt, cursor: 'pointer', fontSize: 10 }}>Dismiss</span>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -420,7 +420,7 @@ impl LlmProvider for AnthropicProvider {
         })?;
 
         // Extract text from content blocks
-        let text: String = data
+        let raw_text: String = data
             .content
             .iter()
             .filter(|b| b.block_type == "text")
@@ -428,9 +428,12 @@ impl LlmProvider for AnthropicProvider {
             .collect::<Vec<_>>()
             .join("");
 
-        if text.is_empty() {
+        if raw_text.is_empty() {
             return Err(AgentError::EmptyCompletion);
         }
+
+        // Post-processing: enforce max length
+        let text = cap_response(raw_text);
 
         let usage = data.usage.as_ref();
 
@@ -524,9 +527,20 @@ struct OpenAiUsage {
     completion_tokens: Option<u32>,
 }
 
+/// Unified OpenAI-compatible provider covering: OpenAI, OpenJarvis, Ollama
+/// (via /v1/chat/completions), vLLM, SGLang, LM Studio, and any server
+/// that implements the OpenAI Chat Completions API.
+///
+/// Default base URLs by provider_type:
+///   openai     → https://api.openai.com
+///   openjarvis → http://localhost:8000
+///   ollama     → http://localhost:11434
+///
+/// API key is optional — local providers like OpenJarvis and Ollama do not
+/// require one. Set Authorization header only when api_key is configured.
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiProvider {
-    #[instrument(skip(self, system_prompt, messages, config), fields(provider = "openai"))]
+    #[instrument(skip(self, system_prompt, messages, config), fields(provider = "openai-compat"))]
     async fn complete(
         &self,
         system_prompt: &str,
@@ -535,17 +549,24 @@ impl LlmProvider for OpenAiProvider {
     ) -> Result<CompletionResult, AgentError> {
         self.validate_config(config)?;
 
-        let client = build_http_client(config.timeout_secs)?;
-        let api_key = config.api_key.as_deref().ok_or_else(|| {
-            AgentError::NotConfigured("OpenAI API key is required".into())
-        })?;
+        // Allow localhost HTTP for local providers (Ollama, OpenJarvis, vLLM, etc.)
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(config.timeout_secs.min(30)))
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent("DiscreetAgent/0.4.0")
+            .build()
+            .map_err(|e| AgentError::Internal(format!("HTTP client error: {e}")))?;
 
-        let url = format!(
-            "{}/v1/chat/completions",
-            config.endpoint_url.trim_end_matches('/')
-        );
+        // Resolve base URL: configured endpoint > default by provider hint
+        let base_url = if config.endpoint_url.is_empty() {
+            "https://api.openai.com".to_string()
+        } else {
+            config.endpoint_url.trim_end_matches('/').to_string()
+        };
 
-        // Build messages array: system message first, then conversation history
+        let url = format!("{base_url}/v1/chat/completions");
+
+        // Build messages array: system prompt first, then conversation history
         let mut oai_messages = vec![OpenAiMessage {
             role: "system".into(),
             content: system_prompt.to_string(),
@@ -564,10 +585,17 @@ impl LlmProvider for OpenAiProvider {
 
         let start = std::time::Instant::now();
 
-        let resp = client
+        // Build request — only set Authorization header if api_key is provided.
+        // Local providers (Ollama, OpenJarvis, vLLM) typically don't need a key.
+        let mut req = client
             .post(&url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+
+        if let Some(ref key) = config.api_key {
+            req = req.header("Authorization", format!("Bearer {key}"));
+        }
+
+        let resp = req
             .json(&body)
             .send()
             .await
@@ -575,18 +603,18 @@ impl LlmProvider for OpenAiProvider {
                 if e.is_timeout() {
                     AgentError::Timeout(config.timeout_secs)
                 } else {
-                    AgentError::HttpError(format!("OpenAI request failed: {e}"))
+                    AgentError::HttpError(format!("OpenAI-compatible request failed: {e}"))
                 }
             })?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
         if !resp.status().is_success() {
-            return Err(handle_error_response(resp, "OpenAI").await);
+            return Err(handle_error_response(resp, "OpenAI-compatible").await);
         }
 
         let data: OpenAiResponse = resp.json().await.map_err(|e| {
-            AgentError::InvalidResponse(format!("Failed to parse OpenAI response: {e}"))
+            AgentError::InvalidResponse(format!("Failed to parse response: {e}"))
         })?;
 
         let choice = data
@@ -594,24 +622,28 @@ impl LlmProvider for OpenAiProvider {
             .first()
             .ok_or(AgentError::EmptyCompletion)?;
 
-        let text = choice
+        let raw_text = choice
             .message
             .content
             .clone()
             .unwrap_or_default();
 
-        if text.is_empty() {
+        if raw_text.is_empty() {
             return Err(AgentError::EmptyCompletion);
         }
+
+        // Post-processing: enforce max length and sanitize
+        let text = cap_response(raw_text);
 
         let usage = data.usage.as_ref();
 
         info!(
             model = %config.model_id,
+            base_url = %base_url,
             latency_ms,
             prompt_tokens = ?usage.and_then(|u| u.prompt_tokens),
             completion_tokens = ?usage.and_then(|u| u.completion_tokens),
-            "OpenAI completion success"
+            "OpenAI-compatible completion success"
         );
 
         Ok(CompletionResult {
@@ -621,7 +653,7 @@ impl LlmProvider for OpenAiProvider {
                 input_tokens: usage.and_then(|u| u.prompt_tokens),
                 output_tokens: usage.and_then(|u| u.completion_tokens),
                 stop_reason: choice.finish_reason.clone(),
-                provider: "openai".into(),
+                provider: "openai-compat".into(),
                 model: data.model.unwrap_or_else(|| config.model_id.clone()),
             },
         })
@@ -636,14 +668,11 @@ impl LlmProvider for OpenAiProvider {
     }
 
     fn validate_config(&self, config: &AgentModelConfig) -> Result<(), AgentError> {
-        if config.api_key.is_none() {
-            return Err(AgentError::NotConfigured(
-                "OpenAI provider requires an API key".into(),
-            ));
-        }
+        // API key is NOT required — local providers like Ollama and OpenJarvis
+        // don't need one. Only model_id is mandatory.
         if config.model_id.is_empty() {
             return Err(AgentError::NotConfigured(
-                "Model ID is required for OpenAI".into(),
+                "Model ID is required".into(),
             ));
         }
         Ok(())
