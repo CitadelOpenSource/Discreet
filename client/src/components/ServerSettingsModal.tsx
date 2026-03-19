@@ -1179,6 +1179,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.mt }}>
+            {disappearingEnabled ? (<>
             <span>Disappearing:</span>
             <select value={ch.ttl_seconds ?? ''} onChange={async e => {
               const v = e.target.value === '' ? null : Number(e.target.value);
@@ -1191,8 +1192,10 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
               <option value="604800">7 Days</option>
               <option value="2592000">30 Days</option>
             </select>
+            </>) : null}
             {(ch.slowmode_seconds ?? 0) > 0 && <span>· Slowmode: {ch.slowmode_seconds}s</span>}
             {ch.nsfw && <span>· NSFW</span>}
+            <span style={{ marginLeft: 'auto' }}><ExportChannelButton channelId={ch.id} channelName={ch.name} /></span>
           </div>
         </div>
       ))}
@@ -1337,6 +1340,48 @@ function ServerDangerZone({ server, onUpdate }: { server: Server; onUpdate?: () 
   );
 }
 
+// ─── Export Channel Button ────────────────────────────────
+
+function ExportChannelButton({ channelId, channelName }: { channelId: string; channelName: string }) {
+  const [state, setState] = useState<'idle' | 'confirm' | 'loading'>('idle');
+  const [error, setError] = useState('');
+
+  if (state === 'confirm') {
+    return (
+      <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+        <button onClick={async () => {
+          setState('loading'); setError('');
+          try {
+            const headers: Record<string, string> = {};
+            if ((api as any).token) headers['Authorization'] = `Bearer ${(api as any).token}`;
+            const r = await fetch(`${api.baseUrl}/channels/${channelId}/export`, { headers, credentials: 'same-origin' });
+            if (!r.ok) throw new Error(`Export failed (${r.status})`);
+            const blob = await r.blob();
+            const date = new Date().toISOString().slice(0, 10);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `discreet-channel-${channelName}-${date}.zip`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+          } catch (e: any) { setError(e?.message || 'Failed'); }
+          setState('idle');
+        }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: 'none', background: T.ac, color: '#000', fontWeight: 700, cursor: 'pointer' }}>
+          {state === 'loading' ? '...' : 'Confirm'}
+        </button>
+        <button onClick={() => setState('idle')} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: `1px solid ${T.bd}`, background: 'none', color: T.mt, cursor: 'pointer' }}>Cancel</button>
+        {error && <span style={{ fontSize: 10, color: T.err }}>{error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={() => setState('confirm')} title="Export channel messages as ZIP"
+      style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: `1px solid ${T.bd}`, background: 'none', color: T.mt, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <I.Download /> Export
+    </button>
+  );
+}
+
 // ─── ServerSettingsModal ──────────────────────────────────
 
 export interface ServerSettingsModalProps {
@@ -1347,9 +1392,10 @@ export interface ServerSettingsModalProps {
   getName: (userId: string) => string;
   decrypt: (ciphertext: string, channelId: string, epoch: number) => Promise<string>;
   onCreateInvite?: () => void;
+  disappearingEnabled?: boolean;
 }
 
-export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, getName, decrypt, onCreateInvite }: ServerSettingsModalProps) {
+export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, getName, decrypt, onCreateInvite, disappearingEnabled = true }: ServerSettingsModalProps) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [newChName, setNewChName] = useState('');

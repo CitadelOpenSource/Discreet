@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT dm.id, dm.sender_id, dm.content_ciphertext, dm.created_at,\n                      u.username as author_username\n               FROM dm_messages dm\n               JOIN users u ON u.id = dm.sender_id\n               WHERE dm.dm_channel_id = $1\n                 AND dm.sender_id = $2\n                 AND dm.content_ciphertext != '\\x00'\n               ORDER BY dm.created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "content_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "author_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a20dbcfa630fffe6c7f72efbc9e8b8dccc98a44c0983242b840a88219bf257b4"
+}

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { T, ta, PRESETS, getThemeName, setTheme, getTheme, exportTheme, validateCustomTheme, applyCustomTheme, loadCustomTheme, type ThemeRaw } from '../../theme';
+import { T, ta, PRESETS, getThemeName, setTheme, getTheme, exportTheme, validateCustomTheme, applyCustomTheme, loadCustomTheme, previewTheme, revertPreview, type ThemeRaw } from '../../theme';
 import { useTimezone, detectedTimezone } from '../../hooks/TimezoneContext';
 import { api } from '../../api/CitadelAPI';
 
@@ -128,7 +128,11 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
 
     {/* ── Custom Theme Editor ── */}
     <div style={{ marginBottom: 16 }}>
-      <button onClick={() => { setShowEditor(p => !p); if (!showEditor) { setDraft(loadCustomTheme() || getTheme()); setEditorDirty(false); } }}
+      <button onClick={() => {
+        if (showEditor && editorDirty) { revertPreview(); }
+        setShowEditor(p => !p);
+        if (!showEditor) { setDraft(loadCustomTheme() || getTheme()); setEditorDirty(false); }
+      }}
         style={{ width: '100%', padding: '9px 0', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
           background: showEditor ? ta(T.ac, '18') : T.sf2, color: showEditor ? T.ac : T.tx, border: `1px solid ${showEditor ? T.ac : T.bd}` }}>
         {showEditor ? 'Hide Custom Editor' : 'Custom Theme Editor'}
@@ -144,6 +148,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
                   const next = { ...draft, [f.key]: e.target.value };
                   setDraft(next);
                   setEditorDirty(true);
+                  previewTheme(next);
                 }} style={{ width: 28, height: 28, border: `1px solid ${T.bd}`, borderRadius: 4, padding: 0, cursor: 'pointer', background: 'transparent' }} />
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: T.tx }}>{f.label}</div>

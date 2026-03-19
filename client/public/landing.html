@@ -302,11 +302,23 @@
     <section id="waitlist">
       <h2>Join the Waitlist</h2>
       <p>Be the first to know when Discreet launches.</p>
-      <form method="POST" action="https://api.discreetai.net/api/v1/waitlist/join">
-        <input type="email" name="email" placeholder="Your email" required>
-        <input type="text" name="referral_code" placeholder="Referral code (optional)">
-        <button type="submit">Join Waitlist</button>
-      </form>
+      <div id="waitlist-form">
+        <form onsubmit="return handleWaitlist(event)">
+          <input type="email" id="wl-email" placeholder="Your email" required>
+          <input type="hidden" id="wl-ref" value="">
+          <button type="submit" id="wl-btn">Join Waitlist</button>
+          <div id="wl-error" style="color:#f87171;font-size:0.9rem;margin-top:0.5rem;display:none"></div>
+        </form>
+      </div>
+      <div id="waitlist-success" style="display:none">
+        <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.75rem;color:#00D4AA" id="wl-position-text"></div>
+        <p style="font-size:1rem;opacity:0.7;margin-bottom:1.25rem">Share your link to move up the list. Each friend who joins moves you up 1 spot.</p>
+        <div style="background:rgba(226,232,240,0.06);border:1px solid rgba(226,232,240,0.15);border-radius:8px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+          <code id="wl-referral-link" style="flex:1;font-size:0.85rem;color:#00D4AA;word-break:break-all;text-align:left"></code>
+          <button onclick="copyReferral()" class="btn btn-primary" style="padding:0.5rem 1.25rem;font-size:0.85rem;white-space:nowrap" id="wl-copy-btn">Copy</button>
+        </div>
+        <p style="font-size:0.85rem;opacity:0.5">We will notify you when your spot opens.</p>
+      </div>
     </section>
   </main>
   <footer>
@@ -328,5 +340,83 @@
     </div>
   </footer>
   <div class="copyright">Copyright 2026 Discreet.</div>
+  <script>
+    // Pre-fill referral code from URL ?ref=CODE
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var ref = params.get('ref');
+      if (ref) document.getElementById('wl-ref').value = ref;
+    })();
+
+    function handleWaitlist(e) {
+      e.preventDefault();
+      var email = document.getElementById('wl-email').value.trim();
+      var ref = document.getElementById('wl-ref').value.trim();
+      var btn = document.getElementById('wl-btn');
+      var errEl = document.getElementById('wl-error');
+      errEl.style.display = 'none';
+      btn.textContent = 'Joining...';
+      btn.disabled = true;
+
+      var body = { email: email };
+      if (ref) body.referral_code = ref;
+
+      fetch('/api/v1/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          throw new Error(res.data.error || res.data.message || 'Something went wrong');
+        }
+        var d = res.data;
+        if (d.status === 'already_registered') {
+          errEl.textContent = 'This email is already on the waitlist.';
+          errEl.style.display = 'block';
+          btn.textContent = 'Join Waitlist';
+          btn.disabled = false;
+          return;
+        }
+        // Success — show confirmation
+        document.getElementById('waitlist-form').style.display = 'none';
+        document.getElementById('waitlist-success').style.display = 'block';
+        document.getElementById('wl-position-text').textContent =
+          'You are number ' + (d.position || '?') + ' on the waitlist!';
+        var referralLink = 'https://discreetai.net/?ref=' + (d.referral_code || '');
+        document.getElementById('wl-referral-link').textContent = referralLink;
+        document.getElementById('wl-referral-link').dataset.link = referralLink;
+      })
+      .catch(function(err) {
+        errEl.textContent = err.message || 'Failed to join. Please try again.';
+        errEl.style.display = 'block';
+        btn.textContent = 'Join Waitlist';
+        btn.disabled = false;
+      });
+
+      return false;
+    }
+
+    function copyReferral() {
+      var link = document.getElementById('wl-referral-link').dataset.link;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(function() {
+          document.getElementById('wl-copy-btn').textContent = 'Copied!';
+          setTimeout(function() { document.getElementById('wl-copy-btn').textContent = 'Copy'; }, 2000);
+        });
+      } else {
+        // Fallback for older browsers
+        var ta = document.createElement('textarea');
+        ta.value = link;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        document.getElementById('wl-copy-btn').textContent = 'Copied!';
+        setTimeout(function() { document.getElementById('wl-copy-btn').textContent = 'Copy'; }, 2000);
+      }
+    }
+  </script>
 </body>
 </html>

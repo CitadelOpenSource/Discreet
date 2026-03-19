@@ -708,7 +708,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     onToggle={() => toggleSetting('guest_access_enabled', !settings.guest_access_enabled)} />
                   <Toggle on={settings.ai_bots_enabled} label="AI Bots" desc="Allow AI agent prompts across all servers" disabled={settingsSaving}
                     onToggle={() => toggleSetting('ai_bots_enabled', !settings.ai_bots_enabled)} />
-                  <Toggle on={settings.disappearing_messages_enabled} label="Disappearing Messages" desc="When disabled, users cannot set message timers. Required for compliance." disabled={settingsSaving}
+                  <Toggle on={settings.disappearing_messages_enabled} label="Enable Disappearing Messages" desc="When disabled, users cannot set message timers on any channel or DM. This is required for organizations with data retention compliance requirements such as HIPAA or financial regulations." disabled={settingsSaving}
                     onToggle={() => toggleSetting('disappearing_messages_enabled', !settings.disappearing_messages_enabled)} />
 
                   <div style={{ marginTop: 4 }} />

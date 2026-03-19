@@ -562,6 +562,7 @@ export default function App() {
   const [rawUsernameMap, setRawUsernameMap] = useState<Record<string, string>>({});
   const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }>>({});
   const [platformUser, setPlatformUser] = useState<any>(null);
+  const [disappearingEnabled, setDisappearingEnabled] = useState(true);
   const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
   const [bookmarks, setBookmarks] = useState<any[]>([]);
@@ -825,6 +826,7 @@ export default function App() {
     api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
     api.listSessions().then((ss: any[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
     api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null, platform_role: d.platform_role ?? null } })); } }).catch(() => {});
+    api.fetch('/info').then(r => r.json()).then((info: any) => { if (info?.features?.disappearing_messages === false) setDisappearingEnabled(false); }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
       if (e.type === 'ice_candidate' && api.ws?.readyState === 1) {
@@ -2320,17 +2322,23 @@ export default function App() {
           </button>
           {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span></>)}
           {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span>
-            <select value={curDm.ttl_seconds ?? ''} onChange={async e => {
-              const v = e.target.value === '' ? null : Number(e.target.value);
-              try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: any) { setToast(err?.message || 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
-            }} title={curDm.ttl_set_by ? `Set by ${getName(curDm.ttl_set_by)}${curDm.ttl_set_at ? ` on ${new Date(curDm.ttl_set_at).toLocaleDateString()}` : ''}` : 'Disappearing messages'}
-              style={{ marginLeft: 8, fontSize: 11, padding: '2px 6px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.mt, cursor: 'pointer' }}>
-              <option value="">No timer</option>
-              <option value="3600">1 Hour</option>
-              <option value="86400">24 Hours</option>
-              <option value="604800">7 Days</option>
-              <option value="2592000">30 Days</option>
-            </select>
+            {disappearingEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+                <select value={curDm.ttl_seconds ?? ''} onChange={async e => {
+                  const v = e.target.value === '' ? null : Number(e.target.value);
+                  try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: any) { setToast(err?.message || 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
+                }} style={{ fontSize: 11, padding: '2px 6px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.mt, cursor: 'pointer' }}>
+                  <option value="">Off</option>
+                  <option value="3600">1 Hour</option>
+                  <option value="86400">24 Hours</option>
+                  <option value="604800">7 Days</option>
+                  <option value="2592000">30 Days</option>
+                </select>
+                {curDm.ttl_set_by && curDm.ttl_seconds != null && (
+                  <span style={{ fontSize: 10, color: T.mt }}>Set by {getName(curDm.ttl_set_by)}{curDm.ttl_set_at ? ` on ${new Date(curDm.ttl_set_at).toLocaleDateString()}` : ''}</span>
+                )}
+              </div>
+            )}
           </>)}
           {view === 'dm' && curGroupDm && (<><span style={{ fontSize: 16 }}>👥</span><span style={{ fontWeight: 700, fontSize: 15 }}>{curGroupDm.name || 'Group DM'}</span></>)}
           {view === 'home' && (<><I.Home /><span style={{ fontWeight: 700, fontSize: 15 }}>{homeTab === 'friends' ? 'Friends' : homeTab === 'bookmarks' ? 'Saved Messages' : 'Home'}</span></>)}
@@ -2923,7 +2931,7 @@ export default function App() {
             onDismissDisclosure={() => { if (curChannel) setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; }); }}
             onJoinedServer={loadServers}
             voiceBaseUrl={api.baseUrl}
-            channelTtlSeconds={curChannel?.ttl_seconds ?? (curDm?.ttl_seconds ?? null)}
+            channelTtlSeconds={disappearingEnabled ? (curChannel?.ttl_seconds ?? (curDm?.ttl_seconds ?? null)) : null}
             msgEndRef={msgEndRef}
           />
 
@@ -3745,6 +3753,7 @@ export default function App() {
             getName={getName}
             decrypt={async (ct, cid, ep) => dec(cid, ct)}
             onCreateInvite={() => { setModal(null); openInviteModal(); }}
+            disappearingEnabled={disappearingEnabled}
           />
         </Suspense>
       )}

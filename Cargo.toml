@@ -72,6 +72,9 @@ aes-gcm = "0.10"
 openmls = { version = "0.8.1", optional = true }
 openmls_rust_crypto = { version = "0.5.1", optional = true }
 
+# ── Archive export ────────────────────────────────────────
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
 # ── QR code generation ────────────────────────────────────
 qrcode = "0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }

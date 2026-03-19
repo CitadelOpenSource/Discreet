@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.channel_id\n                   FROM messages m\n                   JOIN channels c ON c.id = m.channel_id\n                   JOIN message_acknowledgements ma ON ma.message_id = m.id\n                   WHERE m.deleted = FALSE\n                     AND m.voice_duration_ms IS NOT NULL\n                     AND c.ttl_seconds IS NOT NULL\n                     AND ma.acked_at + make_interval(secs => c.ttl_seconds) < NOW()\n                     AND m.created_at < NOW() - make_interval(days => $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ca89d03ac949823de051f79ab67b3cecda86220ce53e40b591b2013d92416166"
+}

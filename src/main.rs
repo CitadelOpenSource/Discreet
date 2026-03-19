@@ -53,6 +53,7 @@ use discreet_server::discreet_discovery_handlers;
 use discreet_server::discreet_dm_handlers;
 use discreet_server::discreet_mls_handlers;
 use discreet_server::discreet_email_handlers;
+use discreet_server::discreet_export_handlers;
 use discreet_server::discreet_emoji_handlers;
 use discreet_server::discreet_event_handlers;
 use discreet_server::discreet_file_handlers;
@@ -657,6 +658,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/channels", axum::routing::post(discreet_channel_handlers::create_channel).get(discreet_channel_handlers::list_channels))
         .route("/channels/:channel_id", axum::routing::get(discreet_channel_handlers::get_channel).patch(discreet_channel_handlers::update_channel).delete(discreet_channel_handlers::delete_channel))
         .route("/channels/:channel_id/ttl", axum::routing::put(discreet_disappearing_handlers::set_channel_ttl))
+        .route("/channels/:channel_id/export", axum::routing::get(discreet_export_handlers::export_channel_zip))
         // ── Messages ──
         .route("/channels/:channel_id/messages", axum::routing::post(discreet_message_handlers::send_message).get(discreet_message_handlers::get_messages))
         .route("/channels/:channel_id/messages/search", axum::routing::get(discreet_message_handlers::search_messages))
@@ -698,6 +700,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/users/@me", axum::routing::get(discreet_user_handlers::get_me).patch(discreet_user_handlers::update_me).delete(discreet_user_handlers::delete_account))
         .route("/users/@me/servers", axum::routing::get(discreet_user_handlers::list_my_servers))
         .route("/users/@me/export", axum::routing::get(discreet_user_handlers::export_my_data))
+        .route("/users/@me/export-zip", axum::routing::get(discreet_export_handlers::export_user_zip))
         .route("/users/@me/status", axum::routing::put(discreet_user_handlers::update_status))
         .route("/users/@me/qr", axum::routing::get(discreet_qr_handlers::user_qr))
         .route("/connect/:code", axum::routing::get(discreet_qr_handlers::resolve_connect_code))
@@ -721,6 +724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/dms", axum::routing::post(discreet_dm_handlers::create_dm).get(discreet_dm_handlers::list_dms))
         .route("/dms/:id/messages", axum::routing::post(discreet_dm_handlers::send_dm).get(discreet_dm_handlers::get_dm_messages))
         .route("/conversations/:id/ttl", axum::routing::put(discreet_disappearing_handlers::set_conversation_ttl))
+        .route("/dms/:id/ttl", axum::routing::put(discreet_disappearing_handlers::set_conversation_ttl))
         // Group DMs
         .route("/group-dms", axum::routing::post(discreet_group_dm_handlers::create_group_dm).get(discreet_group_dm_handlers::list_group_dms))
         .route("/group-dms/:id", axum::routing::patch(discreet_group_dm_handlers::update_group_dm))

@@ -34,6 +34,7 @@ pub mod discreet_discovery_handlers;
 pub mod discreet_dm_handlers;
 pub mod discreet_email_handlers;
 pub mod discreet_emoji_handlers;
+pub mod discreet_export_handlers;
 pub mod discreet_error;
 pub mod discreet_event_handlers;
 pub mod discreet_federation;

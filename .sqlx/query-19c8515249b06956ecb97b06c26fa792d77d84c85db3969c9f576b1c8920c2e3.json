@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.author_id, m.content_ciphertext, m.created_at,\n                      m.edited_at, m.reply_to_id, m.voice_duration_ms,\n                      u.username as author_username\n               FROM messages m\n               JOIN users u ON u.id = m.author_id\n               WHERE m.channel_id = $1\n                 AND m.deleted = FALSE\n               ORDER BY m.created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "content_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "edited_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "reply_to_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "voice_duration_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "author_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "19c8515249b06956ecb97b06c26fa792d77d84c85db3969c9f576b1c8920c2e3"
+}

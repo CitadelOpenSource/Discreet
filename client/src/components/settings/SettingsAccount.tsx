@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { T, ta } from '../../theme';
 import * as I from '../../icons';
 import { api } from '../../api/CitadelAPI';
@@ -84,6 +84,11 @@ export default function SettingsAccount({
     <div style={{ display: sectionVisible('active-devices') ? undefined : 'none' }}>
     <div data-section="active-devices" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Active Devices</div>
     <ActiveSessions />
+
+    {/* Data Export */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Data Export</div>
+    <ExportDataButton />
+
     <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 14 }}>Danger Zone</div>
       <RotateEncryptionKey />
@@ -204,6 +209,77 @@ function PasskeyManager() {
         </button>
       </div>
       {error && <div style={{ fontSize: 11, color: T.err, marginTop: 6, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ─── Export Data Button ─────────────────────────────────────────────────
+
+function ExportDataButton() {
+  const [state, setState] = useState<'idle' | 'confirm' | 'loading' | 'error'>('idle');
+  const [error, setError] = useState('');
+
+  const doExport = async () => {
+    setState('loading');
+    setError('');
+    try {
+      const headers: Record<string, string> = {};
+      if ((api as any).token) headers['Authorization'] = `Bearer ${(api as any).token}`;
+      const r = await fetch(`${api.baseUrl}/users/@me/export-zip`, { headers, credentials: 'same-origin' });
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        throw new Error(t || `Export failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      const date = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `discreet-export-${date}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setState('idle');
+    } catch (e: any) {
+      setError(e?.message || 'Export failed');
+      setState('error');
+    }
+  };
+
+  if (state === 'confirm') {
+    return (
+      <div style={{ padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx, marginBottom: 8 }}>Export My Data</div>
+        <div style={{ fontSize: 12, color: T.mt, lineHeight: 1.6, marginBottom: 14 }}>
+          This will download all your messages and voice recordings as a ZIP file.
+          Depending on your message history, this may take several minutes.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={doExport} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: T.ac, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Confirm</button>
+          <button onClick={() => setState('idle')} style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.tx, display: 'flex', alignItems: 'center', gap: 6 }}><I.Download /> Export My Data</div>
+          <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Download all messages and voice recordings as ZIP</div>
+        </div>
+        <button onClick={() => setState('confirm')} disabled={state === 'loading'} style={{
+          padding: '6px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx,
+          fontSize: 11, fontWeight: 600, cursor: state === 'loading' ? 'wait' : 'pointer',
+          opacity: state === 'loading' ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          {state === 'loading' ? (<><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid transparent', borderTopColor: T.ac, borderRadius: 6, animation: 'spin 0.6s linear infinite' }} /> Exporting...</>) : 'Export'}
+        </button>
+      </div>
+      {state === 'error' && error && (
+        <div style={{ fontSize: 11, color: T.err, marginTop: 8, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>{error}
+          <button onClick={() => setState('idle')} style={{ marginLeft: 8, fontSize: 10, color: T.mt, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Dismiss</button>
+        </div>
+      )}
     </div>
   );
 }

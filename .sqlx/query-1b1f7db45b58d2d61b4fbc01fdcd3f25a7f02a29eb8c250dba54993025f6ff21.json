@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT dc.id, u.username as other_username\n           FROM dm_channels dc\n           JOIN users u ON u.id = CASE\n               WHEN dc.user_a = $1 THEN dc.user_b\n               ELSE dc.user_a\n           END\n           WHERE dc.user_a = $1 OR dc.user_b = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "other_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1b1f7db45b58d2d61b4fbc01fdcd3f25a7f02a29eb8c250dba54993025f6ff21"
+}

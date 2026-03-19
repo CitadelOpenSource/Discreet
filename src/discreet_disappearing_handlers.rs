@@ -34,6 +34,13 @@ use crate::discreet_permissions::{require_permission, PERM_MANAGE_CHANNELS};
 use crate::discreet_platform_settings::get_platform_settings;
 use crate::discreet_state::AppState;
 
+/// Row type for voice message expiry queries (both branches must return the same type).
+#[derive(sqlx::FromRow)]
+struct VoiceRow {
+    id: Uuid,
+    channel_id: Uuid,
+}
+
 /// Allowed TTL values: null (off), 1 hour, 1 day, 7 days, 30 days.
 const ALLOWED_TTLS: &[i32] = &[3600, 86400, 604800, 2592000];
 
@@ -222,7 +229,55 @@ pub async fn disappearing_cleanup_loop(db: PgPool, redis: redis::aio::Connection
         // retention period are protected from TTL deletion.
         let retention_days = settings.default_retention_days as i32;
 
-        // 1) Channel messages: read + TTL expired + outside retention floor
+        // 1) Channel messages: find expired voice messages first (for disk cleanup),
+        //    then soft-delete all expired messages.
+        let expired_voice: Result<Vec<VoiceRow>, sqlx::Error> = if retention_days > 0 {
+            sqlx::query_as!(
+                VoiceRow,
+                r#"SELECT m.id, m.channel_id
+                   FROM messages m
+                   JOIN channels c ON c.id = m.channel_id
+                   JOIN message_acknowledgements ma ON ma.message_id = m.id
+                   WHERE m.deleted = FALSE
+                     AND m.voice_duration_ms IS NOT NULL
+                     AND c.ttl_seconds IS NOT NULL
+                     AND ma.acked_at + make_interval(secs => c.ttl_seconds) < NOW()
+                     AND m.created_at < NOW() - make_interval(days => $1)"#,
+                retention_days,
+            )
+            .fetch_all(&db)
+            .await
+        } else {
+            sqlx::query_as!(
+                VoiceRow,
+                r#"SELECT m.id, m.channel_id
+                   FROM messages m
+                   JOIN channels c ON c.id = m.channel_id
+                   JOIN message_acknowledgements ma ON ma.message_id = m.id
+                   WHERE m.deleted = FALSE
+                     AND m.voice_duration_ms IS NOT NULL
+                     AND c.ttl_seconds IS NOT NULL
+                     AND ma.acked_at + make_interval(secs => c.ttl_seconds) < NOW()"#,
+            )
+            .fetch_all(&db)
+            .await
+        };
+
+        // Delete voice files from disk
+        if let Ok(ref rows) = expired_voice {
+            for row in rows {
+                let path = format!("uploads/{}/{}.enc", row.channel_id, row.id);
+                if let Err(e) = tokio::fs::remove_file(&path).await {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        tracing::debug!("Failed to remove voice file {path}: {e}");
+                    }
+                }
+            }
+            if !rows.is_empty() {
+                tracing::info!("Disappearing: removed {} voice files from disk", rows.len());
+            }
+        }
+
         let channel_result = if retention_days > 0 {
             sqlx::query!(
                 "UPDATE messages SET deleted = TRUE, content_ciphertext = '\\x00', edited_at = NOW()

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mr.message_id, mr.emoji, u.username\n               FROM message_reactions mr\n               JOIN users u ON u.id = mr.user_id\n               WHERE mr.message_id = ANY($1)\n               ORDER BY mr.created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "message_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "97330ffbad95a725d1213c0f3fe915df3d3fe1c244f23a843a1616a5c08592ac"
+}

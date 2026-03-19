@@ -42,36 +42,10 @@ export interface ThemePreset {
   bracketTimestamps?: boolean; // [HH:MM] format
 }
 
-export const PRESETS: ThemePreset[] = [
-  {
-    id: 'midnight',
-    name: 'Midnight',
-    description: 'Deep dark theme with teal accents',
-    colors: { bg:"#0a0e17", sf:"#0b0d15", sf2:"#0f1119", sf3:"#131620", bd:"#181c2a", tx:"#dde0ea", mt:"#5a6080", ac:"#00d4aa", ac2:"#009e7e", err:"#ff4757", warn:"#ffa502", ok:"#10b981" },
-  },
-  {
-    id: 'dawn',
-    name: 'Dawn',
-    description: 'Clean light mode with blue accents',
-    colors: { bg:"#f5f6fa", sf:"#ebedf2", sf2:"#ffffff", sf3:"#e2e5ec", bd:"#d0d4dc", tx:"#1a1c26", mt:"#5a5f75", ac:"#3b82f6", ac2:"#2563eb", err:"#dc2626", warn:"#d97706", ok:"#16a34a" },
-  },
-  {
-    id: 'terminal',
-    name: 'Terminal',
-    description: 'Green on black \u2014 monospace, no avatars',
-    colors: { bg:"#000000", sf:"#0a0a0a", sf2:"#0f0f0f", sf3:"#141414", bd:"#1a1a1a", tx:"#00ff00", mt:"#338833", ac:"#00ff00", ac2:"#00cc00", err:"#ff3333", warn:"#ffaa00", ok:"#00ff00" },
-    font: "'JetBrains Mono','Fira Code','Courier New',monospace",
-    borderRadius: 0,
-    hideAvatars: true,
-    bracketTimestamps: true,
-  },
-  {
-    id: 'obsidian',
-    name: 'Obsidian',
-    description: 'True black for OLED displays',
-    colors: { bg:"#000000", sf:"#080808", sf2:"#101010", sf3:"#181818", bd:"#222222", tx:"#e0e0e0", mt:"#666666", ac:"#00d4aa", ac2:"#009e7e", err:"#ff4757", warn:"#ffa502", ok:"#10b981" },
-  },
-];
+import { ALL_THEMES } from './themes';
+
+/** All built-in theme presets (from themes.ts). */
+export const PRESETS: ThemePreset[] = ALL_THEMES;
 
 // Build THEMES record from presets (indexed by id).
 // Includes aliases for backward compatibility with old theme names.
@@ -226,7 +200,7 @@ function syncThemeToServer(name: string) {
 
 // ─── Custom theme support ───────────────────────────────────────────────
 
-const CUSTOM_THEME_KEY = 'd_custom_theme';
+const CUSTOM_THEME_KEY = 'discreet_custom_theme';
 
 /** Required keys for a valid custom theme. */
 const REQUIRED_KEYS: (keyof ThemeRaw)[] = ['bg','sf','sf2','sf3','bd','tx','mt','ac','ac2','err','warn','ok'];
@@ -259,6 +233,21 @@ export function applyCustomTheme(colors: ThemeRaw) {
   applyVarsToRoot(colors, preset);
   syncThemeToServer('custom');
   _syncApi?.updateSettings({ custom_theme: colors }).catch(() => {});
+}
+
+/** Preview a theme by applying CSS vars without saving to localStorage or server.
+ *  Call `setTheme(previousId)` or `applyCustomTheme(colors)` to commit or revert. */
+export function previewTheme(colors: ThemeRaw) {
+  const preset: ThemePreset = { id: '_preview', name: 'Preview', description: '', colors };
+  applyVarsToRoot(colors, preset);
+}
+
+/** Revert a preview by re-applying the currently saved theme. */
+export function revertPreview() {
+  const saved = getThemeName();
+  const preset = getPreset(saved);
+  applyVarsToRoot(preset.colors, preset);
+  Traw = { ...preset.colors };
 }
 
 /** Export the current theme as a JSON object for download. */

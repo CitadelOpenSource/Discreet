@@ -293,8 +293,8 @@ export function MessageList(props: MessageListProps) {
                     const expiresMs = createdMs + channelTtlSeconds * 1000;
                     const remainMs = expiresMs - Date.now();
                     if (remainMs <= 0) return null;
-                    const remainStr = remainMs > 86400000 ? `${Math.floor(remainMs / 86400000)}d` : remainMs > 3600000 ? `${Math.floor(remainMs / 3600000)}h` : `${Math.ceil(remainMs / 60000)}m`;
-                    return <span title={`Disappears in ${remainStr}`} style={{ fontSize: 10, color: T.mt, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: 2 }}><I.Clock s={10} /></span>;
+                    const remainStr = remainMs > 86400000 ? `${Math.floor(remainMs / 86400000)}d ${Math.floor((remainMs % 86400000) / 3600000)}h` : remainMs > 3600000 ? `${Math.floor(remainMs / 3600000)}h ${Math.floor((remainMs % 3600000) / 60000)}m` : `${Math.ceil(remainMs / 60000)}m`;
+                    return <span title={`This message will be deleted in ${remainStr}`} style={{ fontSize: 10, color: T.mt, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: 2 }}><I.Clock s={12} /></span>;
                   })()}
                 </div>
 

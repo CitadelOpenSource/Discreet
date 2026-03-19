@@ -18,6 +18,10 @@ use crate::discreet_state::AppState;
 pub async fn server_info(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    // Load platform feature flags for client consumption.
+    let platform = crate::discreet_platform_settings::get_platform_settings(&state).await.ok();
+    let disappearing_enabled = platform.as_ref().map(|p| p.disappearing_messages_enabled).unwrap_or(true);
+
     // Check Postgres connectivity.
     let db_ok = sqlx::query_scalar!("SELECT 1 as alive")
         .fetch_one(&state.db)
@@ -42,6 +46,7 @@ pub async fn server_info(
             "federation": state.config.federation_enabled,
             "post_quantum": state.config.pq_enabled,
             "rate_limiting": true,
+            "disappearing_messages": disappearing_enabled,
             "reactions": true,
             "typing_indicators": true,
             "premium_tiers": true,
