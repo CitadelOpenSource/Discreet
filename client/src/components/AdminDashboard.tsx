@@ -462,9 +462,22 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
 
   // ── Tab state ──
-  const [tab, setTab] = useState<'overview' | 'users' | 'reports' | 'export'>('overview');
+  const [tab, setTab] = useState<'overview' | 'users' | 'reports' | 'export' | 'errors'>('overview');
   // Reports
   const [reports, setReports] = useState<any[]>([]);
+
+  // ── Error Reports ──
+  const [errorReports, setErrorReports] = useState<any[]>([]);
+  const [errorsLoading, setErrorsLoading] = useState(false);
+  const [errorsTotal, setErrorsTotal] = useState(0);
+  const [errorsPage, setErrorsPage] = useState(1);
+  const [errorsTotalPages, setErrorsTotalPages] = useState(1);
+  const [unresolvedCount, setUnresolvedCount] = useState(0);
+  const [errSourceFilter, setErrSourceFilter] = useState('');
+  const [errSevFilter, setErrSevFilter] = useState('');
+  const [errShowResolved, setErrShowResolved] = useState(false);
+  const [errExpandedId, setErrExpandedId] = useState<string | null>(null);
+  const [errSelected, setErrSelected] = useState<Set<string>>(new Set());
   const [reportsFilter, setReportsFilter] = useState('open');
   const [reportsLoading, setReportsLoading] = useState(false);
 
@@ -515,6 +528,25 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // ── Loaders ──
+  const loadErrors = useCallback(async (page = 1) => {
+    setErrorsLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), per_page: '50' });
+      if (errSourceFilter) params.set('source', errSourceFilter);
+      if (errSevFilter) params.set('severity', errSevFilter);
+      if (!errShowResolved) params.set('resolved', 'false');
+      const r = await api.fetch(`/admin/errors?${params}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setErrorReports(data.errors || []);
+      setErrorsTotal(data.total || 0);
+      setErrorsTotalPages(data.total_pages || 1);
+      setErrorsPage(data.page || 1);
+      setUnresolvedCount(data.unresolved_count || 0);
+    } catch { /* ignore */ }
+    finally { setErrorsLoading(false); }
+  }, [errSourceFilter, errSevFilter, errShowResolved]);
+
   const loadStats = useCallback(async () => {
     setStatsLoading(true); setStatsError(null);
     try {
@@ -584,8 +616,15 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   // ── Initial load ──
   useEffect(() => {
     if (!isStaff) return;
-    loadStats(); loadSettings(); loadHealth(); loadReg(); loadUsers(1);
-  }, [isStaff, loadStats, loadSettings, loadHealth, loadReg, loadUsers]);
+    loadStats(); loadSettings(); loadHealth(); loadReg(); loadUsers(1); loadErrors(1);
+  }, [isStaff, loadStats, loadSettings, loadHealth, loadReg, loadUsers, loadErrors]);
+
+  // Auto-refresh error reports every 30 seconds
+  useEffect(() => {
+    if (!isStaff || tab !== 'errors') return;
+    const t = setInterval(() => loadErrors(errorsPage), 30000);
+    return () => clearInterval(t);
+  }, [isStaff, tab, errorsPage, loadErrors]);
 
   // ── Toggle a kill switch ──
   const toggleSetting = async (key: keyof PlatformSettings, value: boolean | string | number) => {
@@ -662,12 +701,14 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['overview', 'users', 'reports', ...(platformUser?.platform_role === 'admin' ? ['export' as const] : [])] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t as any); if (t === 'reports') { setReportsLoading(true); api.listReports(reportsFilter).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }).catch(() => setReportsLoading(false)); } }} style={{
+          {(['overview', 'users', 'reports', 'errors', ...(platformUser?.platform_role === 'admin' ? ['export' as const] : [])] as const).map(t => (
+            <button key={t} onClick={() => { setTab(t as any); if (t === 'reports') { setReportsLoading(true); api.listReports(reportsFilter).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }).catch(() => setReportsLoading(false)); } if (t === 'errors') loadErrors(1); }} style={{
               padding: '6px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
               background: tab === t ? T.ac : T.sf2, color: tab === t ? '#000' : T.mt,
+              position: 'relative',
             }}>
-              {t === 'overview' ? 'Overview' : t === 'users' ? 'Users' : t === 'reports' ? `Reports${reports.length ? ` (${reports.length})` : ''}` : 'Compliance Export'}
+              {t === 'overview' ? 'Overview' : t === 'users' ? 'Users' : t === 'reports' ? `Reports${reports.length ? ` (${reports.length})` : ''}` : t === 'errors' ? 'Error Reports' : 'Compliance Export'}
+              {t === 'errors' && unresolvedCount > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: '#ff4757', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{unresolvedCount}</span>}
             </button>
           ))}
         </div>
@@ -1263,6 +1304,118 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                   </div>
                 </div>
                 <div style={{ fontSize: 10, color: T.mt, fontStyle: 'italic' }}>{exportResult.notice}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Error Reports Tab ── */}
+        {tab === 'errors' && (
+          <div style={{ maxWidth: 1000 }}>
+            <SectionHeader label={`Error Reports${unresolvedCount ? ` (${unresolvedCount} unresolved)` : ''}`} loading={errorsLoading} onRefresh={() => loadErrors(errorsPage)} />
+
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={errSourceFilter} onChange={e => { setErrSourceFilter(e.target.value); loadErrors(1); }} style={{ padding: '4px 8px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 11 }}>
+                <option value="">All sources</option>
+                <option value="client">Client</option>
+                <option value="server">Server</option>
+              </select>
+              <select value={errSevFilter} onChange={e => { setErrSevFilter(e.target.value); loadErrors(1); }} style={{ padding: '4px 8px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 11 }}>
+                <option value="">All severity</option>
+                <option value="critical">Critical</option>
+                <option value="error">Error</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mt, cursor: 'pointer' }}>
+                <input type="checkbox" checked={errShowResolved} onChange={e => { setErrShowResolved(e.target.checked); loadErrors(1); }} style={{ accentColor: T.ac }} />
+                Show resolved
+              </label>
+              {errSelected.size > 0 && (
+                <button onClick={async () => {
+                  try {
+                    await api.fetch('/admin/errors/bulk-resolve', { method: 'POST', body: JSON.stringify({ ids: [...errSelected] }) });
+                    setErrSelected(new Set());
+                    loadErrors(errorsPage);
+                  } catch { /* ignore */ }
+                }} style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: T.ac, color: '#000', cursor: 'pointer' }}>
+                  Resolve Selected ({errSelected.size})
+                </button>
+              )}
+            </div>
+
+            {/* Table */}
+            <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${T.bd}` }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10, width: 28 }}></th>
+                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Time</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Source</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Component</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Message</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'center', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Severity</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'center', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10, width: 60 }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {errorReports.map((er: any) => {
+                    const sevColor: Record<string, string> = { critical: '#ff4757', error: '#f97316', warning: '#fbbf24', info: '#3b82f6' };
+                    const srcColor: Record<string, string> = { client: '#3b82f6', server: '#f97316' };
+                    const isExpanded = errExpandedId === er.id;
+                    return (
+                      <React.Fragment key={er.id}>
+                        <tr onClick={() => setErrExpandedId(isExpanded ? null : er.id)} style={{ cursor: 'pointer', background: er.resolved ? 'transparent' : 'rgba(255,71,87,0.03)', borderBottom: `1px solid ${T.bd}` }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                          onMouseLeave={e => e.currentTarget.style.background = er.resolved ? 'transparent' : 'rgba(255,71,87,0.03)'}>
+                          <td style={{ padding: '6px' }}>
+                            <input type="checkbox" checked={errSelected.has(er.id)} onClick={e => e.stopPropagation()} onChange={e => {
+                              const next = new Set(errSelected);
+                              if (e.target.checked) next.add(er.id); else next.delete(er.id);
+                              setErrSelected(next);
+                            }} style={{ accentColor: T.ac }} />
+                          </td>
+                          <td style={{ padding: '6px', color: T.mt, whiteSpace: 'nowrap' }}>{fmtDate(er.created_at)}</td>
+                          <td style={{ padding: '6px' }}><span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: `${srcColor[er.source] || T.mt}22`, color: srcColor[er.source] || T.mt, fontWeight: 700 }}>{er.source}</span></td>
+                          <td style={{ padding: '6px', color: T.tx, fontFamily: 'monospace', fontSize: 10 }}>{er.component || '—'}</td>
+                          <td style={{ padding: '6px', color: T.tx, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{er.error_message?.slice(0, 80)}{er.error_message?.length > 80 ? '…' : ''}</td>
+                          <td style={{ padding: '6px', textAlign: 'center' }}><span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: `${sevColor[er.severity] || T.mt}22`, color: sevColor[er.severity] || T.mt, fontWeight: 700 }}>{er.severity}</span></td>
+                          <td style={{ padding: '6px', textAlign: 'center' }}>
+                            {!er.resolved ? (
+                              <button onClick={async (e) => { e.stopPropagation(); try { await api.fetch(`/admin/errors/${er.id}/resolve`, { method: 'PATCH' }); loadErrors(errorsPage); } catch {} }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: `1px solid ${T.bd}`, background: 'none', color: T.ac, cursor: 'pointer' }}>Resolve</button>
+                            ) : <span style={{ fontSize: 10, color: '#10b981' }}>&#10003;</span>}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr><td colSpan={7} style={{ padding: '12px 16px', background: T.bg, borderBottom: `1px solid ${T.bd}` }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, fontSize: 11 }}>
+                              <div><span style={{ color: T.mt }}>User: </span><span style={{ color: T.tx }}>{er.user_email || '—'}</span></div>
+                              <div><span style={{ color: T.mt }}>Browser: </span><span style={{ color: T.tx, fontSize: 10 }}>{er.browser || '—'}</span></div>
+                              <div><span style={{ color: T.mt }}>Component: </span><span style={{ color: T.ac, fontFamily: 'monospace' }}>{er.component || '—'}</span></div>
+                              <div><span style={{ color: T.mt }}>Resolved: </span><span style={{ color: er.resolved ? '#10b981' : T.err }}>{er.resolved ? `Yes (${fmtDate(er.resolved_at)})` : 'No'}</span></div>
+                            </div>
+                            {er.stack_trace && (
+                              <pre style={{ padding: 10, background: T.sf2, borderRadius: 6, border: `1px solid ${T.bd}`, fontSize: 10, color: T.mt, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto', margin: 0 }}>{er.stack_trace}</pre>
+                            )}
+                          </td></tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {errorReports.length === 0 && !errorsLoading && (
+                    <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: T.mt }}>No error reports found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {errorsTotalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+                <button disabled={errorsPage <= 1} onClick={() => loadErrors(errorsPage - 1)} style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: `1px solid ${T.bd}`, background: T.sf2, color: errorsPage <= 1 ? T.mt : T.ac, cursor: errorsPage <= 1 ? 'not-allowed' : 'pointer' }}>Prev</button>
+                <span style={{ fontSize: 11, color: T.mt }}>Page {errorsPage} of {errorsTotalPages} ({errorsTotal} total)</span>
+                <button disabled={errorsPage >= errorsTotalPages} onClick={() => loadErrors(errorsPage + 1)} style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: `1px solid ${T.bd}`, background: T.sf2, color: errorsPage >= errorsTotalPages ? T.mt : T.ac, cursor: errorsPage >= errorsTotalPages ? 'not-allowed' : 'pointer' }}>Next</button>
               </div>
             )}
           </div>

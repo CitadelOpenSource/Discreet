@@ -27,6 +27,7 @@ pub mod discreet_bug_report_handlers;
 pub mod discreet_category_handlers;
 pub mod discreet_channel_category_handlers;
 pub mod discreet_channel_handlers;
+pub mod discreet_circuit_breaker;
 pub mod discreet_config;
 pub mod discreet_csrf;
 pub mod discreet_dev_token_handlers;
