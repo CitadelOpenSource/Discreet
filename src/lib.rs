@@ -53,6 +53,7 @@ pub mod discreet_meeting_handlers;
 pub mod discreet_message_handlers;
 pub mod discreet_mls_handlers;
 pub mod discreet_notification_handlers;
+pub mod discreet_oauth;
 pub mod discreet_passkey;
 pub mod discreet_permissions;
 pub mod discreet_pin_handlers;

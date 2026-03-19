@@ -65,6 +65,7 @@ use discreet_server::discreet_friend_handlers;
 use discreet_server::discreet_group_dm_handlers;
 use discreet_server::discreet_health;
 use discreet_server::discreet_meeting_handlers;
+use discreet_server::discreet_oauth;
 use discreet_server::discreet_passkey;
 use discreet_server::discreet_message_handlers;
 use discreet_server::discreet_notification_handlers;
@@ -567,6 +568,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/passkey/register/finish", axum::routing::post(discreet_passkey::register_finish))
         .route("/auth/passkey/login/start", axum::routing::post(discreet_passkey::login_start))
         .route("/auth/passkey/login/finish", axum::routing::post(discreet_passkey::login_finish))
+        // OAuth social login
+        .route("/auth/oauth/providers", axum::routing::get(discreet_oauth::list_providers))
+        .route("/auth/oauth/:provider/authorize", axum::routing::get(discreet_oauth::authorize))
+        .route("/auth/oauth/:provider/callback", axum::routing::get(discreet_oauth::oauth_callback))
+        .route("/auth/oauth/:provider", axum::routing::delete(discreet_oauth::unlink_provider))
         // Server discovery
         .route("/discover", axum::routing::get(discreet_discovery_handlers::discover_servers))
         .route("/servers/:server_id/publish", axum::routing::post(discreet_discovery_handlers::publish_server))

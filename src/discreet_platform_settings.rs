@@ -25,6 +25,13 @@ use crate::discreet_state::AppState;
 const REDIS_KEY: &str = "platform_settings";
 const REDIS_TTL_SECS: u64 = 30;
 
+/// Raw key-value row from the platform_settings table.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct PlatformSettingRow {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
 /// All known platform settings with their typed values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformSettings {
