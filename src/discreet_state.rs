@@ -9,6 +9,7 @@ use crate::discreet_rate_limit::RateLimiter;
 use crate::discreet_typing::TypingCooldown;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
@@ -68,6 +69,14 @@ pub struct AppState {
     pub presence: Arc<RwLock<HashMap<Uuid, UserPresence>>>,
     /// Voice state: user_id -> (server_id, channel_id). Users can only be in ONE voice channel.
     pub voice_state: Arc<RwLock<HashMap<Uuid, (Uuid, Uuid)>>>,
+    /// Monotonic counter: total HTTP requests served.
+    pub http_requests_total: Arc<AtomicU64>,
+    /// Monotonic counter: total WebSocket messages relayed.
+    pub ws_messages_total: Arc<AtomicU64>,
+    /// Monotonic counter: cumulative request duration in microseconds.
+    pub request_duration_us_total: Arc<AtomicU64>,
+    /// Server start time (for uptime calculation).
+    pub started_at: std::time::Instant,
 }
 
 impl AppState {
@@ -90,6 +99,10 @@ impl AppState {
             ws_buses: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             voice_state: Arc::new(RwLock::new(HashMap::new())),
+            http_requests_total: Arc::new(AtomicU64::new(0)),
+            ws_messages_total: Arc::new(AtomicU64::new(0)),
+            request_duration_us_total: Arc::new(AtomicU64::new(0)),
+            started_at: std::time::Instant::now(),
         })
     }
 

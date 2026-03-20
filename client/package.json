@@ -18,6 +18,9 @@
     "react-dom": "^18.2.0",
     "react-i18next": "^16.5.8"
   },
+  "overrides": {
+    "esbuild": "^0.25.0"
+  },
   "devDependencies": {
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",

@@ -17,6 +17,7 @@ interface Message {
   author_id: string;
   channel_id?: string;
   created_at: string;
+  attachment_blob_id?: string | null;
 }
 
 interface Channel {
@@ -60,6 +61,7 @@ export interface SearchPanelProps {
   curDm?: any;
   view: 'server' | 'dm' | string;
   getName: (userId: string) => string;
+  pinnedIds: Set<string>;
   onNavigate?: (target: NavigateTarget) => void;
   onClose: () => void;
 }
@@ -84,7 +86,7 @@ function highlightText(text: string, query: string): ReactNode {
 
 // ─── Component ────────────────────────────────────────────
 
-export function SearchPanel({ messages, dmMsgs, members, channels, curServer, curChannel, view, getName, onNavigate, onClose }: SearchPanelProps) {
+export function SearchPanel({ messages, dmMsgs, members, channels, curServer, curChannel, view, getName, pinnedIds, onNavigate, onClose }: SearchPanelProps) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('messages');
   const [results, setResults] = useState<Message[]>([]);
@@ -100,6 +102,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
     let text = q;
     let author: string | null = null, channel: string | null = null;
     let before: Date | null = null, after: Date | null = null;
+    let hasLink = false, hasFile = false, isPinned = false;
     const fromMatch = text.match(/from:(\S+)/i);
     if (fromMatch) { author = fromMatch[1].toLowerCase(); text = text.replace(fromMatch[0], ''); }
     const inMatch = text.match(/in:#?(\S+)/i);
@@ -108,7 +111,13 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
     if (beforeMatch) { before = new Date(beforeMatch[1]); text = text.replace(beforeMatch[0], ''); }
     const afterMatch = text.match(/after:(\S+)/i);
     if (afterMatch) { after = new Date(afterMatch[1]); text = text.replace(afterMatch[0], ''); }
-    return { text: text.trim().toLowerCase(), author, channel, before, after };
+    const hasLinkMatch = text.match(/has:link/i);
+    if (hasLinkMatch) { hasLink = true; text = text.replace(hasLinkMatch[0], ''); }
+    const hasFileMatch = text.match(/has:file/i);
+    if (hasFileMatch) { hasFile = true; text = text.replace(hasFileMatch[0], ''); }
+    const isPinnedMatch = text.match(/is:pinned/i);
+    if (isPinnedMatch) { isPinned = true; text = text.replace(isPinnedMatch[0], ''); }
+    return { text: text.trim().toLowerCase(), author, channel, before, after, hasLink, hasFile, isPinned };
   };
 
   const doSearch = async () => {
@@ -133,6 +142,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
         // Client-side search on locally cached decrypted messages
         const parsed = parseQuery(query);
         const allMsgs = view === 'server' ? messages : dmMsgs;
+        const urlPattern = /https?:\/\/\S+/i;
         const filtered = allMsgs.filter(m => {
           if (parsed.text && m.text && !m.text.toLowerCase().includes(parsed.text)) return false;
           if (parsed.text && !m.text) return false;
@@ -146,6 +156,9 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
           }
           if (parsed.before && new Date(m.created_at) > parsed.before) return false;
           if (parsed.after && new Date(m.created_at) < parsed.after) return false;
+          if (parsed.hasLink && (!m.text || !urlPattern.test(m.text))) return false;
+          if (parsed.hasFile && !m.attachment_blob_id) return false;
+          if (parsed.isPinned && !pinnedIds.has(m.id)) return false;
           return true;
         });
         setResults(filtered.slice(0, 50));
@@ -207,7 +220,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
           <I.Search />
           <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') doSearch(); if (e.key === 'Escape') onClose(); }}
-            placeholder={tab === 'messages' ? 'Search messages... (from:user in:#channel)' : tab === 'members' ? 'Search members...' : 'Search all users...'}
+            placeholder={tab === 'messages' ? 'Search messages... (from: has: is:pinned)' : tab === 'members' ? 'Search members...' : 'Search all users...'}
             style={{ flex: 1, background: 'transparent', border: 'none', color: T.tx, fontSize: 13, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
           {query && <div onClick={() => setQuery('')} style={{ cursor: 'pointer', color: T.mt }}><I.X /></div>}
         </div>
@@ -226,9 +239,12 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
           <div style={{ ...lbl, marginBottom: 6 }}>Search Tips</div>
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>from:username</span> — filter by author</div>
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>in:#channel</span> — filter by channel</div>
+          <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>has:link</span> — messages containing URLs</div>
+          <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>has:file</span> — messages with attachments</div>
+          <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>is:pinned</span> — pinned messages only</div>
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>before:2026-03-01</span> — before date</div>
           <div><span style={{ color: T.ac, fontFamily: "'JetBrains Mono',monospace" }}>after:2026-01-15</span> — after date</div>
-          <div style={{ marginTop: 4, color: T.mt, fontStyle: 'italic' }}>Combine filters: <span style={{ color: T.ac }}>from:john in:#general hello</span></div>
+          <div style={{ marginTop: 4, color: T.mt, fontStyle: 'italic' }}>Combine: <span style={{ color: T.ac }}>from:john has:link is:pinned</span></div>
           <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(0,212,170,0.05)', borderRadius: 12, border: '1px solid rgba(0,212,170,0.15)', fontSize: 11, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <span style={{ fontSize: 14, lineHeight: 1 }}>🔒</span>
             <div>

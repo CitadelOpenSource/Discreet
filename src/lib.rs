@@ -53,6 +53,7 @@ pub mod discreet_input_validation;
 pub mod discreet_ldap_sync;
 pub mod discreet_meeting_handlers;
 pub mod discreet_message_handlers;
+pub mod discreet_metrics;
 pub mod discreet_mls_handlers;
 pub mod discreet_notification_handlers;
 pub mod discreet_oauth;
@@ -65,6 +66,8 @@ pub mod discreet_platform_settings;
 pub mod discreet_playbook_handlers;
 pub mod discreet_poll_handlers;
 pub mod discreet_post_quantum;
+#[cfg(feature = "pq")]
+pub mod discreet_pq_crypto;
 pub mod discreet_qr_handlers;
 pub mod discreet_premium;
 pub mod discreet_rate_limit;

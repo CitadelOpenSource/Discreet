@@ -15,9 +15,9 @@ default = []
 # Enable when client-side MLS integration is ready:
 mls = ["dep:openmls", "dep:openmls_rust_crypto"]
 # Enable when PQ key exchange endpoints are wired:
-# NOTE: ml-kem and ml-dsa only have pre-release versions on crates.io.
-# Add them back with exact pinned versions when PQ implementation begins.
 post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek"]
+# Post-quantum KEM + signatures (FIPS 203, 204). Opt-in — requires nightly-compatible deps.
+pq = ["dep:ml-kem", "dep:ml-dsa"]
 
 [dependencies]
 # ── Web framework ─────────────────────────────────────────
@@ -67,9 +67,9 @@ ed25519-dalek = { version = "2", features = ["serde", "rand_core"], optional = t
 x25519-dalek = { version = "2", features = ["serde", "static_secrets"], optional = true }
 aes-gcm = "0.10"
 
-# ── Crypto — future: post-quantum (behind feature flag) ──
-# ml-kem and ml-dsa will be added when stable releases exist.
-# See: https://crates.io/crates/ml-kem / https://crates.io/crates/ml-dsa
+# ── Crypto — future: post-quantum (behind pq feature flag) ──
+ml-kem = { version = "0.2", optional = true }
+ml-dsa = { version = "0.1.0-rc.7", optional = true }
 
 # ── Crypto — future: MLS (behind feature flag) ───────────
 openmls = { version = "0.8.1", optional = true }

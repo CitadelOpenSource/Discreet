@@ -14,6 +14,8 @@ export function BugReportButton() {
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  const [severity, setSeverity] = useState('medium');
+  const [screenshot, setScreenshot] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState('');
@@ -22,6 +24,8 @@ export function BugReportButton() {
     setOpen(false);
     setDescription('');
     setErrorCode('');
+    setSeverity('medium');
+    setScreenshot(null);
     setDone(false);
     setErr('');
   };
@@ -35,6 +39,16 @@ export function BugReportButton() {
       // Attach token if available (optional — endpoint doesn't require auth)
       if (api.token) headers['Authorization'] = `Bearer ${api.token}`;
 
+      let screenshotData: string | undefined;
+      if (screenshot) {
+        screenshotData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(screenshot);
+        });
+      }
+
       const res = await fetch(`${API_BASE}/bug-reports`, {
         method: 'POST',
         headers,
@@ -43,6 +57,8 @@ export function BugReportButton() {
           description: description.trim(),
           error_code: errorCode.trim() || undefined,
           browser_info: navigator.userAgent,
+          severity,
+          screenshot: screenshotData,
         }),
       });
 
@@ -65,7 +81,7 @@ export function BugReportButton() {
         onClick={() => { setOpen(true); setDone(false); setErr(''); }}
         title="Report a bug"
         style={{
-          position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
+          position: 'fixed', bottom: 20, left: 20, zIndex: 9999,
           width: 44, height: 44, borderRadius: 22,
           background: T.sf2, border: `1px solid ${T.bd}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -158,6 +174,39 @@ export function BugReportButton() {
                   }}
                   onKeyDown={e => { if (e.key === 'Enter') submit(); }}
                 />
+
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                  Severity
+                </label>
+                <select
+                  value={severity}
+                  onChange={e => setSeverity(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', background: T.bg,
+                    border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx,
+                    fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 12,
+                  }}
+                  aria-label="Bug severity"
+                >
+                  <option value="low">Low — cosmetic issue</option>
+                  <option value="medium">Medium — feature broken but workaround exists</option>
+                  <option value="high">High — feature completely broken</option>
+                  <option value="critical">Critical — data loss or security issue</option>
+                </select>
+
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                  Screenshot <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </label>
+                <div style={{ marginBottom: 12 }}>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={e => setScreenshot(e.target.files?.[0] || null)}
+                    style={{ fontSize: 12, color: T.mt }}
+                    aria-label="Upload screenshot"
+                  />
+                  {screenshot && <div style={{ fontSize: 10, color: T.ac, marginTop: 4 }}>{screenshot.name} ({Math.round(screenshot.size / 1024)} KB)</div>}
+                </div>
 
                 <div style={{ fontSize: 10, color: T.mt, marginBottom: 16 }}>
                   Page: <span style={{ fontFamily: 'monospace' }}>{window.location.pathname}</span>

@@ -67,6 +67,7 @@ use discreet_server::discreet_health;
 use discreet_server::discreet_import_handlers;
 use discreet_server::discreet_ldap_sync;
 use discreet_server::discreet_meeting_handlers;
+use discreet_server::discreet_metrics;
 use discreet_server::discreet_oauth;
 use discreet_server::discreet_passkey;
 use discreet_server::discreet_message_handlers;
@@ -124,8 +125,8 @@ async fn maintenance_middleware(
     let path = request.uri().path().to_string();
     let method = request.method().clone();
 
-    // Always allow admin endpoints and health check through.
-    if path == "/health" || path.starts_with("/api/v1/admin/") {
+    // Always allow admin endpoints, health checks, and metrics through.
+    if path == "/health" || path.starts_with("/health/") || path == "/metrics" || path.starts_with("/api/v1/admin/") {
         return next.run(request).await;
     }
 
@@ -924,6 +925,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = axum::Router::new()
         // Unversioned endpoints — registered before the catch-all SPA service.
         .route("/health", axum::routing::get(|| async { "OK" }))
+        .route("/health/detailed", axum::routing::get(discreet_metrics::health_detailed))
+        .route("/metrics", axum::routing::get(discreet_metrics::prometheus_metrics))
         .route("/manifest.json", axum::routing::get(|| async {
             (
                 [("content-type", "application/manifest+json")],
@@ -1005,6 +1008,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Body limit: config max_upload_bytes * 1.4 (base64 overhead) + 1 MB for JSON wrapper.
         // Per-endpoint validators enforce tighter limits. Oversized requests get 413 before full read.
         .layer(axum::extract::DefaultBodyLimit::max(state.config.max_upload_bytes * 14 / 10 + 1024 * 1024))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), discreet_metrics::metrics_middleware))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(state.clone(), maintenance_middleware))
@@ -1025,6 +1029,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("  API:        http://{bind_addr}/api/v1/");
     tracing::info!("  WebSocket:  ws://{bind_addr}/ws?server_id=<uuid>");
     tracing::info!("  Health:     http://{bind_addr}/health");
+    tracing::info!("  Detailed:   http://{bind_addr}/health/detailed");
+    tracing::info!("  Metrics:    http://{bind_addr}/metrics");
     tracing::info!("  Info:       http://{bind_addr}/api/v1/info");
     if let Some(ref url) = state.config.public_url {
         tracing::info!("  PUBLIC_URL: {}", url);

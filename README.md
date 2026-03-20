@@ -46,7 +46,7 @@ Discreet is an open-source, end-to-end encrypted messenger that combines Discord
 | Passkeys (FIDO2) | No | No | No | No | Yes |
 | No phone number required | No | Yes | Yes | No | Yes |
 | Self-hostable | No | No | Yes | No | Yes |
-| Post-quantum ready | No | No | No | No | Yes |
+| Post-quantum ready | No | No | No | No | Yes (ML-KEM-768 + ML-DSA-65) |
 | Open source | Yes | No | Yes | Partial | Yes |
 
 ## Quick Start

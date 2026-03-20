@@ -49,7 +49,8 @@ Independent third-party security audit by **Cure53** or **Trail of Bits** is pla
 | Random number generation | OS entropy | `rand` + `OsRng` | 0.8 | — |
 | Agent key encryption | AES-256-GCM + HKDF-SHA256 | `aes-gcm` + `hkdf` | 0.10 / 0.12 | — |
 | TOTP secret storage | AES-256-GCM at rest | `aes-gcm` | 0.10 | — |
-| Post-quantum (feature flag) | ML-KEM, ML-DSA | `pqcrypto` | — | FIPS 203, FIPS 204 |
+| Post-quantum KEM (feature flag `pq`) | ML-KEM-768 | `ml-kem` | 0.2 | FIPS 203 |
+| Post-quantum signatures (feature flag `pq`) | ML-DSA-65 | `ml-dsa` | 0.1 | FIPS 204 |
 
 ---
 

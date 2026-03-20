@@ -462,9 +462,12 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
 
   // ── Tab state ──
-  const [tab, setTab] = useState<'overview' | 'users' | 'reports' | 'export' | 'errors'>('overview');
+  const [tab, setTab] = useState<'overview' | 'users' | 'reports' | 'bugs' | 'export' | 'errors'>('overview');
   // Reports
   const [reports, setReports] = useState<any[]>([]);
+  // Bug Reports
+  const [bugReports, setBugReports] = useState<any[]>([]);
+  const [bugsLoading, setBugsLoading] = useState(false);
 
   // ── Error Reports ──
   const [errorReports, setErrorReports] = useState<any[]>([]);
@@ -701,14 +704,20 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['overview', 'users', 'reports', 'errors', ...(platformUser?.platform_role === 'admin' ? ['export' as const] : [])] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t as any); if (t === 'reports') { setReportsLoading(true); api.listReports(reportsFilter).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }).catch(() => setReportsLoading(false)); } if (t === 'errors') loadErrors(1); }} style={{
+          {(['overview', 'users', 'reports', 'bugs', 'errors', ...(platformUser?.platform_role === 'admin' ? ['export' as const] : [])] as const).map(t => (
+            <button key={t} onClick={() => {
+              setTab(t as any);
+              if (t === 'reports') { setReportsLoading(true); api.listReports(reportsFilter).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }).catch(() => setReportsLoading(false)); }
+              if (t === 'bugs') { setBugsLoading(true); api.listBugReports().then(d => { setBugReports(Array.isArray(d?.reports) ? d.reports : Array.isArray(d) ? d : []); setBugsLoading(false); }).catch(() => setBugsLoading(false)); }
+              if (t === 'errors') loadErrors(1);
+            }} style={{
               padding: '6px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
               background: tab === t ? T.ac : T.sf2, color: tab === t ? '#000' : T.mt,
               position: 'relative',
             }}>
-              {t === 'overview' ? 'Overview' : t === 'users' ? 'Users' : t === 'reports' ? `Reports${reports.length ? ` (${reports.length})` : ''}` : t === 'errors' ? 'Error Reports' : 'Compliance Export'}
+              {t === 'overview' ? 'Overview' : t === 'users' ? 'Users' : t === 'reports' ? `Abuse Queue${reports.length ? ` (${reports.length})` : ''}` : t === 'bugs' ? `Bug Reports${bugReports.length ? ` (${bugReports.length})` : ''}` : t === 'errors' ? 'Error Reports' : 'Compliance Export'}
               {t === 'errors' && unresolvedCount > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: '#ff4757', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{unresolvedCount}</span>}
+              {t === 'reports' && reports.filter((r: any) => r.status === 'open').length > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: '#ff4757', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{reports.filter((r: any) => r.status === 'open').length}</span>}
             </button>
           ))}
         </div>
@@ -1254,7 +1263,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
         {tab === 'reports' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Content Reports</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Abuse Queue</span>
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                 {['open', 'dismissed', 'actioned'].map(s => (
                   <button key={s} onClick={() => { setReportsFilter(s); setReportsLoading(true); api.listReports(s).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }); }}
@@ -1266,37 +1275,112 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
             {!reportsLoading && reports.length === 0 && (
               <div style={{ textAlign: 'center', padding: '32px 20px' }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No {reportsFilter} reports</div>
-                <div style={{ fontSize: 12, color: T.mt }}>Reports from users will appear here for review.</div>
+                <div style={{ fontSize: 12, color: T.mt }}>User reports will appear here for review.</div>
               </div>
             )}
             {reports.map((r: any) => {
               const reasonLabels: Record<string, string> = { spam: 'Spam', harassment: 'Harassment', illegal_content: 'Illegal Content', other: 'Other' };
               const reasonColors: Record<string, string> = { spam: '#faa61a', harassment: '#ff4757', illegal_content: '#ff4757', other: T.mt };
               return (
-                <div key={r.id} style={{ padding: '12px 14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+                <div key={r.id} style={{ padding: '12px 14px', background: T.sf2, borderRadius: 10, border: `1px solid ${r.reason === 'illegal_content' ? 'rgba(255,71,87,0.4)' : T.bd}`, marginBottom: 8 }}>
+                  {/* Report header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: `${reasonColors[r.reason] || T.mt}22`, color: reasonColors[r.reason] || T.mt }}>{reasonLabels[r.reason] || r.reason}</span>
-                    <span style={{ fontSize: 11, color: T.mt }}>Reported by <strong style={{ color: T.tx }}>{r.reporter_username || '?'}</strong></span>
+                    <span style={{ fontSize: 11, color: T.mt }}>by <strong style={{ color: T.tx }}>{r.reporter_username || '?'}</strong></span>
                     <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                   </div>
-                  <div style={{ padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}`, marginBottom: 6, fontSize: 12, color: T.tx, lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>
-                    <span style={{ fontWeight: 600 }}>{r.message_author_username || '?'}: </span>
-                    {r.message_content || '(message unavailable)'}
+                  {/* Reported user metadata */}
+                  <div style={{ fontSize: 11, color: T.mt, marginBottom: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <span>User: <strong style={{ color: T.tx }}>{r.message_author_username || '?'}</strong></span>
+                    {r.message_author_id && <span style={{ fontFamily: 'monospace', fontSize: 10 }}>ID: {r.message_author_id.slice(0, 8)}...</span>}
                   </div>
-                  {r.details && <div style={{ fontSize: 11, color: T.mt, marginBottom: 8, fontStyle: 'italic' }}>"{r.details}"</div>}
+                  {/* Message content preview */}
+                  <div style={{ padding: '6px 10px', background: T.bg, borderRadius: 6, border: `1px solid ${T.bd}`, marginBottom: 6, fontSize: 12, color: T.tx, lineHeight: 1.5, maxHeight: 80, overflow: 'hidden' }}>
+                    <span style={{ fontWeight: 600 }}>{r.message_author_username || '?'}: </span>
+                    {r.message_content || '(encrypted — content unavailable to server)'}
+                  </div>
+                  {r.details && <div style={{ fontSize: 11, color: T.mt, marginBottom: 8, fontStyle: 'italic' }}>Reporter notes: "{r.details}"</div>}
+                  {/* Actions */}
                   {r.status === 'open' && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={async () => { try { await api.resolveReport(r.id, 'dismissed'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={async () => { try { await api.resolveReport(r.id, 'dismissed'); setReports(prev => prev.filter(x => x.id !== r.id)); setToast({ msg: 'Report dismissed', ok: true }); } catch {} setTimeout(() => setToast(null), 3000); }}
                         style={{ padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.mt, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
-                      <button onClick={async () => { try { await api.deleteMessage(r.message_id); await api.resolveReport(r.id, 'actioned'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
-                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,71,87,0.3)', background: 'rgba(255,71,87,0.1)', color: T.err, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Delete Message</button>
-                      <button onClick={async () => { try { await api.fetch(`/admin/users/${r.message_author_id}/ban`, { method: 'POST', body: JSON.stringify({ reason: 'Content violation' }) }); await api.resolveReport(r.id, 'actioned'); setReports(prev => prev.filter(x => x.id !== r.id)); } catch {} }}
+                      <button onClick={async () => {
+                        try {
+                          await api.fetch(`/admin/users/${r.message_author_id}/warn`, { method: 'POST', body: JSON.stringify({ reason: r.reason, message: `Your message was reported for ${reasonLabels[r.reason] || r.reason}. Please review the Terms of Service.` }) });
+                          await api.resolveReport(r.id, 'actioned');
+                          setReports(prev => prev.filter(x => x.id !== r.id));
+                          setToast({ msg: 'Warning sent to user', ok: true });
+                        } catch { setToast({ msg: 'Failed to warn user', ok: false }); }
+                        setTimeout(() => setToast(null), 3000);
+                      }}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(250,166,26,0.3)', background: 'rgba(250,166,26,0.1)', color: '#faa61a', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Warn User</button>
+                      <button onClick={async () => {
+                        if (!confirm(`Permanently ban ${r.message_author_username || 'this user'}?\n\nThis will:\n- Disable the account\n- Revoke all sessions\n- Ban their IP address\n- Record all metadata in audit log`)) return;
+                        try {
+                          await api.fetch(`/admin/users/${r.message_author_id}/ban`, { method: 'POST', body: JSON.stringify({ reason: `Content violation: ${r.reason}. Report ID: ${r.id}`, ip_ban: true }) });
+                          await api.resolveReport(r.id, 'actioned');
+                          setReports(prev => prev.filter(x => x.id !== r.id));
+                          setToast({ msg: `${r.message_author_username} banned permanently`, ok: true });
+                        } catch { setToast({ msg: 'Ban failed', ok: false }); }
+                        setTimeout(() => setToast(null), 3000);
+                      }}
                         style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,71,87,0.3)', background: 'rgba(255,71,87,0.1)', color: T.err, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Ban User</button>
+                      {r.reason === 'illegal_content' && (
+                        <button onClick={async () => {
+                          if (!confirm('ESCALATE TO NCMEC?\n\nThis will:\n- Permanently ban the user with IP ban\n- Preserve all metadata (IP, email, timestamps, device info)\n- Flag this report for NCMEC submission per 18 U.S.C. § 2258A\n\nThis action is irreversible.')) return;
+                          try {
+                            await api.fetch(`/admin/users/${r.message_author_id}/ban`, { method: 'POST', body: JSON.stringify({ reason: `CSAM/illegal content — NCMEC escalation. Report ID: ${r.id}`, ip_ban: true }) });
+                            await api.resolveReport(r.id, 'actioned');
+                            setReports(prev => prev.filter(x => x.id !== r.id));
+                            setToast({ msg: 'User banned — flagged for NCMEC report', ok: true });
+                          } catch { setToast({ msg: 'Escalation failed', ok: false }); }
+                          setTimeout(() => setToast(null), 5000);
+                        }}
+                          style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,71,87,0.5)', background: 'rgba(255,71,87,0.2)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Escalate (NCMEC)</button>
+                      )}
                     </div>
                   )}
                   {r.status !== 'open' && (
-                    <div style={{ fontSize: 10, color: T.mt }}>Resolved: {r.status}</div>
+                    <div style={{ fontSize: 10, color: r.status === 'actioned' ? T.err : T.mt, fontWeight: 600 }}>Resolved: {r.status}</div>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === 'bugs' && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bug Reports</span>
+              <button onClick={() => { setBugsLoading(true); api.listBugReports().then(d => { setBugReports(Array.isArray(d?.reports) ? d.reports : Array.isArray(d) ? d : []); setBugsLoading(false); }).catch(() => setBugsLoading(false)); }}
+                style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: `1px solid ${T.bd}`, cursor: 'pointer', background: T.bg, color: T.mt, marginLeft: 'auto' }}>Refresh</button>
+            </div>
+            {bugsLoading && <div style={{ color: T.mt, fontSize: 12, padding: 20, textAlign: 'center' }}>Loading...</div>}
+            {!bugsLoading && bugReports.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No bug reports</div>
+                <div style={{ fontSize: 12, color: T.mt }}>Bug reports submitted via the bug icon will appear here.</div>
+              </div>
+            )}
+            {bugReports.map((b: any) => {
+              const sevColors: Record<string, string> = { low: T.mt, medium: '#faa61a', high: '#ff6b35', critical: '#ff4757' };
+              const sevColor = sevColors[b.severity] || T.mt;
+              return (
+                <div key={b.id} style={{ padding: '12px 14px', background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 14 }}>🐛</span>
+                    {b.severity && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: `${sevColor}22`, color: sevColor, textTransform: 'uppercase' }}>{b.severity}</span>}
+                    {b.reporter_user_id && <span style={{ fontSize: 10, color: T.mt }}>User: {b.reporter_user_id.slice(0, 8)}...</span>}
+                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>{new Date(b.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5, marginBottom: 6, wordBreak: 'break-word' }}>{b.description}</div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10, color: T.mt }}>
+                    {b.page && <span>Page: <span style={{ fontFamily: 'monospace' }}>{b.page}</span></span>}
+                    {b.error_code && <span>Error: <span style={{ fontFamily: 'monospace', color: '#faa61a' }}>{b.error_code}</span></span>}
+                    {b.browser_info && <span title={b.browser_info}>Browser: {b.browser_info.slice(0, 40)}...</span>}
+                  </div>
                 </div>
               );
             })}

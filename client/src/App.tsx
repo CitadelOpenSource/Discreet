@@ -26,6 +26,8 @@ import { UpgradeModal } from './components/UpgradeModal';
 import { MaintenancePage, ErrorBoundary as SectionBoundary } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { ScheduleModal } from './components/ScheduleModal';
+import { TermsOfService } from './components/legal/TermsOfService';
+import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
 import { InvitePreview } from './components/InvitePreview';
@@ -1915,6 +1917,11 @@ export default function App() {
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
   if (maintenanceMsg) return <MaintenancePage message={maintenanceMsg} />;
+
+  // Legal pages — accessible without authentication.
+  const pathname = window.location.pathname;
+  if (pathname === '/app/terms' || pathname === '/terms') return <TermsOfService />;
+  if (pathname === '/app/privacy' || pathname === '/privacy') return <PrivacyPolicy />;
 
   if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
   if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
@@ -4071,6 +4078,7 @@ export default function App() {
             curChannel={curChannel}
             view={view}
             getName={getName}
+            pinnedIds={new Set(pinnedMsgs.map((p: any) => p.id))}
             onNavigate={(target: any) => {
               if (target?.channel) selectChannel(target.channel);
               if (target?.messageId) {
