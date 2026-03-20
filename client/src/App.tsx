@@ -26,6 +26,10 @@ import { UpgradeModal } from './components/UpgradeModal';
 import { MaintenancePage, ErrorBoundary as SectionBoundary } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
 import { ScheduleModal } from './components/ScheduleModal';
+import { VoiceConfirmationModal } from './components/voice/VoiceConfirmationModal';
+import { ActiveCallBar } from './components/voice/ActiveCallBar';
+import { AddPeopleModal } from './components/voice/AddPeopleModal';
+import { type VoiceConfirmType, isConfirmEnabled } from './hooks/useVoiceConfirmation';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { LinkPreview } from './components/LinkPreview';
@@ -640,6 +644,8 @@ export default function App() {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [dragServer, setDragServer] = useState<string | null>(null);
   const [voiceChannel,   setVoiceChannel]   = useState<Channel | null>(null);
+  const [voiceConfirm,   setVoiceConfirm]   = useState<{ type: VoiceConfirmType; action: () => void } | null>(null);
+  const [showAddPeople,  setShowAddPeople]  = useState(false);
   const [voicePresence,  setVoicePresence]  = useState<Record<string, string[]>>({});
   const [streamStatus,    setStreamStatus]    = useState<Record<string, { active: boolean; viewerCount: number; viewerUrl?: string }>>({});
   const [myStreamChannelId, setMyStreamChannelId] = useState<string | null>(null);
@@ -648,19 +654,9 @@ export default function App() {
 
   // ── Voice ───────────────────────────────────────────────
   const vc = useVoice();
-  const joinVoice = async (ch: Channel) => {
-    if (voiceChannel?.id === ch.id) {
-      vc.leave(); setVoiceChannel(null); playSound('leave');
-      setVoicePresence(p => ({ ...p, [ch.id]: (p[ch.id] || []).filter(id => id !== api.userId) }));
-      return;
-    }
-    await vc.join(ch.id);
-    setVoiceChannel(ch);
-    playSound('join');
-    api.ws?.send(JSON.stringify({ type: 'voice_join', channel_id: ch.id }));
-    setVoicePresence(p => ({ ...p, [ch.id]: [...new Set([...(p[ch.id] || []), api.userId!])] }));
-  };
-  const leaveVoice = () => {
+
+  // Internal leave — no confirmation, called after user confirms or when skipping.
+  const doLeaveVoice = () => {
     if (voiceChannel) {
       api.ws?.send(JSON.stringify({ type: 'voice_leave', channel_id: voiceChannel.id }));
       setVoicePresence(p => ({ ...p, [voiceChannel.id]: (p[voiceChannel.id] || []).filter(id => id !== api.userId) }));
@@ -669,6 +665,64 @@ export default function App() {
     setVoiceChannel(null);
     playSound('leave');
   };
+
+  // Internal join — no confirmation.
+  const doJoinVoice = async (ch: Channel) => {
+    doLeaveVoice();
+    await vc.join(ch.id);
+    setVoiceChannel(ch);
+    playSound('join');
+    api.ws?.send(JSON.stringify({ type: 'voice_join', channel_id: ch.id }));
+    setVoicePresence(p => ({ ...p, [ch.id]: [...new Set([...(p[ch.id] || []), api.userId!])] }));
+  };
+
+  const joinVoice = async (ch: Channel) => {
+    // Toggle: clicking the same channel leaves it.
+    if (voiceChannel?.id === ch.id) {
+      if (isConfirmEnabled()) {
+        setVoiceConfirm({ type: { kind: 'leave_voice', channelName: ch.name }, action: doLeaveVoice });
+      } else {
+        doLeaveVoice();
+      }
+      return;
+    }
+    // Switch: already in a different channel.
+    if (voiceChannel) {
+      if (isConfirmEnabled()) {
+        setVoiceConfirm({
+          type: { kind: 'switch_voice', fromChannel: voiceChannel.name, toChannel: ch.name },
+          action: () => { doJoinVoice(ch); },
+        });
+      } else {
+        await doJoinVoice(ch);
+      }
+      return;
+    }
+    // Fresh join: no confirmation needed.
+    await vc.join(ch.id);
+    setVoiceChannel(ch);
+    playSound('join');
+    api.ws?.send(JSON.stringify({ type: 'voice_join', channel_id: ch.id }));
+    setVoicePresence(p => ({ ...p, [ch.id]: [...new Set([...(p[ch.id] || []), api.userId!])] }));
+  };
+
+  const leaveVoice = () => {
+    if (!voiceChannel) return;
+    if (isConfirmEnabled()) {
+      setVoiceConfirm({ type: { kind: 'leave_voice', channelName: voiceChannel.name }, action: doLeaveVoice });
+    } else {
+      doLeaveVoice();
+    }
+  };
+
+  // Browser beforeunload: show native dialog when in active voice.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (voiceChannel) { e.preventDefault(); }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [voiceChannel]);
 
   // ── Streaming ───────────────────────────────────────────
   const startGoLive = async () => {
@@ -1376,7 +1430,7 @@ export default function App() {
 
   // ── Actions ─────────────────────────────────────────────
   const selectServer = async (s: Server) => {
-    if (voiceChannel) leaveVoice();
+    if (voiceChannel) doLeaveVoice();
     // Flush read timestamps for whatever is open before switching.
     const now = String(Date.now());
     if (curChannelRef.current) localStorage.setItem(`d_channel_last_read_${curChannelRef.current.id}`, now);
@@ -1411,7 +1465,7 @@ export default function App() {
     api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => {});
   };
   const selectDm = async (dm: DM) => {
-    if (voiceChannel) leaveVoice();
+    if (voiceChannel) doLeaveVoice();
     const now = String(Date.now());
     // Flush read state for whatever was open.
     if (curChannelRef.current) localStorage.setItem(`d_channel_last_read_${curChannelRef.current.id}`, now);
@@ -1423,11 +1477,11 @@ export default function App() {
     await loadDmMessages(dm);
   };
   const selectGroupDm = async (gdm: any) => {
-    if (voiceChannel) leaveVoice();
+    if (voiceChannel) doLeaveVoice();
     setCurGroupDm(gdm); setCurDm(null); setCurServer(null); setView('dm'); setMobileMenuOpen(false);
     try { const raw = await api.getGroupDmMessages(gdm.id); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
   };
-  const goHome = () => { if (voiceChannel) leaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setServerEmoji([]); setMobileMenuOpen(false); };
+  const goHome = () => { if (voiceChannel) doLeaveVoice(); setView('home'); setHomeTab('home'); setCurServer(null); setCurChannel(null); setCurDm(null); setCurGroupDm(null); setMessages([]); setDmMsgs([]); setServerEmoji([]); setMobileMenuOpen(false); };
 
   // Mobile tab handler — maps bottom tabs to existing view system
   const handleMobileTab = (tab: MobileTab) => {
@@ -2027,7 +2081,7 @@ export default function App() {
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0 }}>
+    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0, paddingBottom: voiceChannel ? 48 : 0 }}>
       <GlobalStyles />
       {/* Mobile app download banner */}
       {isMobile && showAppBanner && (
@@ -2294,6 +2348,8 @@ export default function App() {
             onStartGoLive={startGoLive}
             onStopGoLive={stopGoLive}
             onLeave={leaveVoice}
+            onAddPeople={(view === 'dm' || view === 'group-dm') ? () => setShowAddPeople(true) : undefined}
+            someoneElseSharing={!vc.screenSharing && Array.from(vc.streams.keys()).some(k => k.includes('screen'))}
           /></SectionBoundary>
         )}
 
@@ -2985,6 +3041,28 @@ export default function App() {
         {/* ─── Server Channel View ─── */}
         {view === 'server' && curChannel && (<div key={channelFadeKey} style={{ display: 'contents', animation: 'fadeIn 0.2s ease' }}>
           {/* Video Grid (when in voice with video/screen active) */}
+          {/* Stop Sharing banner */}
+          {vc.screenSharing && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              padding: '8px 16px', background: 'rgba(255,71,87,0.12)',
+              border: '1px solid rgba(255,71,87,0.3)', borderRadius: 8, marginBottom: 6,
+            }}>
+              <I.Monitor s={14} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.err }}>You are sharing your screen</span>
+              <button
+                onClick={() => vc.stopScreenShare()}
+                style={{
+                  padding: '4px 14px', borderRadius: 6, border: 'none',
+                  background: T.err, color: '#fff', fontSize: 11,
+                  fontWeight: 700, cursor: 'pointer', marginLeft: 8,
+                }}
+              >
+                Stop Sharing
+              </button>
+            </div>
+          )}
+          {/* Video Grid (when in voice with video/screen active) */}
           {voiceChannel && (vc.videoEnabled || vc.screenSharing || vc.streams.size > 0) && (
             <VideoGrid
               streams={Object.fromEntries([
@@ -2994,6 +3072,7 @@ export default function App() {
               ])}
               localName={api.username || '?'}
               peers={Array.from(vc.streams.keys()).map(id => ({ id, name: getName(id), speaking: false }))}
+              screenSharerName={vc.screenSharing ? (api.username || '?') : undefined}
             />
           )}
           {/* Client-side channel search */}
@@ -4010,6 +4089,25 @@ export default function App() {
       )}
 
       {/* Schedule Message Modal */}
+      {/* Add People to Call Modal */}
+      {showAddPeople && voiceChannel && (
+        <AddPeopleModal
+          channelId={voiceChannel.id}
+          channelName={voiceChannel.name}
+          existingParticipants={voicePresence[voiceChannel.id] || []}
+          onClose={() => setShowAddPeople(false)}
+        />
+      )}
+
+      {/* Voice Confirmation Modal */}
+      {voiceConfirm && (
+        <VoiceConfirmationModal
+          type={voiceConfirm.type}
+          onConfirm={() => { voiceConfirm.action(); setVoiceConfirm(null); }}
+          onCancel={() => setVoiceConfirm(null)}
+        />
+      )}
+
       {showScheduleModal && curChannel && (
         <ScheduleModal
           channelId={curChannel.id}
@@ -4475,6 +4573,27 @@ export default function App() {
           }
           setShowOnboarding(false);
         }} />
+      )}
+
+      {/* Persistent call bar — renders globally when in voice */}
+      {voiceChannel && (
+        <ActiveCallBar
+          channelName={voiceChannel.name}
+          participantCount={(voicePresence[voiceChannel.id] || []).length}
+          muted={vc.muted}
+          deafened={vc.deafened}
+          videoEnabled={vc.videoEnabled}
+          screenSharing={vc.screenSharing}
+          pttActive={vc.pttActive}
+          onToggleMute={() => vc.toggleMute()}
+          onToggleDeafen={() => vc.toggleDeafen()}
+          onHangUp={leaveVoice}
+          onReturnToCall={() => {
+            if (curChannel?.id !== voiceChannel.id) {
+              selectChannel(voiceChannel);
+            }
+          }}
+        />
       )}
 
       <BugReportButton />

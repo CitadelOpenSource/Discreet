@@ -183,6 +183,11 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
               <I.Camera s={10} />
             </span>
           )}
+          {videoStreams[p.id + ':screen'] && (
+            <span title="Screen sharing" style={{ color: '#9b59b6', display: 'flex', flexShrink: 0, marginLeft: 2 }}>
+              <I.Monitor s={10} />
+            </span>
+          )}
           {sframeActive ? (
             <span title="End-to-end encrypted" style={{ color: '#43b581', display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
               <I.ShieldCheck s={10} />

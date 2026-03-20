@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { T } from '../../theme';
 import * as I from '../../icons';
 import { voice } from '../../hooks/useVoice';
@@ -38,6 +38,18 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
             const handler = (ke: KeyboardEvent) => { ke.preventDefault(); voice.pttKey = ke.key; el.textContent = ke.key === ' ' ? 'Space' : ke.key; localStorage.setItem('d_pttkey', ke.key); document.removeEventListener('keydown', handler); };
             document.addEventListener('keydown', handler);
           }}>{localStorage.getItem('d_pttkey') || '`'}</div>
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt, marginBottom: 4 }}>
+            <span>Release Delay</span>
+            <span style={{ color: T.ac, fontFamily: 'monospace' }}>{localStorage.getItem('d_pttDelay') || '200'}ms</span>
+          </div>
+          <input type="range" min="0" max="500" step="25"
+            defaultValue={localStorage.getItem('d_pttDelay') || '200'}
+            onChange={e => { localStorage.setItem('d_pttDelay', e.target.value); voice.pttReleaseDelay = parseInt(e.target.value); }}
+            style={{ width: '100%', accentColor: T.ac, height: 4 } as any} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: T.mt }}><span>0ms (instant)</span><span>500ms (smooth)</span></div>
+          <div style={{ fontSize: 9, color: T.mt, marginTop: 4 }}>Keeps the mic open briefly after releasing the key to avoid cutting off the end of speech.</div>
+        </div>
       </div>
     )}
     <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8, marginBottom: 12 }}>
@@ -56,6 +68,7 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
         <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Input Volume</div>
         <input type="range" min="0" max="200" defaultValue={localStorage.getItem('d_inputVol') || '100'} onChange={e => { localStorage.setItem('d_inputVol', e.target.value); voice.inputGain = parseInt(e.target.value) / 100; }} style={{ width: '100%', accentColor: T.ac } as any} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}><span>0%</span><span>{localStorage.getItem('d_inputVol') || '100'}%</span><span>200%</span></div>
+        <InputLevelMeter />
       </div>
       <div>
         <div style={{ fontSize: 12, color: T.tx, marginBottom: 4 }}>Output Volume</div>
@@ -69,6 +82,29 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
       <AudioToggle label="Noise Suppression" storageKey="d_noiseSup" defaultVal={true} desc="AI-powered background noise removal (RNNoise)" onChange={v => voice.noiseSuppression = v} />
       <AudioToggle label="Echo Cancellation" storageKey="d_echoCan" defaultVal={true} desc="Prevents feedback loops from speakers to mic" onChange={v => voice.echoCancellation = v} />
       <AudioToggle label="Auto Gain Control" storageKey="d_agc" defaultVal={true} desc="Automatically levels your microphone" onChange={v => voice.autoGainControl = v} />
+
+      {/* Noise Gate */}
+      <div style={{ marginTop: 12, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Noise Gate</span>
+          <div onClick={() => { const v = localStorage.getItem('d_noiseGateOn') === 'false'; localStorage.setItem('d_noiseGateOn', String(v)); voice.noiseGateEnabled = v; }}
+            style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_noiseGateOn') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}>
+            <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_noiseGateOn') !== 'false' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: T.mt, marginBottom: 8 }}>Attenuates audio below the threshold by 40dB. Runs before encryption — cleaned audio is what gets encrypted and sent to other participants.</div>
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt }}>
+            <span>Sensitivity (Threshold)</span>
+            <span style={{ color: T.ac, fontFamily: 'monospace' }}>{localStorage.getItem('d_noiseGateThresh') || '-50'} dB</span>
+          </div>
+          <input type="range" min="-60" max="-30" step="1"
+            defaultValue={localStorage.getItem('d_noiseGateThresh') || '-50'}
+            onChange={e => { localStorage.setItem('d_noiseGateThresh', e.target.value); voice.noiseGateThreshold = parseFloat(e.target.value); }}
+            style={{ width: '100%', accentColor: T.ac, height: 4 } as any} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: T.mt }}><span>Very Sensitive (whispers)</span><span>Less Sensitive (loud speech)</span></div>
+        </div>
+      </div>
 
       {/* Noise Gate */}
       <div style={{ marginTop: 12, padding: 10, background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
@@ -208,9 +244,87 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
       </div>
     </div>
 
+    {/* Voice Safety */}
+    <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 10 }}>Voice Safety</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Confirm before leaving voice</div>
+          <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Show a confirmation dialog before disconnecting from voice channels or calls</div>
+        </div>
+        <div onClick={() => { const v = localStorage.getItem('d_voice_confirm') === 'false'; localStorage.setItem('d_voice_confirm', String(v)); }}
+          style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_voice_confirm') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+          <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_voice_confirm') !== 'false' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+        </div>
+      </div>
+    </div>
+
     <div style={{ padding: 12, background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginTop: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>How Discreet Voice Works</div>
       <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>Voice uses peer-to-peer WebRTC with echo cancellation and noise suppression. Audio goes directly between participants — it never touches our servers. SFrame (RFC 9605) encrypts every audio frame end-to-end when enabled.</div>
     </div>
   </>);
+}
+
+// ─── Input Level Meter ───────────────────────────────────────────────────
+
+function InputLevelMeter() {
+  const [level, setLevel] = useState(0);
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const deviceId = localStorage.getItem('d_audioIn');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : true,
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        ctxRef.current = ctx;
+        const src = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const poll = () => {
+          if (cancelled) return;
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
+          setLevel(avg);
+          rafRef.current = requestAnimationFrame(poll);
+        };
+        poll();
+      } catch { /* mic denied — meter stays at 0 */ }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (ctxRef.current) ctxRef.current.close();
+    };
+  }, []);
+
+  const pct = Math.min(100, Math.round(level * 100));
+  const color = pct > 80 ? '#ff4757' : pct > 40 ? '#faa61a' : '#2ecc71';
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <I.Mic s={11} />
+        <div style={{ flex: 1, height: 6, background: T.bd, borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.05s' }} />
+        </div>
+        <span style={{ fontSize: 9, color: T.mt, fontFamily: 'monospace', width: 28, textAlign: 'right' }}>{pct}%</span>
+      </div>
+      <div style={{ fontSize: 9, color: T.mt, marginTop: 2 }}>Input level — speak to test your microphone</div>
+    </div>
+  );
 }

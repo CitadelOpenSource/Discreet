@@ -29,13 +29,15 @@ export interface VoicePanelProps {
   onStartGoLive: () => void;
   onStopGoLive: () => void;
   onLeave: () => void;
+  onAddPeople?: () => void;
+  someoneElseSharing?: boolean;
 }
 
 export function VoicePanel({
   channelName, speaking, muted, deafened, videoEnabled, screenSharing,
   sframeActive, latencyMs, audioLevel, serverMuted, isStreaming,
   onToggleMute, onToggleDeafen, onToggleVideo, onToggleScreenShare,
-  onStartGoLive, onStopGoLive, onLeave,
+  onStartGoLive, onStopGoLive, onLeave, onAddPeople, someoneElseSharing,
 }: VoicePanelProps) {
   return (
     <div style={{ padding: '8px 10px', borderTop: `1px solid ${T.bd}`, background: T.bg }}>
@@ -77,12 +79,29 @@ export function VoicePanel({
         <div onClick={onToggleDeafen} style={{ flex: 1, padding: '5px 0', textAlign: 'center', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: deafened ? 'rgba(255,71,87,0.15)' : T.sf2, color: deafened ? T.err : T.mt, border: `1px solid ${deafened ? 'rgba(255,71,87,0.3)' : T.bd}` }}>
           {deafened ? '🔇 Deaf' : '🎧 Audio'}
         </div>
-        <div onClick={onToggleVideo} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: videoEnabled ? `${ta(T.ac,'22')}` : T.sf2, color: videoEnabled ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
-          📹 Cam
+        <div onClick={onToggleVideo} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: videoEnabled ? 'rgba(52,152,219,0.15)' : T.sf2, color: videoEnabled ? '#3498db' : T.mt, border: `1px solid ${videoEnabled ? 'rgba(52,152,219,0.4)' : T.bd}`, display: 'flex', alignItems: 'center', gap: 3 }}>
+          <I.Camera s={11} /> {videoEnabled ? 'On' : 'Cam'}
         </div>
-        <div onClick={onToggleScreenShare} style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: screenSharing ? `${ta(T.ac,'22')}` : T.sf2, color: screenSharing ? T.ac : T.mt, border: `1px solid ${T.bd}` }}>
-          {screenSharing ? '🖥️ Live' : '🖥️ Share'}
+        <div
+          onClick={someoneElseSharing && !screenSharing ? undefined : onToggleScreenShare}
+          title={someoneElseSharing && !screenSharing ? 'Someone is sharing' : screenSharing ? 'Stop sharing' : 'Share screen'}
+          style={{
+            padding: '5px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 3,
+            cursor: someoneElseSharing && !screenSharing ? 'not-allowed' : 'pointer',
+            opacity: someoneElseSharing && !screenSharing ? 0.4 : 1,
+            background: screenSharing ? 'rgba(155,89,182,0.15)' : T.sf2,
+            color: screenSharing ? '#9b59b6' : T.mt,
+            border: `1px solid ${screenSharing ? 'rgba(155,89,182,0.4)' : T.bd}`,
+          }}
+        >
+          <I.Monitor s={11} /> {screenSharing ? 'Sharing' : someoneElseSharing ? 'In Use' : 'Screen'}
         </div>
+        {onAddPeople && (
+          <div onClick={onAddPeople} title="Add People" style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600, background: T.sf2, color: T.ac, border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <I.UserPlus s={11} />
+          </div>
+        )}
         {isStreaming ? (
           <div onClick={onStopGoLive} title="Stop streaming" style={{ padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 700, background: 'rgba(255,71,87,0.2)', color: T.err, border: '1px solid rgba(255,71,87,0.4)' }}>
             ⏹ Stop

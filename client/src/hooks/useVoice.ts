@@ -17,7 +17,8 @@ export type VoiceEventType =
   | 'screen_started' | 'screen_stopped'
   | 'peer_stream' | 'peer_video' | 'peer_left' | 'ice_candidate'
   | 'sframe_key_update'
-  | 'latency' | 'server_muted';
+  | 'latency' | 'server_muted'
+  | 'ptt_changed';
 
 export interface VoiceEvent {
   type: VoiceEventType;
@@ -33,6 +34,7 @@ export interface VoiceEvent {
   message?: string;
   latencyMs?: number;
   serverMuted?: boolean;
+  pttDown?: boolean;
 }
 
 export interface VoiceState {
@@ -46,6 +48,7 @@ export interface VoiceState {
   audioLevel: number;
   latencyMs: number;
   serverMuted: boolean;
+  pttActive: boolean;
   streams: Map<string, MediaStream>;
   peerKeyIds: Map<string, number>;
 }
@@ -79,9 +82,16 @@ export class VoiceEngine {
   peerKeyIds: Map<string, number>;
   pttKey: string;
   pttDown: boolean;
+  pttReleaseDelay: number;
+  private _pttReleaseTimer: ReturnType<typeof setTimeout> | null;
   serverMuted: boolean;
   latencyMs: number;
   private bandpassNode: BiquadFilterNode | null;
+  private noiseGateNode: GainNode | null;
+  noiseGateEnabled: boolean;
+  noiseGateThreshold: number;
+  processedStream: MediaStream | null;
+  private _destinationNode: MediaStreamAudioDestinationNode | null;
   private _latencyInterval: ReturnType<typeof setInterval> | null;
   private listeners: Set<(e: VoiceEvent) => void>;
   private _vadLoop: number | null;
@@ -115,22 +125,36 @@ export class VoiceEngine {
     this.peerKeyIds = new Map();
     this.pttKey = localStorage.getItem('d_pttkey') || '`';
     this.pttDown = false;
+    this.pttReleaseDelay = parseInt(localStorage.getItem('d_pttDelay') || '200');
+    this._pttReleaseTimer = null;
     this.serverMuted = false;
     this.latencyMs = 0;
     this.bandpassNode = null;
+    this.noiseGateNode = null;
+    this.noiseGateEnabled = localStorage.getItem('d_noiseGateOn') !== 'false';
+    this.noiseGateThreshold = parseFloat(localStorage.getItem('d_noiseGateThresh') || '-50');
+    this.processedStream = null;
+    this._destinationNode = null;
     this._latencyInterval = null;
     this.listeners = new Set();
     this._vadLoop = null;
     this._onKeyDown = (e) => {
       if (this.mode === 'ptt' && e.key === this.pttKey && !this.pttDown) {
+        if (this._pttReleaseTimer) { clearTimeout(this._pttReleaseTimer); this._pttReleaseTimer = null; }
         this.pttDown = true;
         this._setMicEnabled(true);
+        this.emit('ptt_changed', { pttDown: true });
       }
     };
     this._onKeyUp = (e) => {
       if (this.mode === 'ptt' && e.key === this.pttKey) {
         this.pttDown = false;
-        this._setMicEnabled(false);
+        // Delay muting to avoid cutting off end of speech.
+        this._pttReleaseTimer = setTimeout(() => {
+          this._setMicEnabled(false);
+          this._pttReleaseTimer = null;
+          this.emit('ptt_changed', { pttDown: false });
+        }, this.pttReleaseDelay);
       }
     };
   }
@@ -192,9 +216,23 @@ export class VoiceEngine {
         this.bandpassNode = null;
         lastNode.connect(this.gainNode);
       }
+      // Noise gate: attenuates audio below threshold.
+      // Uses the analyser to detect level and modulate a gate GainNode.
+      this.noiseGateNode = this.audioCtx.createGain();
+      this.noiseGateNode.gain.value = 1.0;
+      this.gainNode.connect(this.noiseGateNode);
+
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 512;
-      this.gainNode.connect(this.analyser);
+      this.noiseGateNode.connect(this.analyser);
+
+      // Output destination: creates a new MediaStream from the processed audio
+      // graph. This stream (not the raw localStream) goes to RTCPeerConnection,
+      // so noise suppression happens BEFORE encryption.
+      this._destinationNode = this.audioCtx.createMediaStreamDestination();
+      this.noiseGateNode.connect(this._destinationNode);
+      this.processedStream = this._destinationNode.stream;
+
       this._startLatencyPolling();
       this._startVAD();
       if (this.mode === 'ptt') this._setMicEnabled(false);
@@ -222,7 +260,11 @@ export class VoiceEngine {
     if (this.audioCtx) { this.audioCtx.close(); this.audioCtx = null; }
     if (this._vadLoop) { cancelAnimationFrame(this._vadLoop); this._vadLoop = null; }
     if (this._latencyInterval) { clearInterval(this._latencyInterval); this._latencyInterval = null; }
+    if (this._pttReleaseTimer) { clearTimeout(this._pttReleaseTimer); this._pttReleaseTimer = null; }
     this.bandpassNode = null;
+    this.noiseGateNode = null;
+    this._destinationNode = null;
+    this.processedStream = null;
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
     this.channelId = null;
@@ -266,6 +308,24 @@ export class VoiceEngine {
     document.querySelectorAll<HTMLMediaElement>('audio[id^="voice-"],video[id^="video-"]').forEach(el => {
       if ((el as any).setSinkId) (el as any).setSinkId(deviceId).catch(() => {});
     });
+  }
+
+  /** Mobile-ready: call on touch start to begin transmitting. */
+  holdToTalk(): void {
+    if (this._pttReleaseTimer) { clearTimeout(this._pttReleaseTimer); this._pttReleaseTimer = null; }
+    this.pttDown = true;
+    this._setMicEnabled(true);
+    this.emit('ptt_changed', { pttDown: true });
+  }
+
+  /** Mobile-ready: call on touch end to stop transmitting. */
+  releaseToTalk(): void {
+    this.pttDown = false;
+    this._pttReleaseTimer = setTimeout(() => {
+      this._setMicEnabled(false);
+      this._pttReleaseTimer = null;
+      this.emit('ptt_changed', { pttDown: false });
+    }, this.pttReleaseDelay);
   }
 
   async startVideo(): Promise<MediaStream | null> {
@@ -354,10 +414,33 @@ export class VoiceEngine {
 
   private _startVAD(): void {
     const data = new Uint8Array(this.analyser!.frequencyBinCount);
+    // Noise gate state: smooth attack/release envelope.
+    let gateEnvelope = 1.0;
+    const attackRate = 1.0 / (10 / 16.67);   // ~10ms attack at 60fps
+    const releaseRate = 1.0 / (100 / 16.67); // ~100ms release at 60fps
+    const attenuation = Math.pow(10, -40 / 20); // -40dB attenuation
+
     const check = () => {
       if (!this.analyser) return;
       this.analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
+
+      // Drive the noise gate: convert average level to dB and compare to threshold.
+      if (this.noiseGateEnabled && this.noiseGateNode && this.audioCtx) {
+        const dbLevel = avg > 0 ? 20 * Math.log10(avg) : -100;
+        const aboveThreshold = dbLevel > this.noiseGateThreshold;
+        // Smooth envelope: ramp up on attack, ramp down on release.
+        if (aboveThreshold) {
+          gateEnvelope = Math.min(1.0, gateEnvelope + attackRate);
+        } else {
+          gateEnvelope = Math.max(attenuation, gateEnvelope - releaseRate);
+        }
+        this.noiseGateNode.gain.setTargetAtTime(gateEnvelope, this.audioCtx.currentTime, 0.01);
+      } else if (this.noiseGateNode) {
+        gateEnvelope = 1.0;
+        this.noiseGateNode.gain.value = 1.0;
+      }
+
       const was = this.speaking;
       if (this.mode === 'vad') {
         this.speaking = avg > this.sensitivity && !this.muted;
@@ -404,7 +487,9 @@ export class VoiceEngine {
         { urls: 'stun:stun1.l.google.com:19302' },
       ],
     });
-    if (this.localStream) this.localStream.getTracks().forEach(t => pc.addTrack(t, this.localStream!));
+    // Use the processed (noise-gated) audio stream if available, otherwise raw.
+    const audioStream = this.processedStream || this.localStream;
+    if (audioStream) audioStream.getTracks().forEach(t => pc.addTrack(t, audioStream));
     pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
       if (e.track.kind === 'video') {
@@ -486,6 +571,7 @@ export function useVoice() {
     audioLevel: 0,
     latencyMs: 0,
     serverMuted: false,
+    pttActive: false,
     streams: new Map(),
     peerKeyIds: new Map(),
   });
@@ -500,7 +586,7 @@ export function useVoice() {
           setState(s => ({ ...s, channelId: e.channelId ?? voice.channelId }));
           break;
         case 'left':
-          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, latencyMs: 0, serverMuted: false, streams: new Map(), peerKeyIds: new Map() }));
+          setState(s => ({ ...s, channelId: null, muted: false, deafened: false, speaking: false, videoEnabled: false, screenSharing: false, sframeActive: false, audioLevel: 0, latencyMs: 0, serverMuted: false, pttActive: false, streams: new Map(), peerKeyIds: new Map() }));
           break;
         case 'mute_changed':
           setState(s => ({ ...s, muted: e.muted ?? voice.muted }));
@@ -540,6 +626,9 @@ export function useVoice() {
         case 'server_muted':
           setState(s => ({ ...s, serverMuted: true, muted: true }));
           break;
+        case 'ptt_changed':
+          setState(s => ({ ...s, pttActive: e.pttDown ?? false }));
+          break;
       }
     });
     return unsub;
@@ -558,6 +647,10 @@ export function useVoice() {
     setEQ: (freq: string, gain: number) => voice.setEQ(freq, gain),
     setInputDevice: (deviceId: string) => voice.setInputDevice(deviceId),
     setOutputDevice: (deviceId: string) => voice.setOutputDevice(deviceId),
+    setNoiseGate: (on: boolean) => { voice.noiseGateEnabled = on; localStorage.setItem('d_noiseGateOn', String(on)); },
+    setNoiseGateThreshold: (db: number) => { voice.noiseGateThreshold = db; localStorage.setItem('d_noiseGateThresh', String(db)); },
+    holdToTalk: () => voice.holdToTalk(),
+    releaseToTalk: () => voice.releaseToTalk(),
     createOffer: (pid: string) => voice.createOffer(pid),
     handleOffer: (pid: string, offer: RTCSessionDescriptionInit) => voice.handleOffer(pid, offer),
     handleAnswer: (pid: string, answer: RTCSessionDescriptionInit) => voice.handleAnswer(pid, answer),
