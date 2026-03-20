@@ -48,6 +48,7 @@ pub mod discreet_forum_handlers;
 pub mod discreet_friend_handlers;
 pub mod discreet_group_dm_handlers;
 pub mod discreet_health;
+pub mod discreet_import_handlers;
 pub mod discreet_input_validation;
 pub mod discreet_ldap_sync;
 pub mod discreet_meeting_handlers;

@@ -64,6 +64,7 @@ use discreet_server::discreet_forum_handlers;
 use discreet_server::discreet_friend_handlers;
 use discreet_server::discreet_group_dm_handlers;
 use discreet_server::discreet_health;
+use discreet_server::discreet_import_handlers;
 use discreet_server::discreet_ldap_sync;
 use discreet_server::discreet_meeting_handlers;
 use discreet_server::discreet_oauth;
@@ -731,6 +732,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/users/@me/servers", axum::routing::get(discreet_user_handlers::list_my_servers))
         .route("/users/@me/export", axum::routing::get(discreet_user_handlers::export_my_data))
         .route("/users/@me/export-zip", axum::routing::get(discreet_export_handlers::export_user_zip))
+        // ── Import ──
+        .route("/users/@me/import", axum::routing::post(discreet_import_handlers::create_import_job))
+        .route("/users/@me/import/:id", axum::routing::get(discreet_import_handlers::get_import_job))
         .route("/users/@me/status", axum::routing::put(discreet_user_handlers::update_status))
         .route("/users/@me/qr", axum::routing::get(discreet_qr_handlers::user_qr))
         .route("/connect/:code", axum::routing::get(discreet_qr_handlers::resolve_connect_code))
