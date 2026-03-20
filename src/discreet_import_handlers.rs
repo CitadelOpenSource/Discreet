@@ -44,24 +44,14 @@ const MAX_CHANNEL_NAME: usize = 100;
 /// How often to flush imported_count to the database.
 const PROGRESS_FLUSH_INTERVAL: i32 = 100;
 
-/// Returns the required file extension for the given import source,
+/// Returns the file extension for the given import source (without dot),
 /// or `None` if the source is not recognized.
-fn required_extension(source: &str) -> Option<&'static str> {
+fn source_extension(source: &str) -> Option<&'static str> {
     match source {
-        "signal" | "whatsapp" => Some(".zip"),
-        "imessage" => Some(".db"),
-        "android_sms" => Some(".xml"),
+        "signal" | "whatsapp" => Some("zip"),
+        "imessage" => Some("db"),
+        "android_sms" => Some("xml"),
         _ => None,
-    }
-}
-
-/// Returns the file extension used when storing the import file on disk.
-fn storage_extension(source: &str) -> &'static str {
-    match source {
-        "signal" | "whatsapp" => "zip",
-        "imessage" => "db",
-        "android_sms" => "xml",
-        _ => "bin",
     }
 }
 
@@ -159,7 +149,7 @@ pub async fn create_import_job(
         file_bytes.ok_or_else(|| AppError::BadRequest("file field is required".into()))?;
 
     // ── Validate source ──────────────────────────────────────────────────
-    let expected_ext = required_extension(&source).ok_or_else(|| {
+    let ext = source_extension(&source).ok_or_else(|| {
         AppError::BadRequest(
             "Invalid source. Must be one of: signal, whatsapp, imessage, android_sms".into(),
         )
@@ -170,9 +160,10 @@ pub async fn create_import_job(
         .as_deref()
         .ok_or_else(|| AppError::BadRequest("File must have a filename".into()))?;
 
-    if !fname.to_lowercase().ends_with(expected_ext) {
+    let expected_ext_dot = format!(".{ext}");
+    if !fname.to_lowercase().ends_with(&expected_ext_dot) {
         return Err(AppError::BadRequest(format!(
-            "File for {source} import must have a {expected_ext} extension"
+            "File for {source} import must have a {expected_ext_dot} extension"
         )));
     }
 
@@ -188,7 +179,6 @@ pub async fn create_import_job(
 
     // ── Write file to disk ───────────────────────────────────────────────
     let job_id = Uuid::new_v4();
-    let ext = storage_extension(&source);
     let upload_dir = "uploads/imports";
     tokio::fs::create_dir_all(upload_dir)
         .await
@@ -358,13 +348,16 @@ async fn process_import_job(
         }
         Err(msg) => {
             tracing::error!(job_id = %job_id, source = %source, error = %msg, "Import failed");
-            let _ = sqlx::query!(
+            if let Err(db_err) = sqlx::query!(
                 "UPDATE import_jobs SET status = 'failed', error_message = $2, completed_at = now() WHERE id = $1",
                 job_id,
                 msg,
             )
             .execute(&db)
-            .await;
+            .await
+            {
+                tracing::error!(job_id = %job_id, "Failed to write failure status to DB: {db_err}");
+            }
         }
     }
 }
@@ -418,6 +411,9 @@ async fn parse_signal_export(
             found_db = true;
         }
     }
+
+    // Free ZIP memory before the long-running INSERT loop.
+    drop(archive);
 
     let json_str = match json_content {
         Some(s) => s,
@@ -509,18 +505,14 @@ async fn parse_signal_export(
 
         // ── Insert messages for this conversation ────────────────────────
         for msg in &conv.messages {
-            // Skip sticker-only messages (no body text).
-            if msg.sticker.is_some() {
-                let body = msg.body.as_deref().unwrap_or("");
-                if body.is_empty() {
-                    skipped_stickers += 1;
-                    continue;
-                }
-            }
-
-            // Determine body text.
             let body = msg.body.as_deref().unwrap_or("");
             let has_attachments = !msg.attachments.is_empty();
+
+            // Skip sticker-only messages (no body text).
+            if msg.sticker.is_some() && body.is_empty() {
+                skipped_stickers += 1;
+                continue;
+            }
 
             // Skip messages with no body and no attachments.
             if body.is_empty() && !has_attachments {
@@ -724,6 +716,9 @@ async fn parse_whatsapp_export(
         }
     }
 
+    // Free ZIP memory before the long-running INSERT loop.
+    drop(archive);
+
     if chat_files.is_empty() {
         return Err("ZIP does not contain any WhatsApp chat .txt files".into());
     }
@@ -734,24 +729,10 @@ async fn parse_whatsapp_export(
     let ts_re = regex_lite::Regex::new(WHATSAPP_TS_PREFIX)
         .map_err(|e| format!("Regex compile error: {e}"))?;
 
-    // ── Count total user messages across all files ───────────────────────
-    let total_messages: i32 = chat_files
-        .iter()
-        .map(|(_, content)| content.lines().filter(|l| msg_re.is_match(l)).count() as i32)
-        .sum();
-
-    sqlx::query!(
-        "UPDATE import_jobs SET total_messages = $2 WHERE id = $1",
-        job_id,
-        total_messages,
-    )
-    .execute(db)
-    .await
-    .map_err(|e| format!("DB error updating total_messages: {e}"))?;
-
-    // ── Process each chat file ───────────────────────────────────────────
-    let mut imported_count: i32 = 0;
+    // ── Parse all chat files, then derive total from results ────────────
+    let mut parsed_chats: Vec<(String, Vec<WhatsAppParsedMsg>)> = Vec::new();
     let mut skipped_system: i32 = 0;
+    let mut total_messages: i32 = 0;
 
     for (filename, content) in &chat_files {
         let conv_name = extract_whatsapp_contact(filename);
@@ -764,11 +745,26 @@ async fn parse_whatsapp_export(
         let (messages, sys_count) =
             parse_whatsapp_chat_lines(&msg_re, &ts_re, content, day_first);
         skipped_system += sys_count;
+        total_messages += messages.len() as i32;
 
-        if messages.is_empty() {
-            continue;
+        if !messages.is_empty() {
+            parsed_chats.push((channel_name, messages));
         }
+    }
 
+    sqlx::query!(
+        "UPDATE import_jobs SET total_messages = $2 WHERE id = $1",
+        job_id,
+        total_messages,
+    )
+    .execute(db)
+    .await
+    .map_err(|e| format!("DB error updating total_messages: {e}"))?;
+
+    // ── Process each parsed conversation ─────────────────────────────────
+    let mut imported_count: i32 = 0;
+
+    for (channel_name, messages) in &parsed_chats {
         // Create group_dm_channel for this conversation.
         let group = sqlx::query!(
             "INSERT INTO group_dm_channels (name, owner_id) VALUES ($1, $2) RETURNING id",
@@ -791,7 +787,7 @@ async fn parse_whatsapp_export(
         .map_err(|e| format!("Failed to add member to import channel: {e}"))?;
 
         // ── Insert messages ──────────────────────────────────────────────
-        for msg in &messages {
+        for msg in messages {
             let imported = ImportedContent {
                 from: msg.sender.clone(),
                 body: msg.body.clone(),
@@ -856,7 +852,7 @@ async fn parse_whatsapp_export(
 
     tracing::info!(
         job_id = %job_id,
-        conversations = chat_files.len(),
+        conversations = parsed_chats.len(),
         imported = imported_count,
         skipped_system,
         media_file_count,
