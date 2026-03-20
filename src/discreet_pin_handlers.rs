@@ -104,7 +104,7 @@ pub async fn pin_message(
         ));
     }
 
-    let result = sqlx::query!(
+    sqlx::query!(
         "INSERT INTO pinned_messages (channel_id, message_id, pinned_by, category)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (channel_id, message_id) DO UPDATE SET category = $4",
@@ -115,8 +115,6 @@ pub async fn pin_message(
     )
     .execute(&state.db)
     .await?;
-
-    let action = if result.rows_affected() > 0 { "pinned" } else { "updated" };
 
     state
         .ws_broadcast(
@@ -131,7 +129,7 @@ pub async fn pin_message(
         )
         .await;
 
-    tracing::debug!(message_id = %message_id, category = %category, "{action}");
+    tracing::debug!(message_id = %message_id, category = %category, "Message pinned");
 
     Ok(StatusCode::NO_CONTENT)
 }

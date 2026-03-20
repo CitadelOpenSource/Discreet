@@ -201,7 +201,11 @@ export function BugReportButton() {
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    onChange={e => setScreenshot(e.target.files?.[0] || null)}
+                    onChange={e => {
+                      const f = e.target.files?.[0] || null;
+                      if (f && f.size > 5 * 1024 * 1024) { setErr('Screenshot must be under 5 MB'); setScreenshot(null); return; }
+                      setScreenshot(f);
+                    }}
                     style={{ fontSize: 12, color: T.mt }}
                     aria-label="Upload screenshot"
                   />

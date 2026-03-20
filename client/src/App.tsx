@@ -2,7 +2,7 @@
  * Discreet — Vite Client (Full Featured)
  * Orchestrates all extracted components into a complete chat application.
  */
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { api, _storage } from './api/CitadelAPI';
 import { T, getInp, btn, setTheme, ta, applyServerTheme, registerThemeSync } from './theme';
 import { useMobile } from './contexts/MobileContext';
@@ -783,6 +783,7 @@ export default function App() {
   const [showHealth,     setShowHealth]     = useState(false);
   const [showPinned,     setShowPinned]     = useState(false);
   const [pinnedMsgs,     setPinnedMsgs]     = useState<any[]>([]);
+  const pinnedIds = useMemo(() => new Set(pinnedMsgs.map((p: any) => p.id as string)), [pinnedMsgs]);
   const [openThread,     setOpenThread]     = useState<ParentMsg | null>(null);
 
   // ── Loading states ───────────────────────────────────────
@@ -1406,7 +1407,8 @@ export default function App() {
     setMentionCounts(p => { const n = { ...p }; delete n[ch.id]; return n; });
     setChannelFadeKey(k => k + 1); setMsgScrollTop(0);
     await loadMessages(ch); inputRef.current?.focus();
-    api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => setScheduledCount(0));
+    setScheduledCount(0);
+    api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => {});
   };
   const selectDm = async (dm: DM) => {
     if (voiceChannel) leaveVoice();
@@ -4078,7 +4080,7 @@ export default function App() {
             curChannel={curChannel}
             view={view}
             getName={getName}
-            pinnedIds={new Set(pinnedMsgs.map((p: any) => p.id))}
+            pinnedIds={pinnedIds}
             onNavigate={(target: any) => {
               if (target?.channel) selectChannel(target.channel);
               if (target?.messageId) {

@@ -41,6 +41,14 @@ const MAX_EVENTS: usize = 50;
 /// Maximum webhooks per server.
 const MAX_WEBHOOKS_PER_SERVER: i64 = 25;
 
+/// Allowed webhook event types.
+const VALID_EVENTS: &[&str] = &[
+    "message_create", "message_delete", "message_update",
+    "member_join", "member_leave",
+    "channel_update", "channel_delete",
+    "role_update",
+];
+
 /// Delivery timeout per attempt.
 const DELIVERY_TIMEOUT_SECS: u64 = 5;
 
@@ -120,6 +128,14 @@ pub async fn create_webhook(
         return Err(AppError::BadRequest(
             format!("Maximum {} events per webhook", MAX_EVENTS),
         ));
+    }
+    for ev in &req.events {
+        if !VALID_EVENTS.contains(&ev.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Unknown event type: {ev}. Valid: {}",
+                VALID_EVENTS.join(", "),
+            )));
+        }
     }
 
     // ── Enforce per-server limit ─────────────────────────────────────────
@@ -295,6 +311,14 @@ pub async fn update_webhook(
             return Err(AppError::BadRequest(
                 format!("Maximum {} events per webhook", MAX_EVENTS),
             ));
+        }
+        for ev in events {
+            if !VALID_EVENTS.contains(&ev.as_str()) {
+                return Err(AppError::BadRequest(format!(
+                    "Unknown event type: {ev}. Valid: {}",
+                    VALID_EVENTS.join(", "),
+                )));
+            }
         }
     }
 

@@ -47,20 +47,27 @@ pub async fn health_detailed(
     let online_users = state.presence.read().await.len();
     let voice_sessions = state.voice_state.read().await.len();
 
-    // Aggregate counters from DB.
-    let total_users: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(0);
+    // Row count estimates from pg_class (instant catalog lookup, no full scan).
+    // Updated by autovacuum/ANALYZE — accurate within a few percent.
+    let total_users: i64 = sqlx::query_scalar!(
+        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'users'"
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .unwrap_or(0);
 
-    let total_messages: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM messages")
-        .fetch_one(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(0);
+    let total_messages: i64 = sqlx::query_scalar!(
+        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'messages'"
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .unwrap_or(0);
 
     axum::Json(serde_json::json!({
         "status": if db_ok && redis_ok { "healthy" } else { "degraded" },
@@ -115,52 +122,53 @@ pub async fn prometheus_metrics(
         0.0
     };
 
+    let duration_s = duration_us as f64 / 1_000_000.0;
+
     let body = format!(
-        "# HELP discreet_up Server health (1 = healthy).\n\
-         # TYPE discreet_up gauge\n\
-         discreet_up 1\n\
-         \n\
-         # HELP discreet_uptime_seconds Seconds since server start.\n\
-         # TYPE discreet_uptime_seconds gauge\n\
-         discreet_uptime_seconds {uptime}\n\
-         \n\
-         # HELP discreet_http_requests_total Total HTTP requests served.\n\
-         # TYPE discreet_http_requests_total counter\n\
-         discreet_http_requests_total {requests}\n\
-         \n\
-         # HELP discreet_ws_messages_total Total WebSocket messages relayed.\n\
-         # TYPE discreet_ws_messages_total counter\n\
-         discreet_ws_messages_total {ws_msgs}\n\
-         \n\
-         # HELP discreet_request_duration_seconds_total Cumulative request duration.\n\
-         # TYPE discreet_request_duration_seconds_total counter\n\
-         discreet_request_duration_seconds_total {duration_s:.6}\n\
-         \n\
-         # HELP discreet_request_duration_seconds_avg Average request latency.\n\
-         # TYPE discreet_request_duration_seconds_avg gauge\n\
-         discreet_request_duration_seconds_avg {avg_latency_s:.6}\n\
-         \n\
-         # HELP discreet_ws_connections Active WebSocket server buses.\n\
-         # TYPE discreet_ws_connections gauge\n\
-         discreet_ws_connections {ws_conns}\n\
-         \n\
-         # HELP discreet_online_users Users currently online.\n\
-         # TYPE discreet_online_users gauge\n\
-         discreet_online_users {online}\n\
-         \n\
-         # HELP discreet_voice_sessions Active voice channel sessions.\n\
-         # TYPE discreet_voice_sessions gauge\n\
-         discreet_voice_sessions {voice}\n\
-         \n\
-         # HELP discreet_db_pool_size Database connection pool size.\n\
-         # TYPE discreet_db_pool_size gauge\n\
-         discreet_db_pool_size {pool_size}\n\
-         \n\
-         # HELP discreet_db_pool_idle Idle database connections.\n\
-         # TYPE discreet_db_pool_idle gauge\n\
-         discreet_db_pool_idle {pool_idle}\n",
-        duration_s = duration_us as f64 / 1_000_000.0,
-    );
+"# HELP discreet_up Server health (1 = healthy).
+# TYPE discreet_up gauge
+discreet_up 1
+
+# HELP discreet_uptime_seconds Seconds since server start.
+# TYPE discreet_uptime_seconds gauge
+discreet_uptime_seconds {uptime}
+
+# HELP discreet_http_requests_total Total HTTP requests served.
+# TYPE discreet_http_requests_total counter
+discreet_http_requests_total {requests}
+
+# HELP discreet_ws_messages_total Total WebSocket messages relayed.
+# TYPE discreet_ws_messages_total counter
+discreet_ws_messages_total {ws_msgs}
+
+# HELP discreet_request_duration_seconds_total Cumulative request duration.
+# TYPE discreet_request_duration_seconds_total counter
+discreet_request_duration_seconds_total {duration_s:.6}
+
+# HELP discreet_request_duration_seconds_avg Average request latency.
+# TYPE discreet_request_duration_seconds_avg gauge
+discreet_request_duration_seconds_avg {avg_latency_s:.6}
+
+# HELP discreet_ws_connections Active WebSocket server buses.
+# TYPE discreet_ws_connections gauge
+discreet_ws_connections {ws_conns}
+
+# HELP discreet_online_users Users currently online.
+# TYPE discreet_online_users gauge
+discreet_online_users {online}
+
+# HELP discreet_voice_sessions Active voice channel sessions.
+# TYPE discreet_voice_sessions gauge
+discreet_voice_sessions {voice}
+
+# HELP discreet_db_pool_size Database connection pool size.
+# TYPE discreet_db_pool_size gauge
+discreet_db_pool_size {pool_size}
+
+# HELP discreet_db_pool_idle Idle database connections.
+# TYPE discreet_db_pool_idle gauge
+discreet_db_pool_idle {pool_idle}
+");
 
     (
         [(
