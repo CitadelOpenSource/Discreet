@@ -45,6 +45,29 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
         <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.show_shared_servers === true ? 18 : 2, transition: 'left 0.2s' }} />
       </div>
     </div>
+    {/* Friends-Only Encryption Mode */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Encryption Mode</div>
+    <div style={{ padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ flex: 1, paddingRight: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><I.Shield /> Friends-Only Mode</div>
+          <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 4 }}>In server channels, only show decrypted messages from your friends. Messages from non-friends appear as encrypted placeholders. This is purely client-side — the server cannot tell whether you use this mode.</div>
+        </div>
+        <div onClick={() => {
+          const next = !(s.friends_only_mode === true);
+          save('friends_only_mode', next);
+          localStorage.setItem('d_friends_only', String(next));
+        }} style={{ width: 36, height: 20, borderRadius: 10, background: s.friends_only_mode === true ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+          <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.friends_only_mode === true ? 18 : 2, transition: 'left 0.2s' }} />
+        </div>
+      </div>
+      {s.friends_only_mode === true && (
+        <div style={{ marginTop: 8, padding: '8px 10px', background: T.bg, borderRadius: 6, fontSize: 11, color: T.mt, lineHeight: 1.5 }}>
+          <I.Lock s={10} /> Active — non-friend messages appear as encrypted placeholders. Right-click any channel to create per-channel exceptions.
+        </div>
+      )}
+    </div>
+
     {/* Privacy Toggles (privacy-first defaults: all OFF) */}
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Communication Privacy</div>
     {[

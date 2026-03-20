@@ -273,6 +273,10 @@ export class CitadelAPI {
   async deleteChannel(cid: string) { return this.fetch(`/channels/${cid}`, { method: 'DELETE' }); }
   async archiveChannel(cid: string) { const r = await this.fetch(`/channels/${cid}/archive`, { method: 'POST' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to archive' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); } }
   async unarchiveChannel(cid: string) { const r = await this.fetch(`/channels/${cid}/unarchive`, { method: 'POST' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to unarchive' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); } }
+  async transferServer(sid: string, newOwnerId: string) {
+    const r = await this.fetch(`/servers/${sid}/transfer`, { method: 'POST', body: JSON.stringify({ new_owner_id: newOwnerId }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Transfer failed' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+  }
 
   // ── Messages ──
   async sendMessage(cid: string, ct: string, ep: number, replyId?: string, parentId?: string, mentionedIds?: string[], priority?: string) { return (await this.fetch(`/channels/${cid}/messages`, { method: 'POST', body: JSON.stringify({ content_ciphertext: ct, mls_epoch: ep, reply_to_id: replyId || undefined, parent_message_id: parentId || undefined, mentioned_user_ids: mentionedIds?.length ? mentionedIds : undefined, priority: priority || undefined }) })).json(); }

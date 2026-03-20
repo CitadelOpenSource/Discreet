@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM messages",
+  "query": "SELECT reltuples::bigint FROM pg_class WHERE relname = 'users'",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "count",
+        "name": "reltuples",
         "type_info": "Int8"
       }
     ],
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "92d032a1d42be1d4a64a509ec4201a9f679950e72639b83224447b5d60eeaac7"
+  "hash": "11bea545905c27d36d639f342f9afa999fe49bdd1eaa60ce278a3602b4bea908"
 }

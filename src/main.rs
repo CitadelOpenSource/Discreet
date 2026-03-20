@@ -745,6 +745,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/bots", axum::routing::post(discreet_server_handlers::create_bot).get(discreet_server_handlers::list_bots))
         .route("/servers/:server_id/archive", axum::routing::post(discreet_server_handlers::archive_server))
         .route("/servers/:server_id/schedule-deletion", axum::routing::post(discreet_server_handlers::schedule_server_deletion))
+        .route("/servers/:server_id/transfer", axum::routing::post(discreet_server_handlers::transfer_server))
         // ── Users ──
         .route("/users/@me", axum::routing::get(discreet_user_handlers::get_me).patch(discreet_user_handlers::update_me).delete(discreet_user_handlers::delete_account))
         .route("/users/@me/servers", axum::routing::get(discreet_user_handlers::list_my_servers))

@@ -735,6 +735,43 @@ pub async fn delete_server(
 ) -> Result<impl IntoResponse, AppError> {
     require_owner(&state, server_id, auth.user_id).await?;
 
+    // Fetch server name for the broadcast before deletion.
+    let server = sqlx::query!(
+        "SELECT name FROM servers WHERE id = $1",
+        server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
+
+    // Audit log (before deletion — CASCADE will delete the audit rows too,
+    // but the log_action call records it in tracing as well).
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "SERVER_DELETED",
+            target_type: Some("server"),
+            target_id: Some(server_id),
+            changes: Some(serde_json::json!({ "name": server.name })),
+            reason: None,
+        },
+    ).await;
+
+    // Broadcast to all connected members BEFORE deletion.
+    state
+        .ws_broadcast(
+            server_id,
+            serde_json::json!({
+                "type": "server_deleted",
+                "server_id": server_id,
+                "server_name": server.name,
+                "deleted_by": auth.user_id,
+            }),
+        )
+        .await;
+
     // CASCADE deletes members, channels, messages, invites, bans, agents.
     let result = sqlx::query!(
         "DELETE FROM servers WHERE id = $1 AND owner_id = $2",
@@ -748,7 +785,7 @@ pub async fn delete_server(
         return Err(AppError::NotFound("Server not found".into()));
     }
 
-    tracing::info!(server_id = %server_id, owner = %auth.user_id, "Server deleted");
+    tracing::info!(server_id = %server_id, owner = %auth.user_id, name = %server.name, "Server deleted");
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1656,6 +1693,133 @@ pub async fn schedule_server_deletion(
 
         tracing::info!(server_id = %server_id, "Server deletion cancelled");
     }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── POST /servers/:server_id/transfer ───────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct TransferOwnershipRequest {
+    pub new_owner_id: Uuid,
+}
+
+/// Transfer server ownership to another member. Irreversible.
+/// The caller must be the current server owner.
+pub async fn transfer_server(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<Uuid>,
+    Json(req): Json<TransferOwnershipRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_owner(&state, server_id, auth.user_id).await?;
+
+    if req.new_owner_id == auth.user_id {
+        return Err(AppError::BadRequest("Cannot transfer to yourself".into()));
+    }
+
+    // Verify the new owner is a member of the server.
+    let is_member = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2)",
+        server_id,
+        req.new_owner_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !is_member {
+        return Err(AppError::BadRequest("New owner must be a member of the server".into()));
+    }
+
+    // Transfer ownership.
+    sqlx::query!(
+        "UPDATE servers SET owner_id = $1, updated_at = NOW() WHERE id = $2",
+        req.new_owner_id,
+        server_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Audit log.
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id,
+            actor_id: auth.user_id,
+            action: "SERVER_OWNERSHIP_TRANSFERRED",
+            target_type: Some("user"),
+            target_id: Some(req.new_owner_id),
+            changes: Some(serde_json::json!({
+                "from_owner": auth.user_id,
+                "to_owner": req.new_owner_id,
+            })),
+            reason: None,
+        },
+    ).await;
+
+    // Get server name and default channel for the system message.
+    let server = sqlx::query!(
+        "SELECT name FROM servers WHERE id = $1",
+        server_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let new_owner = sqlx::query!(
+        "SELECT username FROM users WHERE id = $1",
+        req.new_owner_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    // Insert a system message in the first text channel.
+    let default_channel = sqlx::query_scalar!(
+        "SELECT id FROM channels WHERE server_id = $1 AND channel_type = 'text' ORDER BY position ASC LIMIT 1",
+        server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    if let Some(channel_id) = default_channel {
+        let sys_text = format!(
+            "Server ownership of {} has been transferred to {}",
+            server.name, new_owner.username,
+        );
+        let msg_id = Uuid::new_v4();
+        let content = sys_text.as_bytes().to_vec();
+        let mentions = serde_json::json!([]);
+        let _ = sqlx::query!(
+            "INSERT INTO messages (id, channel_id, author_id, content_ciphertext, mls_epoch, mentioned_user_ids) \
+             VALUES ($1, $2, $3, $4, 0, $5)",
+            msg_id,
+            channel_id,
+            auth.user_id,
+            content,
+            mentions,
+        )
+        .execute(&state.db)
+        .await;
+    }
+
+    // Broadcast update.
+    state
+        .ws_broadcast(
+            server_id,
+            serde_json::json!({
+                "type": "server_update",
+                "server_id": server_id,
+                "owner_id": req.new_owner_id,
+            }),
+        )
+        .await;
+
+    tracing::info!(
+        server_id = %server_id,
+        from = %auth.user_id,
+        to = %req.new_owner_id,
+        "Server ownership transferred"
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }

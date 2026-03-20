@@ -145,31 +145,59 @@ interface Event {
   creator_username: string;
 }
 
+// ─── Permission Helpers (safe for bits > 31) ─────────────
+// JS bitwise operators (&, |, ~) truncate to 32 bits.
+// These helpers use arithmetic for bits >= 2^32.
+function permHas(perms: number, bit: number): boolean {
+  if (bit < 0x100000000) return (perms & bit) !== 0;
+  return Math.floor(perms / bit) % 2 === 1;
+}
+function permSet(perms: number, bit: number): number {
+  if (permHas(perms, bit)) return perms;
+  return perms + bit;
+}
+function permClear(perms: number, bit: number): number {
+  if (!permHas(perms, bit)) return perms;
+  return perms - bit;
+}
+function permToggle(perms: number, bit: number): number {
+  return permHas(perms, bit) ? permClear(perms, bit) : permSet(perms, bit);
+}
+
 // ─── Permission Labels ────────────────────────────────────
 
 const PERM_LABELS = [
-  { bit: 1 << 0,  label: 'View Channels',      cat: 'General' },
-  { bit: 1 << 1,  label: 'Send Messages',       cat: 'General' },
-  { bit: 1 << 2,  label: 'Read History',        cat: 'General' },
-  { bit: 1 << 3,  label: 'Attach Files',        cat: 'General' },
-  { bit: 1 << 4,  label: 'Create Invites',      cat: 'General' },
-  { bit: 1 << 5,  label: 'Change Nickname',     cat: 'General' },
-  { bit: 1 << 10, label: 'Manage Messages',     cat: 'Moderation' },
-  { bit: 1 << 11, label: 'Kick Members',        cat: 'Moderation' },
-  { bit: 1 << 12, label: 'Ban Members',         cat: 'Moderation' },
-  { bit: 1 << 13, label: 'Manage Nicknames',    cat: 'Moderation' },
-  { bit: 1 << 20, label: 'Manage Channels',     cat: 'Admin' },
-  { bit: 1 << 21, label: 'Manage Roles',        cat: 'Admin' },
-  { bit: 1 << 22, label: 'Manage Server',       cat: 'Admin' },
-  { bit: 1 << 23, label: 'Manage Invites',      cat: 'Admin' },
-  { bit: 1 << 24, label: 'Manage AI Agents',    cat: 'Admin' },
-  { bit: 1 << 30, label: 'Connect Voice',       cat: 'Voice' },
-  { bit: 1 << 31, label: 'Speak',               cat: 'Voice' },
-  { bit: 1 << 32, label: 'Mute Members',        cat: 'Voice' },
-  { bit: 1 << 33, label: 'Move Members',        cat: 'Voice' },
-  { bit: 1 << 34, label: 'Priority Speaker',    cat: 'Voice' },
-  { bit: 2 ** 40, label: 'Administrator',       cat: 'Dangerous' },
-  { bit: 2 ** 41, label: 'Delete Server',       cat: 'Dangerous' },
+  { bit: 1 << 0,  label: 'View Channels',         cat: 'General' },
+  { bit: 1 << 1,  label: 'Send Messages',          cat: 'General' },
+  { bit: 1 << 2,  label: 'Read History',           cat: 'General' },
+  { bit: 1 << 3,  label: 'Attach Files',           cat: 'General' },
+  { bit: 1 << 4,  label: 'Create Invites',         cat: 'General' },
+  { bit: 1 << 5,  label: 'Change Nickname',        cat: 'General' },
+  { bit: 1 << 6,  label: 'Mention Everyone',       cat: 'General' },
+  { bit: 1 << 10, label: 'Manage Messages',        cat: 'Moderation' },
+  { bit: 1 << 11, label: 'Kick Members',           cat: 'Moderation' },
+  { bit: 1 << 12, label: 'Ban Members',            cat: 'Moderation' },
+  { bit: 1 << 13, label: 'Manage Nicknames',       cat: 'Moderation' },
+  { bit: 1 << 16, label: 'Manage AutoMod',         cat: 'Moderation' },
+  { bit: 1 << 9,  label: 'Manage Pins',            cat: 'Channels' },
+  { bit: 1 << 14, label: 'Archive Channels',       cat: 'Channels' },
+  { bit: 1 << 20, label: 'Manage Channels',        cat: 'Channels' },
+  { bit: 1 << 30, label: 'Connect Voice',          cat: 'Voice' },
+  { bit: 1 << 31, label: 'Speak',                  cat: 'Voice' },
+  { bit: 1 << 32, label: 'Mute Members',           cat: 'Voice' },
+  { bit: 1 << 33, label: 'Move Members',           cat: 'Voice' },
+  { bit: 1 << 34, label: 'Priority Speaker',       cat: 'Voice' },
+  { bit: 1 << 7,  label: 'Manage Webhooks',        cat: 'Administration' },
+  { bit: 1 << 8,  label: 'Manage Scheduled Msgs',  cat: 'Administration' },
+  { bit: 1 << 15, label: 'View Audit Log',         cat: 'Administration' },
+  { bit: 1 << 17, label: 'Manage Bots',            cat: 'Administration' },
+  { bit: 1 << 21, label: 'Manage Roles',           cat: 'Administration' },
+  { bit: 1 << 22, label: 'Manage Server Settings', cat: 'Administration' },
+  { bit: 1 << 23, label: 'Manage Invites',         cat: 'Administration' },
+  { bit: 1 << 24, label: 'Manage AI Agents',       cat: 'Administration' },
+  { bit: 2 ** 40, label: 'Administrator',          cat: 'Dangerous' },
+  { bit: 2 ** 41, label: 'Delete Server',          cat: 'Dangerous' },
+  { bit: 2 ** 42, label: 'Transfer Ownership',     cat: 'Dangerous' },
 ];
 
 // ─── ChannelManagerRow ───────────────────────────────────
@@ -622,22 +650,48 @@ function MemberManagerRow({ member: m, userRoles, allRoles, serverId, onRolesCha
 
 // ─── RoleEditorCard ───────────────────────────────────────
 
-/** The 11 permissions surfaced in the visual role editor. */
+/** Permissions surfaced in the visual role editor, grouped by category. */
 const ROLE_EDITOR_PERMS = [
-  { bit: 1 << 22, label: 'Manage Server',   group: 'Server' },
-  { bit: 1 << 20, label: 'Manage Channels', group: 'Server' },
-  { bit: 1 << 21, label: 'Manage Roles',    group: 'Server' },
-  { bit: 1 << 11, label: 'Kick Members',    group: 'Moderation' },
-  { bit: 1 << 12, label: 'Ban Members',     group: 'Moderation' },
-  { bit: 1 << 10, label: 'Manage Messages', group: 'Moderation' },
-  { bit: 1 << 3,  label: 'Attach Files',    group: 'Text' },
-  { bit: 1 << 6,  label: 'Add Reactions',   group: 'Text' },
-  { bit: 1 << 30, label: 'Connect Voice',   group: 'Voice' },
-  { bit: 1 << 31, label: 'Speak',           group: 'Voice' },
-  { bit: 1 << 9,  label: 'Stream',          group: 'Voice' },
+  // General
+  { bit: 1 << 0,  label: 'View Channels',        group: 'General',        desc: 'See the channel list and read channels' },
+  { bit: 1 << 1,  label: 'Send Messages',         group: 'General',        desc: 'Send messages in text channels' },
+  { bit: 1 << 2,  label: 'Read History',          group: 'General',        desc: 'Read past messages in channels' },
+  { bit: 1 << 3,  label: 'Attach Files',          group: 'General',        desc: 'Upload images and files' },
+  { bit: 1 << 5,  label: 'Change Nickname',       group: 'General',        desc: 'Change own nickname' },
+  { bit: 1 << 6,  label: 'Mention Everyone',      group: 'General',        desc: 'Use @everyone and @here mentions' },
+  // Membership
+  { bit: 1 << 4,  label: 'Create Invites',        group: 'Membership',     desc: 'Generate invite links' },
+  { bit: 1 << 11, label: 'Kick Members',          group: 'Membership',     desc: 'Remove members from the server' },
+  { bit: 1 << 12, label: 'Ban Members',           group: 'Membership',     desc: 'Permanently ban members' },
+  { bit: 1 << 13, label: 'Manage Nicknames',      group: 'Membership',     desc: 'Change other members\' nicknames' },
+  // Channels
+  { bit: 1 << 20, label: 'Manage Channels',       group: 'Channels',       desc: 'Create, edit, and delete channels' },
+  { bit: 1 << 14, label: 'Archive Channels',      group: 'Channels',       desc: 'Archive and unarchive channels' },
+  { bit: 1 << 9,  label: 'Manage Pins',           group: 'Channels',       desc: 'Pin/unpin messages and set categories' },
+  // Voice
+  { bit: 1 << 30, label: 'Connect Voice',         group: 'Voice',          desc: 'Join voice channels' },
+  { bit: 1 << 31, label: 'Speak',                 group: 'Voice',          desc: 'Speak in voice channels' },
+  { bit: 1 << 32, label: 'Mute Members',          group: 'Voice',          desc: 'Server-mute other members' },
+  { bit: 1 << 33, label: 'Move Members',          group: 'Voice',          desc: 'Move members between voice channels' },
+  { bit: 1 << 34, label: 'Priority Speaker',      group: 'Voice',          desc: 'Lower others\' volume when speaking' },
+  // Moderation
+  { bit: 1 << 10, label: 'Manage Messages',       group: 'Moderation',     desc: 'Delete any message, manage pins' },
+  { bit: 1 << 16, label: 'Manage AutoMod',        group: 'Moderation',     desc: 'Configure automod rules' },
+  { bit: 1 << 15, label: 'View Audit Log',        group: 'Moderation',     desc: 'Access server audit log' },
+  // Administration
+  { bit: 1 << 22, label: 'Manage Server Settings', group: 'Administration', desc: 'Edit server name, icon, discovery' },
+  { bit: 1 << 21, label: 'Manage Roles',           group: 'Administration', desc: 'Create, edit, delete, and assign roles' },
+  { bit: 1 << 23, label: 'Manage Invites',         group: 'Administration', desc: 'View and revoke invite links' },
+  { bit: 1 << 7,  label: 'Manage Webhooks',        group: 'Administration', desc: 'Create, edit, delete webhooks' },
+  { bit: 1 << 8,  label: 'Manage Scheduled Msgs',  group: 'Administration', desc: 'View/cancel other users\' scheduled messages' },
+  { bit: 1 << 17, label: 'Manage Bots',            group: 'Administration', desc: 'Configure and remove bots' },
+  { bit: 1 << 24, label: 'Manage AI Agents',       group: 'Administration', desc: 'Configure AI agent providers' },
+  { bit: 2 ** 40, label: 'Administrator',           group: 'Dangerous',      desc: 'Bypasses ALL permission checks' },
+  { bit: 2 ** 41, label: 'Delete Server',           group: 'Dangerous',      desc: 'Can delete the server' },
+  { bit: 2 ** 42, label: 'Transfer Ownership',      group: 'Dangerous',      desc: 'Can transfer server ownership (owner-granted only)' },
 ] as const;
 
-const ROLE_PERM_GROUPS = ['Server', 'Moderation', 'Text', 'Voice'] as const;
+const ROLE_PERM_GROUPS = ['General', 'Membership', 'Channels', 'Voice', 'Moderation', 'Administration', 'Dangerous'] as const;
 
 interface ToggleSwitchProps { on: boolean; onChange: () => void; color?: string; }
 function ToggleSwitch({ on, onChange, color }: ToggleSwitchProps) {
@@ -647,6 +701,21 @@ function ToggleSwitch({ on, onChange, color }: ToggleSwitchProps) {
       style={{ position: 'relative', width: 34, height: 18, borderRadius: 9, background: on ? (color || T.ac) : T.bd, cursor: 'pointer', flexShrink: 0, transition: 'background .18s' }}
     >
       <div style={{ position: 'absolute', top: 2, left: on ? 18 : 2, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .18s', boxShadow: '0 1px 3px rgba(0,0,0,0.35)' }} />
+    </div>
+  );
+}
+
+/** Tri-state permission toggle: Allow (green) / Deny (red) / Inherit (grey dash). */
+type PermState = 'allow' | 'deny' | 'inherit';
+function PermToggle({ state, onChange, color }: { state: PermState; onChange: (next: PermState) => void; color?: string }) {
+  const cycle = () => onChange(state === 'inherit' ? 'allow' : state === 'allow' ? 'deny' : 'inherit');
+  const bg = state === 'allow' ? (color || '#2ecc71') : state === 'deny' ? '#ff4757' : T.bd;
+  const icon = state === 'allow' ? '✓' : state === 'deny' ? '✕' : '—';
+  const fg = state === 'inherit' ? T.mt : '#fff';
+  return (
+    <div onClick={cycle} title={`${state === 'allow' ? 'Allowed' : state === 'deny' ? 'Denied' : 'Inherited'} — click to cycle`}
+      style={{ width: 24, height: 24, borderRadius: 6, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: fg, flexShrink: 0, transition: 'background .15s', border: `1px solid ${state === 'inherit' ? T.bd : 'transparent'}` }}>
+      {icon}
     </div>
   );
 }
@@ -689,7 +758,7 @@ function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMo
   };
 
   const handlePermToggle = (bit: number) => {
-    setPerms(p => p & bit ? p & ~bit : p | bit);
+    setPerms(p => permToggle(p, bit));
     markDirty();
   };
 
@@ -778,20 +847,31 @@ function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMo
       <div style={{ padding: '0 12px 12px', borderTop: `1px solid ${T.bd}` }}>
         {ROLE_PERM_GROUPS.map(group => {
           const groupPerms = ROLE_EDITOR_PERMS.filter(p => p.group === group);
+          if (groupPerms.length === 0) return null;
+          const isDangerous = group === 'Dangerous';
           return (
-            <div key={group} style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 7 }}>{group}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px' }}>
-                {groupPerms.map(p => {
-                  const on = !!(perms & p.bit);
-                  return (
-                    <div key={p.bit} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '4px 0' }}>
-                      <span style={{ fontSize: 12, color: on ? T.tx : T.mt, transition: 'color .15s', userSelect: 'none' }}>{p.label}</span>
-                      <ToggleSwitch on={on} onChange={() => handlePermToggle(p.bit)} color={color} />
+            <div key={group} style={{ marginTop: 12, ...(isDangerous ? { padding: '8px 10px', background: 'rgba(255,71,87,0.04)', borderRadius: 8, border: '1px solid rgba(255,71,87,0.12)' } : {}) }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: isDangerous ? T.err : T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 8 }}>{group}</div>
+              {groupPerms.map(perm => {
+                const on = permHas(perms, perm.bit);
+                return (
+                  <div key={perm.bit} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: `1px solid ${ta(T.bd, '30')}` }}>
+                    <PermToggle
+                      state={on ? 'allow' : 'inherit'}
+                      onChange={(next) => {
+                        if (next === 'allow') setPerms(prev => permSet(prev, perm.bit));
+                        else setPerms(prev => permClear(prev, perm.bit));
+                        markDirty();
+                      }}
+                      color={isDangerous ? '#ff4757' : color}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: on ? T.tx : T.mt, fontWeight: on ? 600 : 400, transition: 'color .15s' }}>{perm.label}</div>
+                      <div style={{ fontSize: 10, color: T.mt, lineHeight: 1.3, marginTop: 1 }}>{perm.desc}</div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -799,7 +879,7 @@ function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMo
         {/* save / status row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.bd}` }}>
           <span style={{ flex: 1, fontSize: 11, color: dirty ? '#f0b232' : T.mt }}>
-            {dirty ? '● Unsaved changes' : `${ROLE_EDITOR_PERMS.filter(p => perms & p.bit).length} / ${ROLE_EDITOR_PERMS.length} permissions enabled`}
+            {dirty ? '● Unsaved changes' : `${ROLE_EDITOR_PERMS.filter(rp => permHas(perms, rp.bit)).length} / ${ROLE_EDITOR_PERMS.length} permissions enabled`}
           </span>
           <button
             onClick={save}
@@ -1838,6 +1918,11 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
             </div>
           </div>
         </div>
+
+        {/* Transfer Ownership — owner only */}
+        {server.owner_id === api.userId && (
+          <TransferOwnership serverId={server.id} serverName={server.name} members={mgmtMembers} getName={getName} showConfirm={showConfirm} onUpdate={onUpdate} />
+        )}
       </>)}
 
       {tab === 'channels' && (() => {
@@ -2778,5 +2863,138 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
         ))}
       </>)}
     </Modal>
+  );
+}
+
+// ─── Transfer Ownership ──────────────────────────────────────────────────
+
+function TransferOwnership({ serverId, serverName, members, getName, showConfirm, onUpdate }: {
+  serverId: string;
+  serverName: string;
+  members: any[];
+  getName: (uid: string) => string;
+  showConfirm: (...args: any[]) => Promise<boolean>;
+  onUpdate?: () => void;
+}) {
+  const [step, setStep] = React.useState<'idle' | 'select' | 'password'>('idle');
+  const [selectedId, setSelectedId] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [confirmName, setConfirmName] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [transferring, setTransferring] = React.useState(false);
+
+  const eligible = members.filter(m => m.user_id !== api.userId);
+  const selectedName = selectedId ? getName(selectedId) : '';
+
+  const doTransfer = async () => {
+    if (confirmName !== serverName) { setError('Server name does not match'); return; }
+    setError('');
+    setTransferring(true);
+    try {
+      // Verify password first.
+      await api.verifyPassword(password);
+      await api.transferServer(serverId, selectedId);
+      setStep('idle');
+      if (onUpdate) onUpdate();
+    } catch (e: any) {
+      setError(e?.message || 'Transfer failed');
+    }
+    setTransferring(false);
+  };
+
+  if (step === 'idle') {
+    return (
+      <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 8 }}>Transfer Ownership</div>
+        <div style={{ fontSize: 12, color: T.mt, lineHeight: 1.6, marginBottom: 12 }}>
+          Transfer this server to another member. This action is <strong style={{ color: T.err }}>irreversible</strong> — you will lose all owner-level permissions.
+        </div>
+        <button onClick={() => { setStep('select'); setError(''); setSelectedId(''); setConfirmName(''); setPassword(''); }}
+          style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid rgba(255,71,87,0.4)', background: 'rgba(255,71,87,0.08)', color: T.err, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          Transfer Ownership
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.06)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.25)' }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.err, marginBottom: 12 }}>Transfer Ownership of {serverName}</div>
+
+      {/* Step 1: Select new owner */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>New Owner</label>
+        <select
+          value={selectedId}
+          onChange={e => setSelectedId(e.target.value)}
+          style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: selectedId ? T.tx : T.mt, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+          aria-label="Select new owner"
+        >
+          <option value="">Select a member...</option>
+          {eligible.map(m => (
+            <option key={m.user_id} value={m.user_id}>{getName(m.user_id)} ({m.username || m.user_id.slice(0, 8)})</option>
+          ))}
+        </select>
+      </div>
+
+      {selectedId && (<>
+        {/* Step 2: Warning */}
+        <div style={{ padding: '12px 14px', background: 'rgba(255,71,87,0.1)', borderRadius: 8, border: '1px solid rgba(255,71,87,0.3)', marginBottom: 14, fontSize: 12, color: T.err, lineHeight: 1.6 }}>
+          You are about to transfer ownership of <strong>{serverName}</strong> to <strong>{selectedName}</strong>. This action is <strong>IRREVERSIBLE</strong>. You will lose all owner-level permissions.
+        </div>
+
+        {/* Step 3: Type server name */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>
+            Type the server name to confirm: <span style={{ color: T.tx, fontFamily: 'monospace' }}>{serverName}</span>
+          </label>
+          <input
+            value={confirmName}
+            onChange={e => setConfirmName(e.target.value)}
+            placeholder={serverName}
+            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${confirmName === serverName ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            aria-label="Confirm server name"
+          />
+        </div>
+
+        {/* Step 4: Password verification */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Enter Your Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Your password"
+            style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            aria-label="Password"
+            onKeyDown={e => { if (e.key === 'Enter' && confirmName === serverName && password) doTransfer(); }}
+          />
+        </div>
+      </>)}
+
+      {error && (
+        <div style={{ fontSize: 11, color: T.err, padding: '6px 10px', background: 'rgba(255,71,87,0.08)', borderRadius: 4, marginBottom: 10 }}>{error}</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setStep('idle')}
+          style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 12, cursor: 'pointer' }}>
+          Cancel
+        </button>
+        <button
+          onClick={doTransfer}
+          disabled={!selectedId || confirmName !== serverName || !password || transferring}
+          style={{
+            padding: '8px 18px', borderRadius: 8, border: 'none',
+            background: !selectedId || confirmName !== serverName || !password || transferring ? T.sf2 : T.err,
+            color: !selectedId || confirmName !== serverName || !password || transferring ? T.mt : '#fff',
+            fontSize: 12, fontWeight: 700,
+            cursor: !selectedId || confirmName !== serverName || !password || transferring ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {transferring ? 'Transferring...' : 'Transfer Ownership'}
+        </button>
+      </div>
+    </div>
   );
 }

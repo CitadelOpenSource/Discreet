@@ -19,6 +19,7 @@ import { Modal } from './Modal';
 import { AvatarCreator } from './AvatarCreator';
 import { AdminDashboard } from './AdminDashboard';
 import { DangerConfirmModal } from './DangerConfirmModal';
+import KeybindSettings from './settings/KeybindSettings';
 
 // ── Lazy-loaded settings tabs ─────────────────────────────
 const SettingsAppearance    = lazy(() => import('./settings/SettingsAppearance'));
@@ -1342,13 +1343,13 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
   const SETTINGS_INDEX = useMemo(() => [
     { tab: 'discover',   section: 'discover',        label: 'Discover Features',    desc: 'Explore features you haven\'t set up yet',                     keywords: ['discover', 'features', 'new', 'setup', 'getting started', 'onboarding', 'tips', 'tour'] },
-    { tab: 'appearance', section: 'theme',           label: 'Theme & Colors',       desc: 'Dark mode, light mode, accent color, density, chat font size', keywords: ['theme', 'dark', 'light', 'dark mode', 'accent', 'color', 'font', 'font size', 'compact', 'mode', 'density', 'spacing', 'layout', 'chat width', 'language', 'locale', 'timezone', 'time zone', 'message density', 'comfortable', 'cozy', 'chat font', 'chat font size'] },
+    { tab: 'appearance', section: 'theme',           label: 'Theme & Colors',       desc: 'Dark mode, light mode, accent color, density, chat font size, bubbles', keywords: ['theme', 'dark', 'light', 'dark mode', 'accent', 'color', 'font', 'font size', 'compact', 'mode', 'density', 'spacing', 'layout', 'chat width', 'language', 'locale', 'timezone', 'time zone', 'message density', 'cozy', 'spacious', 'chat font', 'chat font size', 'bubble', 'bubbles', 'chat bubbles', 'imessage', 'messenger'] },
     { tab: 'appearance', section: 'display-options',  label: 'Display Options',      desc: 'Embeds, avatars, timestamps, typing indicators, emoji', keywords: ['display', 'embeds', 'embed', 'link preview', 'avatar', 'timestamp', 'typing', 'indicator', 'emoji', 'animate', 'sticker', 'smooth scroll', 'twemoji', 'recently used emojis', 'emoji history', 'slash', 'suggestions'] },
     { tab: 'voice',      section: 'voice',           label: 'Voice & Audio',        desc: 'Microphone, speaker, noise suppression, push to talk, leave confirmation',  keywords: ['voice', 'audio', 'microphone', 'mic', 'speaker', 'input', 'output', 'volume', 'noise', 'gate', 'compressor', 'echo', 'cancellation', 'noise suppression', 'push to talk', 'ptt', 'voice activation', 'sensitivity', 'confirm', 'leave', 'disconnect'] },
     { tab: 'video',      section: 'video',           label: 'Video & Streaming',    desc: 'Camera, resolution, FPS, screen sharing',               keywords: ['video', 'camera', 'webcam', 'resolution', 'fps', 'screen share', 'streaming', 'quality'] },
     { tab: 'profile',    section: 'profile',         label: 'My Profile',           desc: 'Display name, avatar, bio, custom status',              keywords: ['avatar', 'picture', 'profile', 'photo', 'upload', 'display name', 'bio', 'about me', 'custom status', 'name'] },
     { tab: 'profile',    section: 'avatar-creator',   label: 'Avatar Creator',       desc: 'Create and customize your avatar',                      keywords: ['avatar', 'creation', 'builder', 'randomize', 'create avatar'] },
-    { tab: 'privacy',    section: 'privacy',         label: 'Privacy',              desc: 'DM privacy, friend requests, online status, read receipts, typing', keywords: ['privacy', 'dm', 'direct message', 'friend request', 'block', 'stranger', 'online status', 'hide activity', 'read receipt', 'read receipts', 'typing', 'typing indicator', 'link preview', 'link previews', 'url preview', 'default status', 'invisible', 'visibility', 'appear offline'] },
+    { tab: 'privacy',    section: 'privacy',         label: 'Privacy',              desc: 'DM privacy, friend requests, online status, read receipts, typing, friends-only encryption', keywords: ['privacy', 'dm', 'direct message', 'friend request', 'block', 'stranger', 'online status', 'hide activity', 'read receipt', 'read receipts', 'typing', 'typing indicator', 'link preview', 'link previews', 'url preview', 'default status', 'invisible', 'visibility', 'appear offline', 'friends only', 'friends-only', 'encryption mode', 'decrypt'] },
     { tab: 'privacy',    section: 'interaction',     label: 'Interaction Controls', desc: 'Online status visibility, stranger DM blocking',        keywords: ['hide online status', 'activity', 'block stranger dms', 'mutual friends', 'interaction'] },
     { tab: 'account',    section: 'security-status', label: 'Security Status',      desc: 'Security score, recovery key, account verification',    keywords: ['security', 'status', 'score', 'recovery key', 'upgrade', 'guest', 'verified', 'password'] },
     { tab: 'account',    section: 'change-email',    label: 'Email Address',        desc: 'Change or verify your email address',                   keywords: ['email', 'change email', 'verify'] },
@@ -1895,29 +1896,33 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         {/* ── Accessibility ── */}
         {tab === 'accessibility' && (<>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Accessibility</div>
+          {typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && localStorage.getItem('d_reduce_motion') !== 'true' && (
+            <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.06)', border: '1px solid rgba(0,212,170,0.15)', borderRadius: 8, marginBottom: 10, fontSize: 11, color: T.ac, lineHeight: 1.5 }}>
+              Your OS has <strong>Reduce Motion</strong> enabled. Discreet respects this automatically via CSS media query. Toggle below to override.
+            </div>
+          )}
           {[
-            { key: 'd_reduce_motion', label: 'Reduce Motion',             desc: 'Disable all animations and transitions throughout the UI. Respects your OS preference automatically.' },
-            { key: 'd_high_contrast', label: 'High Contrast Mode',        desc: 'Boost borders and text contrast to meet WCAG AAA standards. Improves readability in all lighting conditions.' },
-            { key: 'd_focus_rings',   label: 'Focus Indicators',          desc: 'Show visible outlines on keyboard-focused elements for navigation without a mouse.' },
-            { key: 'd_screen_reader', label: 'Screen Reader Optimized',   desc: 'Enhanced ARIA labels and landmarks for screen readers.' },
-            { key: 'd_large_click',   label: 'Large Click Targets',       desc: 'Increase button and link sizes for easier interaction.' },
-            { key: 'd_dyslexia_font', label: 'Dyslexia-Friendly Font',    desc: 'Use OpenDyslexic font for improved readability.' },
+            { key: 'd_reduce_motion', label: 'Reduce Motion',             desc: 'Disable all animations and transitions. Your OS preference is respected automatically — this toggle overrides it.', settingsKey: 'reduce_motion' },
+            { key: 'd_high_contrast', label: 'High Contrast Mode',        desc: 'Stronger borders (WCAG AA), 3px focus outlines, boosted text contrast for all text and interactive elements.', settingsKey: 'high_contrast' },
+            { key: 'd_focus_rings',   label: 'Focus Indicators',          desc: 'Show visible outlines on keyboard-focused elements for navigation without a mouse.', settingsKey: 'focus_rings' },
+            { key: 'd_screen_reader', label: 'Screen Reader Optimized',   desc: 'Enhanced ARIA labels and landmarks for screen readers.', settingsKey: 'screen_reader' },
+            { key: 'd_large_click',   label: 'Large Click Targets',       desc: 'Increase button and link sizes for easier interaction.', settingsKey: 'large_click_targets' },
+            { key: 'd_dyslexia_font', label: 'Dyslexia-Friendly Font',    desc: 'Use OpenDyslexic font for improved readability.', settingsKey: 'dyslexia_font' },
           ].map(opt => {
             const val = localStorage.getItem(opt.key) === 'true';
             return (
               <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 8, marginBottom: 4 }}>
-                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
+                <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1, lineHeight: 1.4 }}>{opt.desc}</div></div>
                 <div onClick={() => {
                   const next = !val;
                   localStorage.setItem(opt.key, String(next));
-                  // Apply immediately via DOM classes
+                  save(opt.settingsKey, next);
                   const root = document.querySelector('.chat-root');
                   if (root) {
                     if (opt.key === 'd_reduce_motion') root.classList.toggle('reduce-motion', next);
                     if (opt.key === 'd_high_contrast') { root.classList.toggle('high-contrast', next); (root as HTMLElement).style.background = next ? '#000' : ''; }
                     if (opt.key === 'd_focus_rings') root.classList.toggle('focus-visible', next);
                   }
-                  // Force re-render of this component
                   setS(p => ({ ...p }));
                 }} role="switch" aria-checked={val} aria-label={opt.label} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
@@ -1936,67 +1941,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         </>)}
 
         {/* ── Keybinds ── */}
-        {tab === 'keybinds' && (<>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Keyboard Shortcuts</div>
-          <div style={{ padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Quick Reference</div>
-              <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Press <kbd style={{ padding: '1px 6px', borderRadius: 3, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 10, fontFamily: 'monospace', color: T.ac }}>Ctrl</kbd> + <kbd style={{ padding: '1px 6px', borderRadius: 3, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 10, fontFamily: 'monospace', color: T.ac }}>/</kbd> anywhere to view all shortcuts</div>
-            </div>
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Built-in Shortcuts</div>
-          <div style={{ marginBottom: 14 }}>
-            {[
-              { keys: 'Ctrl + K', desc: 'Quick switcher' },
-              { keys: 'Ctrl + /', desc: 'Shortcuts help' },
-              { keys: 'Ctrl + Shift + M', desc: 'Toggle mute' },
-              { keys: 'Ctrl + Shift + D', desc: 'Toggle deafen' },
-              { keys: 'Ctrl + E', desc: 'Emoji picker' },
-              { keys: '↑ (empty input)', desc: 'Edit last message' },
-              { keys: 'Escape', desc: 'Close modal/overlay' },
-            ].map(sc => (
-              <div key={sc.keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: T.sf2, borderRadius: 6, marginBottom: 3, fontSize: 12 }}>
-                <span style={{ color: T.tx }}>{sc.desc}</span>
-                <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.mt }}>{sc.keys}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Custom Keybinds</div>
-          <div style={{ fontSize: 12, color: T.mt, marginBottom: 12 }}>Click any key to rebind. Press Escape to cancel, Delete to clear.</div>
-          {[
-            { key: 'd_kb_ptt',       label: 'Push to Talk',       def: '`'        },
-            { key: 'd_kb_mute',      label: 'Toggle Mute',        def: 'm'        },
-            { key: 'd_kb_deafen',    label: 'Toggle Deafen',      def: 'd'        },
-            { key: 'd_kb_search',    label: 'Search',             def: '/'        },
-            { key: 'd_kb_emoji',     label: 'Emoji Picker',       def: 'e'        },
-            { key: 'd_kb_gif',       label: 'GIF Picker',         def: 'g'        },
-            { key: 'd_kb_edit',      label: 'Edit Last Message',  def: 'ArrowUp'  },
-            { key: 'd_kb_reply',     label: 'Reply to Last',      def: 'r'        },
-            { key: 'd_kb_mark_read', label: 'Mark as Read',       def: 'Escape'   },
-            { key: 'd_kb_settings',  label: 'Settings',           def: ','        },
-          ].map(kb => {
-            const current = localStorage.getItem(kb.key) || kb.def;
-            return (
-              <div key={kb.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.sf2, borderRadius: 8, marginBottom: 3 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{kb.label}</span>
-                <div onClick={e => {
-                  const el = e.currentTarget; el.textContent = '...'; el.style.borderColor = T.ac;
-                  const h = (ke: KeyboardEvent) => {
-                    ke.preventDefault(); ke.stopPropagation();
-                    if (ke.key === 'Escape') { el.textContent = current === 'ArrowUp' ? '↑' : current; }
-                    else if (ke.key === 'Delete') { localStorage.removeItem(kb.key); el.textContent = 'None'; }
-                    else { localStorage.setItem(kb.key, ke.key); el.textContent = ke.key === ' ' ? 'Space' : ke.key === 'ArrowUp' ? '↑' : ke.key; }
-                    el.style.borderColor = T.bd; document.removeEventListener('keydown', h);
-                  };
-                  document.addEventListener('keydown', h);
-                }} style={{ padding: '3px 10px', borderRadius: 4, border: `1px solid ${T.bd}`, background: T.bg, fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: T.ac, cursor: 'pointer', minWidth: 40, textAlign: 'center' }}>
-                  {current === ' ' ? 'Space' : current === 'ArrowUp' ? '↑' : current}
-                </div>
-              </div>
-            );
-          })}
-          <button onClick={() => { ['d_kb_ptt', 'd_kb_mute', 'd_kb_deafen', 'd_kb_search', 'd_kb_emoji', 'd_kb_gif', 'd_kb_edit', 'd_kb_reply', 'd_kb_mark_read', 'd_kb_settings'].forEach(k => localStorage.removeItem(k)); }} className="pill-btn" style={{ marginTop: 6, fontSize: 10, color: T.mt, background: T.sf, border: `1px solid ${T.bd}`, padding: '4px 12px' }}>Reset All</button>
-        </>)}
+        {tab === 'keybinds' && <KeybindSettings />}
 
         {/* ── Advanced ── */}
         {tab === 'network' && (() => {

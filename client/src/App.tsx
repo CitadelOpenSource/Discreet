@@ -30,6 +30,7 @@ import { VoiceConfirmationModal } from './components/voice/VoiceConfirmationModa
 import { ActiveCallBar } from './components/voice/ActiveCallBar';
 import { AddPeopleModal } from './components/voice/AddPeopleModal';
 import { type VoiceConfirmType, isConfirmEnabled } from './hooks/useVoiceConfirmation';
+import { installHotkeyListener } from './hooks/useHotkeys';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { LinkPreview } from './components/LinkPreview';
@@ -187,15 +188,26 @@ function GlobalStyles() {
       div:hover > .msg-actions { display:flex !important; }
 
       /* ── Message density modes ─────────────────────── */
-      .density-comfortable .msg-row { padding: 4px 16px; gap: 10px; }
-      .density-comfortable .msg-avatar { width: 36px; height: 36px; }
       .density-compact .msg-row { padding: 1px 16px; gap: 6px; }
-      .density-compact .msg-avatar { width: 28px; height: 28px; }
-      .density-compact .msg-name { font-size: 12px !important; }
-      .density-compact .msg-text { font-size: var(--chat-font-size) !important; line-height: 1.3 !important; }
-      .density-cozy .msg-row { padding: 6px 16px; gap: 12px; }
-      .density-cozy .msg-avatar { width: 44px; height: 44px; }
-      .density-cozy .msg-text { line-height: 1.6 !important; }
+      .density-compact .msg-avatar { width: 0; height: 0; overflow: hidden; }
+      .density-compact .msg-name { font-size: 12px !important; display: inline !important; }
+      .density-compact .msg-name::after { content: ': '; }
+      .density-compact .msg-text { font-size: var(--chat-font-size) !important; line-height: 1.3 !important; display: inline !important; }
+      .density-compact .msg-ts { opacity: 0; transition: opacity 0.15s; }
+      .density-compact .msg-row:hover .msg-ts { opacity: 1; }
+      .density-cozy .msg-row { padding: 4px 16px; gap: 10px; }
+      .density-cozy .msg-avatar { width: 36px; height: 36px; }
+      .density-cozy .msg-text { line-height: 1.5 !important; }
+      .density-spacious .msg-row { padding: 8px 16px; gap: 14px; }
+      .density-spacious .msg-avatar { width: 44px; height: 44px; }
+      .density-spacious .msg-text { line-height: 1.7 !important; }
+
+      /* ── Chat bubble mode ───────────────────────────── */
+      .bubbles-on .msg-row { padding-left: 16px; padding-right: 16px; }
+      .bubbles-on .msg-bubble { padding: 8px 12px; border-radius: 12px; max-width: 75%; }
+      .bubbles-on .msg-bubble-self { background: var(--bubble-self-bg, rgba(0,212,170,0.12)); margin-left: auto; border-bottom-right-radius: 4px; }
+      .bubbles-on .msg-bubble-other { background: var(--bubble-other-bg, rgba(255,255,255,0.04)); border-bottom-left-radius: 4px; }
+      .bubbles-on.bubbles-aligned .msg-bubble-self { margin-left: 0; }
 
       /* ── Reduced motion ─────────────────────────────── */
       .reduce-motion, .reduce-motion * {
@@ -211,16 +223,24 @@ function GlobalStyles() {
         }
       }
 
-      /* ── High contrast mode (WCAG AAA) ──────────────── */
+      /* ── High contrast mode (WCAG AA — 4.5:1 normal, 3:1 large) ── */
       .high-contrast {
         --hc-text: #ffffff;
-        --hc-muted: #c0c4cc;
-        --hc-border: #6b7280;
+        --hc-muted: #d1d5db;
+        --hc-border: #9ca3af;
         --hc-bg: #000000;
       }
       .high-contrast * { border-color: var(--hc-border) !important; }
       .high-contrast .msg-text, .high-contrast .msg-name { color: var(--hc-text) !important; }
       .high-contrast .ch-row { border: 1px solid var(--hc-border) !important; margin-bottom: 1px; }
+      .high-contrast button, .high-contrast [role="button"], .high-contrast a, .high-contrast select, .high-contrast input {
+        border: 1px solid var(--hc-border) !important;
+      }
+      .high-contrast :focus-visible {
+        outline: 3px solid #00d4aa !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 1px #000 !important;
+      }
 
       /* ── Focus visible (keyboard navigation) ────────── */
       .focus-visible :focus-visible {
@@ -622,10 +642,15 @@ export default function App() {
   const [bookmarks, setBookmarks] = useState<any[]>([]);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [privacyPrefs, setPrivacyPrefs] = useState({ show_read_receipts: false, show_typing_indicator: false, show_link_previews: false });
+  const [friendsOnlyMode, setFriendsOnlyMode] = useState(() => localStorage.getItem('d_friends_only') === 'true');
+  const [friendsOnlyExceptions, setFriendsOnlyExceptions] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem('d_friends_only_exceptions') || '[]')); } catch { return new Set(); } });
+  const [friendIdSet, setFriendIdSet] = useState<Set<string>>(new Set());
   const [dndSchedule, setDndSchedule] = useState({ enabled: false, start: '22:00', end: '08:00', days: '0,1,2,3,4,5,6' });
   const [serverNotifLevels, setServerNotifLevels] = useState<Record<string, string>>({}); // server_id → 'all'|'mentions'|'nothing'
   const [serverVisibility, setServerVisibility] = useState<Record<string, string | null>>({}); // server_id → null|'online'|'idle'|'invisible'
-  const [msgDensity, setMsgDensity] = useState<'comfortable' | 'compact' | 'cozy'>(() => (localStorage.getItem('d_msg_density') as any) || 'comfortable');
+  const [msgDensity, setMsgDensity] = useState<'compact' | 'cozy' | 'spacious'>(() => (localStorage.getItem('d_msg_density') as any) || 'cozy');
+  const [chatBubbles, setChatBubbles] = useState(() => localStorage.getItem('d_chat_bubbles') === 'true');
+  const [bubblePosition, setBubblePosition] = useState<'standard' | 'aligned'>(() => (localStorage.getItem('d_bubble_position') as any) || 'standard');
   const [chatFontSize, setChatFontSize] = useState(() => parseInt(localStorage.getItem('d_chat_font_size') || '14', 10));
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
@@ -814,6 +839,7 @@ export default function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [deleteServerTarget, setDeleteServerTarget] = useState<{ id: string; name: string } | null>(null);
   const [scheduledCount, setScheduledCount] = useState(0);
   const [roles, setRoles] = useState<any[]>([]);
   const [userStatus, setUserStatus] = useState(() => localStorage.getItem('d_status') || 'online');
@@ -937,7 +963,7 @@ export default function App() {
         if (expiresIn < 5 * 60 * 1000) api.tryRefresh();
       }
     } catch {}
-    loadServers(true); loadDms(); api.getMe().then((u: any) => {
+    loadServers(true); loadDms(); api.listFriends().then((f: any) => { const ids = new Set((Array.isArray(f) ? f : []).map((x: any) => x.friend_id || x.user_id || x.id).filter(Boolean)); setFriendIdSet(ids); }).catch(() => {}); api.getMe().then((u: any) => {
       setMe(u);
       if (!localStorage.getItem('onboarding_complete')) setShowOnboarding(true);
     }).catch(() => {});
@@ -951,30 +977,20 @@ export default function App() {
         api.ws.send(JSON.stringify({ type: 'voice_ice', to: e.peerId, candidate: e.candidate }));
       }
     });
-    // Keyboard shortcuts — respect focus (skip when typing in input/textarea)
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      // Always-active shortcuts (even in inputs)
-      if (ctrl && e.key === 'k') { e.preventDefault(); setQuickSwitcher(p => !p); return; }
-      if (ctrl && e.key === '/') { e.preventDefault(); setModal(m => m === 'shortcuts-help' ? null : 'shortcuts-help'); return; }
-      if (e.key === 'Escape') {
-        setQuickSwitcher(false);
-        setShowEmojiPicker(false);
-        setEmojiTarget(null);
-        setModal(null);
-        return;
-      }
-
-      // Shortcuts that only fire outside of inputs
-      if (inInput) return;
-      if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); vc.toggleMute(); return; }
-      if (ctrl && e.shiftKey && e.key === 'D') { e.preventDefault(); vc.toggleDeafen(); return; }
-      if (ctrl && e.key === 'e') { e.preventDefault(); setShowEmojiPicker(p => !p); return; }
-    };
-    window.addEventListener('keydown', onKey);
+    // Keyboard shortcuts — dispatched via configurable hotkey system.
+    const cleanupHotkeys = installHotkeyListener({
+      quick_switcher:  () => setQuickSwitcher(p => !p),
+      search_channel:  () => setPanel(p => p === 'search' ? null : 'search'),
+      go_home:         () => goHome(),
+      return_to_voice: () => { if (voiceChannel) selectChannel(voiceChannel); },
+      create_server:   () => setModal('create-server'),
+      toggle_mute:     () => vc.toggleMute(),
+      toggle_deafen:   () => vc.toggleDeafen(),
+      emoji_picker:    () => setShowEmojiPicker(p => !p),
+      edit_last:       () => {},  // Handled in MessageInput onKeyDown
+      close_modal:     () => { setQuickSwitcher(false); setShowEmojiPicker(false); setEmojiTarget(null); setModal(null); },
+      shortcuts_help:  () => setModal(m => m === 'shortcuts-help' ? null : 'shortcuts-help'),
+    });
     // Load theme and timezone from settings
     api.getSettings?.().then((s: any) => {
       if (s?.theme) { applyServerTheme(s.theme); forceUpdate(n => n + 1); }
@@ -988,6 +1004,7 @@ export default function App() {
       // Load privacy preferences (all default OFF — privacy-first)
       if (s) {
         setPrivacyPrefs({ show_read_receipts: !!s.show_read_receipts, show_typing_indicator: !!s.show_typing_indicator, show_link_previews: !!s.show_link_previews });
+        if (s.friends_only_mode !== undefined) { setFriendsOnlyMode(!!s.friends_only_mode); localStorage.setItem('d_friends_only', String(!!s.friends_only_mode)); }
         setDndSchedule({ enabled: !!s.dnd_enabled, start: s.dnd_start || '22:00', end: s.dnd_end || '08:00', days: s.dnd_days || '0,1,2,3,4,5,6' });
         // Sync sound preferences to localStorage for the sound utility
         if (s.sound_dm) localStorage.setItem('d_sound_dm', s.sound_dm);
@@ -995,6 +1012,8 @@ export default function App() {
         if (s.sound_mention) localStorage.setItem('d_sound_mention', s.sound_mention);
         // Load density and chat font size
         if (s.message_density) { setMsgDensity(s.message_density); localStorage.setItem('d_msg_density', s.message_density); }
+        if (s.chat_bubbles !== undefined) { setChatBubbles(!!s.chat_bubbles); localStorage.setItem('d_chat_bubbles', String(!!s.chat_bubbles)); }
+        if (s.bubble_position) { setBubblePosition(s.bubble_position); localStorage.setItem('d_bubble_position', s.bubble_position); }
         if (s.chat_font_size) { setChatFontSize(s.chat_font_size); localStorage.setItem('d_chat_font_size', String(s.chat_font_size)); document.documentElement.style.setProperty('--chat-font-size', `${s.chat_font_size}px`); }
         // Load default online status
         if (s.default_status && s.default_status !== 'online' && !localStorage.getItem('d_manual_status')) {
@@ -1003,7 +1022,7 @@ export default function App() {
         }
       }
     }).catch(() => {});
-    return () => { unsubVoice(); window.removeEventListener('keydown', onKey); };
+    return () => { unsubVoice(); cleanupHotkeys(); };
   }, [authed]);
 
   // ── Handle /invite/:code deep links ─────────────────────
@@ -1081,6 +1100,8 @@ export default function App() {
   // ── WebSocket ───────────────────────────────────────────
   const curChannelRef = useRef(curChannel);
   curChannelRef.current = curChannel;
+  const curServerRef = useRef(curServer);
+  curServerRef.current = curServer;
   const membersRef = useRef(members);
   membersRef.current = members;
   const curDmRef = useRef(curDm);
@@ -1318,6 +1339,15 @@ export default function App() {
       if (evt.type === 'urgent_reminder' && evt.target_user_ids?.includes(api.userId)) {
         if (localStorage.getItem('d_notif_dnd') !== 'true') playNotifSound('mention');
       }
+      // Server deleted — remove from sidebar and show toast.
+      if (evt.type === 'server_deleted') {
+        setServers(prev => prev.filter(s => s.id !== evt.server_id));
+        if (curServerRef.current?.id === evt.server_id) {
+          goHome();
+        }
+        setToast(`Server "${evt.server_name}" has been deleted`);
+        setTimeout(() => setToast(''), 4000);
+      }
     };
     const unsub = api.onWsEvent(handler);
     // Latency ping every 10 seconds
@@ -1422,7 +1452,19 @@ export default function App() {
   const loadMessages = async (ch: Channel | null) => {
     if (!ch) return;
     setLoadingMessages(true);
-    try { const raw = await api.getMessages(ch.id, 50); if (!Array.isArray(raw)) { console.error('[msg] not array:', raw); return; } const decrypted = await Promise.all(raw.map(async (m: any) => ({ ...m, text: await dec(ch.id, m.content_ciphertext).catch(() => m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' }))); setMessages(decrypted.reverse()); } catch (e) { console.error('[msg] load error:', e); } finally { setLoadingMessages(false); }
+    try {
+      const raw = await api.getMessages(ch.id, 50);
+      if (!Array.isArray(raw)) { console.error('[msg] not array:', raw); return; }
+      const isFriendsOnly = friendsOnlyMode && !friendsOnlyExceptions.has(ch.id);
+      const decrypted = await Promise.all(raw.map(async (m: any) => {
+        // Friends-only mode: skip decryption for non-friend messages.
+        if (isFriendsOnly && m.author_id !== api.userId && !friendIdSet.has(m.author_id)) {
+          return { ...m, text: '\u{1F512} *Encrypted — add as friend to read*', friendsOnlyHidden: true, authorName: userMap[m.author_id] || 'Unknown' };
+        }
+        return { ...m, text: await dec(ch.id, m.content_ciphertext).catch(() => m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' };
+      }));
+      setMessages(decrypted.reverse());
+    } catch (e) { console.error('[msg] load error:', e); } finally { setLoadingMessages(false); }
   };
   const loadDmMessages = async (dm: DM) => {
     try { const raw = await api.getDmMessages(dm.id, 50); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
@@ -2059,7 +2101,7 @@ export default function App() {
         }
         items.push({ label: '📁 New Folder…', fn: () => { const name = prompt('Folder name:'); if (name?.trim()) addToFolder(s.id, name.trim()); } });
         items.push({ label: 'Copy Server ID', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(s.id) });
-        if (s.owner_id === api.userId) items.push({ label: 'Delete Server', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Server', `This will permanently delete "${s.name}" and ALL its channels, messages, roles, and members. This action cannot be undone.`, true, s.name, 'Delete Server')) { await api.deleteServer(s.id); await loadServers(); goHome(); } } });
+        if (s.owner_id === api.userId) items.push({ label: 'Delete Server', icon: <I.Trash />, danger: true, fn: () => setDeleteServerTarget({ id: s.id, name: s.name }) });
         else items.push({ label: 'Leave Server', icon: <I.Out />, danger: true, fn: async () => { if (await showConfirm('Leave Server', `You are about to leave "${s.name}". You will lose access to all channels and messages unless you rejoin with an invite.`, true, s.name, 'Leave Server')) { await api.leaveServer(s.id); await loadServers(); goHome(); } } });
         setCtxMenu({ x: e.clientX, y: e.clientY, items });
       }}
@@ -2081,7 +2123,7 @@ export default function App() {
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className={`chat-root${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0, paddingBottom: voiceChannel ? 48 : 0 }}>
+    <div className={`chat-root density-${msgDensity}${chatBubbles ? ' bubbles-on' : ''}${chatBubbles && bubblePosition === 'aligned' ? ' bubbles-aligned' : ''}${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0, paddingBottom: voiceChannel ? 48 : 0 }}>
       <GlobalStyles />
       {/* Mobile app download banner */}
       {isMobile && showAppBanner && (
@@ -2291,6 +2333,24 @@ export default function App() {
                 ];
                 if (curChannel?.id !== ch.id) items.push({ label: 'Mark as Read', icon: <I.Check />, fn: () => setUnreadCounts(p => { const n = { ...p }; delete n[ch.id]; return n; }) });
                 items.push({ label: 'Copy Channel ID', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(ch.id) });
+                if (friendsOnlyMode) {
+                  const isException = friendsOnlyExceptions.has(ch.id);
+                  items.push({
+                    label: isException ? 'Re-enable Friends-Only' : 'Disable Friends-Only here',
+                    icon: <I.Shield />,
+                    fn: () => {
+                      setFriendsOnlyExceptions(prev => {
+                        const next = new Set(prev);
+                        if (isException) next.delete(ch.id); else next.add(ch.id);
+                        localStorage.setItem('d_friends_only_exceptions', JSON.stringify([...next]));
+                        return next;
+                      });
+                      if (curChannel?.id === ch.id) loadMessages(ch);
+                      setToast(isException ? 'Friends-only re-enabled for this channel' : 'Friends-only disabled for this channel');
+                      setTimeout(() => setToast(''), 2000);
+                    },
+                  });
+                }
                 if (hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)) {
                   items.push({ sep: true });
                   items.push({ label: '⚙ Channel Settings', icon: <I.Settings />, fn: () => { setEditChannel(ch); setEditChannelName(ch.name); setEditChannelTopic((ch as any).topic || ''); setChSettingsTab('overview'); setChSlowmode((ch as any).slowmode_seconds || 0); setChNsfw((ch as any).is_nsfw || false); setChArchived((ch as any).is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${ch.id}`) || '{}')); setModal('edit-channel'); } });
@@ -4099,6 +4159,21 @@ export default function App() {
         />
       )}
 
+      {/* Delete Server Modal */}
+      {deleteServerTarget && (
+        <DeleteServerModal
+          serverId={deleteServerTarget.id}
+          serverName={deleteServerTarget.name}
+          onTransferInstead={() => {
+            setDeleteServerTarget(null);
+            const s = servers.find(x => x.id === deleteServerTarget.id);
+            if (s) { selectServer(s); setModal('server-settings'); }
+          }}
+          onDeleted={async () => { setDeleteServerTarget(null); await loadServers(); goHome(); }}
+          onClose={() => setDeleteServerTarget(null)}
+        />
+      )}
+
       {/* Voice Confirmation Modal */}
       {voiceConfirm && (
         <VoiceConfirmationModal
@@ -4600,6 +4675,108 @@ export default function App() {
 
       {/* Mobile bottom tab bar */}
       {isMobile && <MobileBottomTabs activeTab={mobileTab} onTabChange={handleMobileTab} />}
+    </div>
+  );
+}
+
+// ─── Delete Server Modal ─────────────────────────────────────────────────
+
+function DeleteServerModal({ serverId, serverName, onTransferInstead, onDeleted, onClose }: {
+  serverId: string;
+  serverName: string;
+  onTransferInstead: () => void;
+  onDeleted: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [step, setStep] = React.useState<'ask' | 'confirm'>('ask');
+  const [confirmName, setConfirmName] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [deleting, setDeleting] = React.useState(false);
+
+  const doDelete = async () => {
+    if (confirmName !== serverName) { setError('Server name does not match'); return; }
+    if (!password) { setError('Password is required'); return; }
+    setError('');
+    setDeleting(true);
+    try {
+      await api.verifyPassword(password);
+      await api.deleteServer(serverId);
+      await onDeleted();
+    } catch (e: any) {
+      setError(e?.message || 'Deletion failed');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002, padding: 16 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ width: '100%', maxWidth: 440, background: T.sf, borderRadius: 12, border: `1px solid ${T.bd}`, boxShadow: '0 12px 48px rgba(0,0,0,0.5)', padding: 24 }}>
+
+        {step === 'ask' && (<>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.err, marginBottom: 12 }}>Delete Server</div>
+          <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.6, marginBottom: 20 }}>
+            Would you like to transfer ownership to another member before deleting <strong style={{ color: T.tx }}>{serverName}</strong>?
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button onClick={onTransferInstead} style={{ padding: '10px 18px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.ac, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+              Transfer Ownership First
+              <div style={{ fontSize: 11, color: T.mt, fontWeight: 400, marginTop: 2 }}>Give the server to a trusted member before deleting</div>
+            </button>
+            <button onClick={() => setStep('confirm')} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid rgba(255,71,87,0.4)', background: 'rgba(255,71,87,0.06)', color: T.err, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+              Continue with Deletion
+              <div style={{ fontSize: 11, color: T.mt, fontWeight: 400, marginTop: 2 }}>Permanently delete the server and all data</div>
+            </button>
+            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'none', color: T.mt, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </>)}
+
+        {step === 'confirm' && (<>
+          {/* Danger warning */}
+          <div style={{ padding: '14px 16px', background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', borderRadius: 8, marginBottom: 16, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.err, marginBottom: 6 }}>This will PERMANENTLY DELETE</div>
+            <div style={{ fontSize: 13, color: T.tx }}><strong>{serverName}</strong></div>
+            <div style={{ fontSize: 12, color: T.mt, marginTop: 6 }}>All channels, messages, roles, and member data will be destroyed. This action <strong style={{ color: T.err }}>cannot be undone</strong>.</div>
+          </div>
+
+          {/* Type server name */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>
+              Type <span style={{ color: T.tx, fontFamily: 'monospace' }}>{serverName}</span> to confirm
+            </label>
+            <input value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder={serverName}
+              style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${confirmName === serverName ? 'rgba(255,71,87,0.5)' : T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              aria-label="Confirm server name" />
+          </div>
+
+          {/* Password */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 4, textTransform: 'uppercase' }}>Enter Your Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password"
+              style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              aria-label="Password" onKeyDown={e => { if (e.key === 'Enter' && confirmName === serverName && password) doDelete(); }} />
+          </div>
+
+          {error && <div style={{ fontSize: 11, color: T.err, padding: '6px 10px', background: 'rgba(255,71,87,0.08)', borderRadius: 4, marginBottom: 10 }}>{error}</div>}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setStep('ask'); setConfirmName(''); setPassword(''); setError(''); }}
+              style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 12, cursor: 'pointer' }}>Back</button>
+            <button onClick={doDelete}
+              disabled={confirmName !== serverName || !password || deleting}
+              style={{
+                padding: '8px 18px', borderRadius: 8, border: 'none',
+                background: confirmName !== serverName || !password || deleting ? T.sf2 : T.err,
+                color: confirmName !== serverName || !password || deleting ? T.mt : '#fff',
+                fontSize: 12, fontWeight: 700,
+                cursor: confirmName !== serverName || !password || deleting ? 'not-allowed' : 'pointer',
+              }}>
+              {deleting ? 'Deleting...' : 'Delete Server'}
+            </button>
+          </div>
+        </>)}
+      </div>
     </div>
   );
 }

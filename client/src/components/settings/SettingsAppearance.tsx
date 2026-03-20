@@ -221,15 +221,55 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
           <option value="dm-sans">DM Sans (Default)</option><option value="inter">Inter</option><option value="system">System UI</option><option value="mono">JetBrains Mono</option><option value="serif">Georgia (Serif)</option>
         </select>
       </div>
-      <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Density</label>
-        <select style={sel} value={(s.message_density as string) || 'comfortable'} onChange={e => { save('message_density', e.target.value); localStorage.setItem('d_msg_density', e.target.value); }}>
-          <option value="comfortable">Comfortable (default)</option>
-          <option value="compact">Compact</option>
-          <option value="cozy">Cozy</option>
-        </select>
-        <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>
-          {((s.message_density as string) || 'comfortable') === 'compact' ? '2px gap, 28px avatars, inline timestamp' : ((s.message_density as string) || 'comfortable') === 'cozy' ? '12px gap, 44px avatars, spacious layout' : '8px gap, 36px avatars, balanced layout'}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ fontSize: 12, color: T.mt, marginBottom: 8, display: 'block' }}>Message Density</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {([
+            { id: 'compact', label: 'Compact', desc: 'No avatars, IRC-style, timestamps on hover', icon: '≡' },
+            { id: 'cozy', label: 'Cozy', desc: 'Default — avatars, balanced spacing', icon: '☰' },
+            { id: 'spacious', label: 'Spacious', desc: 'Large avatars, extra padding between messages', icon: '▤' },
+          ] as const).map(m => {
+            const active = ((s.message_density as string) || 'cozy') === m.id;
+            return (
+              <div key={m.id} onClick={() => { save('message_density', m.id); localStorage.setItem('d_msg_density', m.id); }}
+                style={{ flex: 1, padding: '12px 10px', borderRadius: 8, cursor: 'pointer', border: `2px solid ${active ? T.ac : T.bd}`, background: active ? 'rgba(0,212,170,0.06)' : 'transparent', textAlign: 'center' }}>
+                <div style={{ fontSize: 20, marginBottom: 4, opacity: 0.6 }}>{m.icon}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: active ? T.ac : T.tx }}>{m.label}</div>
+                <div style={{ fontSize: 9, color: T.mt, marginTop: 2, lineHeight: 1.3 }}>{m.desc}</div>
+              </div>
+            );
+          })}
         </div>
+      </div>
+      {/* Chat Bubbles */}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Chat Bubbles</div>
+            <div style={{ fontSize: 10, color: T.mt, marginTop: 2, lineHeight: 1.4 }}>Show messages in rounded bubbles — your messages colored, others neutral</div>
+          </div>
+          <div onClick={() => { const next = !(s.chat_bubbles === true); save('chat_bubbles', next); localStorage.setItem('d_chat_bubbles', String(next)); }}
+            style={{ width: 36, height: 20, borderRadius: 10, background: s.chat_bubbles === true ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+            <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.chat_bubbles === true ? 18 : 2, transition: 'left 0.2s' }} />
+          </div>
+        </div>
+        {s.chat_bubbles === true && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            {([
+              { id: 'standard', label: 'Standard', desc: 'Your messages right, others left' },
+              { id: 'aligned', label: 'Aligned Left', desc: 'All messages left-aligned' },
+            ] as const).map(bp => {
+              const active = ((s.bubble_position as string) || 'standard') === bp.id;
+              return (
+                <div key={bp.id} onClick={() => { save('bubble_position', bp.id); localStorage.setItem('d_bubble_position', bp.id); }}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: `2px solid ${active ? T.ac : T.bd}`, background: active ? 'rgba(0,212,170,0.06)' : 'transparent', textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: active ? T.ac : T.tx }}>{bp.label}</div>
+                  <div style={{ fontSize: 9, color: T.mt, marginTop: 2 }}>{bp.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Width</label>
         <select style={sel} value={localStorage.getItem('d_chat_width') || 'normal'} onChange={e => localStorage.setItem('d_chat_width', e.target.value)}>
@@ -237,9 +277,9 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
         </select>
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
-        <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Chat Font Size: {(s.chat_font_size as number) || 14}px</label>
+        <label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Message Text Size: {(s.chat_font_size as number) || 14}px</label>
         <input
-          type="range" min="12" max="20" step="1"
+          type="range" min="12" max="24" step="1"
           value={(s.chat_font_size as number) || 14}
           onChange={e => {
             const px = parseInt(e.target.value, 10);
@@ -250,8 +290,19 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
           style={{ width: '100%', accentColor: T.ac } as React.CSSProperties}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.mt, marginTop: 2 }}>
-          <span>12px</span><span>14px</span><span>16px</span><span>18px</span><span>20px</span>
+          <span>12px</span><span>16px</span><span>20px</span><span>24px</span>
         </div>
+        <div style={{ marginTop: 8, padding: '10px 12px', background: T.bg, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Live Preview</div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 14, background: T.ac, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#000', flexShrink: 0 }}>J</div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Jane <span style={{ fontSize: 10, color: T.mt, fontWeight: 400 }}>Today at 3:42 PM</span></div>
+              <div style={{ fontSize: (s.chat_font_size as number) || 14, color: T.tx, lineHeight: 1.5, marginTop: 2 }}>Hey! Have you seen the new encryption features? The end-to-end encryption is incredible.</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 9, color: T.mt, marginTop: 4 }}>Only message content scales — UI elements (sidebar, buttons, headers) are not affected.</div>
       </div>
       <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Language</label>
         <select style={sel} value={(s.locale as string) || 'en'} onChange={e => save('locale', e.target.value)}>

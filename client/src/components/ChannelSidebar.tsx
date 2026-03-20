@@ -26,6 +26,7 @@ export interface Channel {
   min_role_position?: number;
   read_only?: boolean;
   is_archived?: boolean;
+  suggest_friends_only?: boolean;
 }
 
 export interface CategoryData {
@@ -327,6 +328,7 @@ function ChannelRow({
         {ch.nsfw && (
           <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#ff4757', color: '#fff', fontWeight: 700, flexShrink: 0, letterSpacing: '0.3px' }}>NSFW</span>
         )}
+        {ch.suggest_friends_only && <span title="Friends-only recommended" style={{ color: '#9b59b6', display: 'flex', flexShrink: 0 }}><I.ShieldCheck s={10} /></span>}
         {ch.locked && <I.Lock s={10} />}
         {(ch.message_ttl_seconds ?? 0) > 0 && <I.Clock />}
         {isMuted && <span style={{ color: T.mt, marginLeft: 2 }} title="Muted"><I.BellOff /></span>}

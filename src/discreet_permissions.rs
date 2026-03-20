@@ -50,9 +50,19 @@ pub mod Permission {
     // ── Mention ──
     pub const MENTION_EVERYONE: i64   = 1 << 6;   // Use @everyone (rate-limited)
 
+    // ── Extended Administration ──
+    pub const MANAGE_WEBHOOKS: i64    = 1 << 7;   // Create/edit/delete webhooks
+    pub const MANAGE_SCHEDULED: i64   = 1 << 8;   // View/cancel other users' scheduled messages
+    pub const MANAGE_PINS: i64        = 1 << 9;   // Pin/unpin messages, set pin categories
+    pub const ARCHIVE_CHANNELS: i64   = 1 << 14;  // Archive and unarchive channels
+    pub const VIEW_AUDIT_LOG: i64     = 1 << 15;  // Access server audit log
+    pub const MANAGE_AUTOMOD: i64     = 1 << 16;  // Configure automod rules
+    pub const MANAGE_BOTS: i64        = 1 << 17;  // Configure and remove bots
+
     // ── Dangerous ──
-    pub const ADMINISTRATOR: i64      = 1 << 40;  // Bypasses all permission checks
-    pub const DELETE_SERVER: i64       = 1 << 41;  // Can delete the server (owner can delegate)
+    pub const ADMINISTRATOR: i64      = 1_i64 << 40;  // Bypasses all permission checks
+    pub const DELETE_SERVER: i64       = 1_i64 << 41;  // Can delete the server (owner can delegate)
+    pub const TRANSFER_OWNERSHIP: i64 = 1_i64 << 42;  // Enables transfer button (only owner can grant)
 
     /// Default permissions for `@everyone` role — sensible baseline.
     /// SPAWN_AI is ON by default (everyone can talk to bots).

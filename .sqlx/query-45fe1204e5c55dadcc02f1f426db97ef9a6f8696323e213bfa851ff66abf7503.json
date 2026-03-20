@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM messages WHERE id IN (\n                        SELECT m.id FROM messages m\n                        JOIN channels c ON c.id = m.channel_id\n                        WHERE c.message_ttl_seconds > 0\n                          AND m.created_at < NOW() - (c.message_ttl_seconds || ' seconds')::interval\n                    )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "45fe1204e5c55dadcc02f1f426db97ef9a6f8696323e213bfa851ff66abf7503"
+}
