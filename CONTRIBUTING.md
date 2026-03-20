@@ -6,7 +6,7 @@ Thank you for considering a contribution to Discreet. Whether this is your first
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Rust | 1.75+ | Backend server, WASM crypto module |
+| Rust | 1.78+ | Backend server, WASM crypto module |
 | Node.js | 18+ | Vite frontend build and dev server |
 | Docker | Latest | PostgreSQL and Redis via Compose |
 

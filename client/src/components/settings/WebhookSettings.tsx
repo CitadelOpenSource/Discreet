@@ -1,3 +1,9 @@
+/**
+ * WebhookSettings — Server webhook management panel.
+ *
+ * Create, list, toggle, test, and delete outbound webhooks.
+ * Shown in Server Settings > Webhooks tab.
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { T, ta } from '../../theme';
 import { api } from '../../api/CitadelAPI';

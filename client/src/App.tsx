@@ -28,6 +28,7 @@ import { GifPicker } from './components/GifPicker';
 import { ScheduleModal } from './components/ScheduleModal';
 import { VoiceConfirmationModal } from './components/voice/VoiceConfirmationModal';
 import { ActiveCallBar } from './components/voice/ActiveCallBar';
+import { PipVideoWindow } from './components/voice/PipVideoWindow';
 import { AddPeopleModal } from './components/voice/AddPeopleModal';
 import { type VoiceConfirmType, isConfirmEnabled } from './hooks/useVoiceConfirmation';
 import { installHotkeyListener } from './hooks/useHotkeys';
@@ -671,6 +672,7 @@ export default function App() {
   const [voiceChannel,   setVoiceChannel]   = useState<Channel | null>(null);
   const [voiceConfirm,   setVoiceConfirm]   = useState<{ type: VoiceConfirmType; action: () => void } | null>(null);
   const [showAddPeople,  setShowAddPeople]  = useState(false);
+  const [pipMinimized,   setPipMinimized]   = useState(false);
   const [voicePresence,  setVoicePresence]  = useState<Record<string, string[]>>({});
   const [streamStatus,    setStreamStatus]    = useState<Record<string, { active: boolean; viewerCount: number; viewerUrl?: string }>>({});
   const [myStreamChannelId, setMyStreamChannelId] = useState<string | null>(null);
@@ -1491,6 +1493,7 @@ export default function App() {
     if (pick) selectChannel(pick);
   };
   const selectChannel = async (ch: Channel) => {
+    setPipMinimized(false); // Reset PiP when navigating to any channel.
     const now = String(Date.now());
     // Mark previous channel as read at switch-away time.
     if (curChannelRef.current && curChannelRef.current.id !== ch.id) {
@@ -4649,6 +4652,31 @@ export default function App() {
           setShowOnboarding(false);
         }} />
       )}
+
+      {/* PiP Video Window — when navigated away from voice channel with video active */}
+      {voiceChannel && !pipMinimized && curChannel?.id !== voiceChannel.id && (vc.videoEnabled || vc.screenSharing || vc.streams.size > 0) && (() => {
+        // Pick main stream: first remote video, or local camera.
+        const remoteEntries = Array.from(vc.streams.entries());
+        const mainEntry = remoteEntries[0];
+        const mainStream = mainEntry ? mainEntry[1] : (vc.videoEnabled && vc.engine.videoStream ? vc.engine.videoStream : null);
+        const mainLabel = mainEntry ? getName(mainEntry[0]) : (api.username || '?');
+        const selfStream = mainEntry && vc.videoEnabled && vc.engine.videoStream ? vc.engine.videoStream : null;
+        return mainStream ? (
+          <PipVideoWindow
+            channelName={voiceChannel.name}
+            participantCount={(voicePresence[voiceChannel.id] || []).length}
+            mainStream={mainStream}
+            mainLabel={mainLabel}
+            mainSpeaking={false}
+            selfStream={selfStream}
+            selfLabel={api.username || '?'}
+            isMobile={isMobile}
+            onExpand={() => { setPipMinimized(false); selectChannel(voiceChannel); }}
+            onMinimize={() => setPipMinimized(true)}
+            onClose={leaveVoice}
+          />
+        ) : null;
+      })()}
 
       {/* Persistent call bar — renders globally when in voice */}
       {voiceChannel && (

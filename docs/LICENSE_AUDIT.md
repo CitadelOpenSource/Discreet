@@ -83,8 +83,8 @@ NOT compatible:
 | ed25519-dalek | 2 | BSD-3-Clause | OK |
 | x25519-dalek | 2 | BSD-3-Clause | OK |
 | hkdf | 0.12 | MIT OR Apache-2.0 | OK |
-| openmls | 0.5 | MIT | OK |
-| openmls_rust_crypto | 0.2 | MIT | OK |
+| openmls | 0.8.1 | MIT | OK |
+| openmls_rust_crypto | 0.5.1 | MIT | OK |
 
 ### Utilities
 
@@ -167,10 +167,8 @@ Notable transitive dependencies and their licenses:
 
 ### OpenMLS curve25519-dalek CVE (Pre-existing)
 
-OpenMLS 0.5.x depends on curve25519-dalek 3.x which has known CVEs
-(RUSTSEC-2024-0344). This is documented in CLAUDE.md and the threat model.
-Upgrade to OpenMLS 0.8.x (which uses curve25519-dalek 4.x) is required
-before production deployment.
+OpenMLS has been upgraded to 0.8.1 which uses curve25519-dalek 4.x,
+resolving RUSTSEC-2024-0344. This is documented in the threat model.
 
 **Mitigation**: MLS feature is behind an opt-in feature flag (`mls`), not
 enabled by default.

@@ -7,6 +7,8 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { T, ta } from '../theme';
+import { setLanguage } from '../i18n/i18n';
+import { api } from '../api/CitadelAPI';
 
 const TOTAL_STEPS = 6;
 
@@ -178,9 +180,60 @@ export function OnboardingModal({ onComplete, onThemeChange, onLayoutChange, use
 
 // ─── Step 0: Welcome ────────────────────────────────────────────────────
 
+const LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ja', label: '日本語' },
+  { code: 'ko', label: '한국어' },
+  { code: 'zh', label: '中文' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'fa', label: 'فارسی' },
+  { code: 'uk', label: 'Українська' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'pt', label: 'Português' },
+] as const;
+
+function detectLang(): string {
+  const nav = navigator.language?.split('-')[0] || 'en';
+  return LANGUAGES.some(l => l.code === nav) ? nav : 'en';
+}
+
 function StepWelcome({ onNext }: { onNext: () => void }) {
+  const [lang, setLang] = useState(detectLang);
+
+  const handleLangChange = async (code: string) => {
+    setLang(code);
+    await setLanguage(code);
+    try { await api.updateSettings({ locale: code }); } catch { /* best-effort */ }
+  };
+
+  // Apply detected language on mount.
+  useEffect(() => {
+    if (lang !== 'en') setLanguage(lang).catch(() => {});
+  }, []);
+
   return (
-    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+    <div style={{ position: 'relative', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+      {/* Language selector — top right */}
+      <div style={{ position: 'absolute', top: 0, right: 0 }}>
+        <select
+          value={lang}
+          onChange={e => handleLangChange(e.target.value)}
+          style={{
+            padding: '5px 8px', borderRadius: 6, border: `1px solid ${T.bd}`,
+            background: T.sf2, color: T.tx, fontSize: 12, cursor: 'pointer',
+            outline: 'none', fontFamily: 'inherit',
+          }}
+          aria-label="Language"
+        >
+          {LANGUAGES.map(l => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+      </div>
+
       {/* Discreet text logo */}
       <div style={{
         fontSize: 36, fontWeight: 900, letterSpacing: '-0.5px',

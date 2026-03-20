@@ -61,7 +61,7 @@ The `main` branch has protection rules enforced via GitHub.
 
 **Gap:**
 - Enable "Require signed commits" once team has GPG/SSH signing configured
-- Consider requiring 2 reviewers for security-sensitive paths (`src/citadel_auth*`, `src/citadel_crypto*`)
+- Consider requiring 2 reviewers for security-sensitive paths (`src/discreet_auth*`, `src/discreet_pq_crypto*`)
 
 ---
 
@@ -118,7 +118,7 @@ Property-based fuzz testing via proptest covers input validation and crypto prim
 Clippy with `-D warnings` is required. All warnings are treated as errors.
 
 **Current state:**
-- `cargo clippy -- -D warnings` must pass before every commit (per CLAUDE.md)
+- `cargo clippy -- -D warnings` must pass before every commit (per project policy)
 - CI workflow runs clippy on every push and PR
 - `cargo check` and `cargo test --lib` in CI pipeline
 - Frontend: `tsc --noEmit` type checking, `npm run build` must pass
@@ -189,12 +189,10 @@ Project is licensed under AGPL-3.0-or-later with full compliance.
 - `cargo audit` checks Rust dependencies against RustSec advisory database
 - `npm audit --audit-level=high` checks JavaScript dependencies
 - Known advisories documented in `SECURITY.md` with impact assessment
-- OpenMLS 0.5 curve25519-dalek CVE documented as known issue with upgrade plan
+- OpenMLS 0.8.1 upgrade completed, resolving curve25519-dalek CVE
 
 **Gap:**
-- `.cargo/audit.toml` not yet created for formally acknowledging known advisories
 - No automated issue creation when new CVEs are discovered
-- OpenMLS upgrade to 0.8.x still pending (blocks production deployment)
 
 ---
 
@@ -203,7 +201,7 @@ Project is licensed under AGPL-3.0-or-later with full compliance.
 | Priority | Item | Effort | Target |
 |----------|------|--------|--------|
 | High | Sign release binaries with Sigstore | 1 day | Pre-v1.0 |
-| High | Upgrade OpenMLS 0.5 → 0.8 | 1 week | Pre-v1.0 |
+| ~~High~~ | ~~Upgrade OpenMLS 0.5 → 0.8~~ | ~~1 week~~ | **Done** (0.8.1) |
 | Medium | Add `security.txt` at `/.well-known/` | 1 hour | Next release |
 | Medium | Create `.cargo/audit.toml` | 1 hour | Next release |
 | Medium | Enable signed commits on main branch | 2 hours | Next sprint |

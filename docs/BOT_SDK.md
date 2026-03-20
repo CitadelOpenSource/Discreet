@@ -223,7 +223,7 @@ POST /api/v1/servers/:server_id/agents
 Content-Type: application/json
 
 {
-  "name": "Claude Agent",
+  "name": "My Custom Agent",
   "provider_type": "anthropic",
   "model": "claude-opus",
   "api_key": "sk-ant-...",

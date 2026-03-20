@@ -175,7 +175,7 @@ An attacker who compromises a dependency (Rust crate, npm package).
 - No client-side analytics, tracking, or third-party scripts
 - CSP headers restrict script sources
 
-**Known limitation:** OpenMLS 0.5 depends on curve25519-dalek and ed25519-dalek versions with known CVEs. Upgrade to OpenMLS 0.8 is planned for pre-launch.
+**Resolved:** OpenMLS upgraded to 0.8.1 with curve25519-dalek 4.x, resolving all known CVEs in the prior 0.5.x dependency chain.
 
 ## 4. Cryptographic Guarantees
 
@@ -220,7 +220,7 @@ An attacker who compromises a dependency (Rust crate, npm package).
 | Transport | TLS 1.3 (HSTS preload) |
 | Voice transport | DTLS-SRTP with optional SFrame |
 | Salt for key derivation | `mls-group-secret` (per-channel) |
-| Key identifier format | `citadel:{channelId}:{epoch}` |
+| Key identifier format | `discreet:{channelId}:{epoch}` |
 
 ## 5. Known Limitations
 
