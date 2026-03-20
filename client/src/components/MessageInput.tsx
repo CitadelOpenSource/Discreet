@@ -67,6 +67,9 @@ export interface MessageInputProps {
   // Voice
   onVoiceSend: (blob: Blob, durationMs: number, waveform: number[]) => void;
 
+  // Schedule
+  onSchedule: () => void;
+
   // Archived
   isArchived: boolean;
   archivedDeletionDate?: string | null;
@@ -89,6 +92,7 @@ export function MessageInput(props: MessageInputProps) {
     onEditLastMessage,
     slashTool, onSlashToolClose, slashToolContent,
     onVoiceSend,
+    onSchedule,
     isArchived, archivedDeletionDate,
     inputRef,
   } = props;
@@ -234,6 +238,7 @@ export function MessageInput(props: MessageInputProps) {
             <div onClick={onPollCreate} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 13 }} title="Create Poll">📊</div>
             <div onClick={onGifPicker} style={{ cursor: 'pointer', color: T.mt, padding: 4, fontSize: 11, fontWeight: 700 }} title="GIF">GIF</div>
             <div onClick={() => setRecording(true)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Voice message" aria-label="Record voice message"><I.Mic /></div>
+            <div onClick={onSchedule} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Schedule message" aria-label="Schedule message"><I.Clock /></div>
             <div onClick={onSend} role="button" aria-label="Send message" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onSend(); }} style={{ padding: '8px 14px', background: `linear-gradient(135deg,${T.ac},${T.ac2})`, borderRadius: 12, cursor: 'pointer', color: '#000', fontWeight: 700, fontSize: 13 }}>Send</div>
           </div>
         </div>

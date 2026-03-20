@@ -11,6 +11,7 @@ import { Av } from './Av';
 import { type FilterLevel, getProfanityLevel, setProfanityLevel } from '../utils/profanityFilter';
 import { BotConfigModal, PRESETS } from './BotConfigModal';
 import { DangerConfirmModal } from './DangerConfirmModal';
+import WebhookSettings from './settings/WebhookSettings';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -1475,6 +1476,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     if (tab === 'automation') { api.listTasks(server.id).then(t => setTasks(Array.isArray(t) ? t : [])); api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : [])); }
     if (tab === 'playbooks') { api.listPlaybooks(server.id).then(p => setPlaybooks(Array.isArray(p) ? p : [])); if (mgmtMembers.length === 0) api.listMembers(server.id).then(m => { if (Array.isArray(m)) setMgmtMembers(m); }); }
     if (tab === 'bans')     api.listBans(server.id).then(b => setBans(Array.isArray(b) ? b : []));
+    if (tab === 'webhooks' && channels.length === 0) api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : []));
     if (tab === 'audit')    api.getAuditLog(server.id).then(a => setAuditLog(Array.isArray(a) ? a : []));
     if (tab === 'invites') { setInvitesLoading(true); api.listInvites(server.id).then(inv => { setInvites(Array.isArray(inv) ? inv : []); setInvitesLoading(false); }).catch(() => setInvitesLoading(false)); }
     if (tab === 'members') {
@@ -1631,6 +1633,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     { id: 'bans',        label: 'Bans' },
     { id: 'playbooks',   label: 'Playbooks' },
     { id: 'automation',  label: 'Automation' },
+    { id: 'webhooks',    label: 'Webhooks' },
     { id: 'audit',       label: 'Audit Log' },
   ];
 
@@ -2735,6 +2738,10 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           );
         })}
       </>)}
+
+      {tab === 'webhooks' && (
+        <WebhookSettings serverId={server.id} channels={channels} />
+      )}
 
       {tab === 'audit' && (<>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>

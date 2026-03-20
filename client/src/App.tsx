@@ -25,6 +25,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpgradeModal } from './components/UpgradeModal';
 import { MaintenancePage, ErrorBoundary as SectionBoundary } from './components/ErrorBoundary';
 import { GifPicker } from './components/GifPicker';
+import { ScheduleModal } from './components/ScheduleModal';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
 import { InvitePreview } from './components/InvitePreview';
@@ -756,6 +757,8 @@ export default function App() {
   const [highlightedMsg, setHighlightedMsg] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduledCount, setScheduledCount] = useState(0);
   const [roles, setRoles] = useState<any[]>([]);
   const [userStatus, setUserStatus] = useState(() => localStorage.getItem('d_status') || 'online');
   const [manualStatus, setManualStatus] = useState<string | null>(() => localStorage.getItem('d_manual_status') || null);
@@ -1401,6 +1404,7 @@ export default function App() {
     setMentionCounts(p => { const n = { ...p }; delete n[ch.id]; return n; });
     setChannelFadeKey(k => k + 1); setMsgScrollTop(0);
     await loadMessages(ch); inputRef.current?.focus();
+    api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => setScheduledCount(0));
   };
   const selectDm = async (dm: DM) => {
     if (voiceChannel) leaveVoice();
@@ -1805,7 +1809,9 @@ export default function App() {
     }
     items.push({ label: 'React', icon: <I.Smile />, fn: () => setEmojiTarget(m.id) });
     if (curServer && curChannel) {
-      items.push({ label: 'Pin Message', icon: <I.Lock />, fn: async () => { await api.pinMessage(curServer.id, curChannel.id, m.id); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Important', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'important'); setToast('Pinned as Important'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Action Required', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'action_required'); setToast('Pinned as Action Required'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Reference', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'reference'); setToast('Pinned as Reference'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
     }
     items.push({ label: 'Mention Author', icon: <I.At />, fn: () => { setMsgInput(p => p + `@${getName(m.author_id)} `); inputRef.current?.focus(); } });
     items.push({ label: bookmarkedIds.has(m.id) ? 'Remove Bookmark' : 'Bookmark', icon: <I.Bookmark />, fn: () => toggleBookmark(m) });
@@ -2420,7 +2426,11 @@ export default function App() {
           >
             <span /><span /><span />
           </button>
-          {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span></>)}
+          {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span>
+            <div onClick={() => { setShowScheduleModal(true); }} style={{ cursor: 'pointer', color: scheduledCount > 0 ? T.ac : T.mt, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 6 }} title={scheduledCount > 0 ? `${scheduledCount} scheduled` : 'Scheduled messages'} aria-label="Scheduled messages">
+              <I.CalendarClock s={14} />{scheduledCount > 0 && <span style={{ fontSize: 10, fontWeight: 700 }}>{scheduledCount}</span>}
+            </div>
+          </>)}
           {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span>
             {disappearingEnabled && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
@@ -3046,7 +3056,7 @@ export default function App() {
             onReact={(msgId, emoji) => addReaction(msgId, emoji)}
             onToggleReaction={(msgId, emoji) => toggleReaction(msgId, emoji)}
             onEmojiTarget={(msgId) => setEmojiTarget(msgId)}
-            onPin={async (msgId) => { if (curServer && curChannel) { try { await api.pinMessage(curServer.id, curChannel.id, msgId); setToast('Message pinned'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } } }}
+            onPin={async (msgId) => { if (curServer && curChannel) { try { await api.pinMessage(curServer.id, curChannel.id, msgId, 'important'); setToast('Pinned as Important'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } } }}
             onBookmark={(m) => toggleBookmark(m)}
             onReport={(m) => setReportTarget(m)}
             onRetryFailed={(id) => retryFailedMessage(id)}
@@ -3117,6 +3127,7 @@ export default function App() {
               {slashTool === 'convert' && <ConvertTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
               {slashTool === 'color' && <ColorTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
             </>}
+            onSchedule={() => setShowScheduleModal(true)}
             isArchived={!!curServer?.is_archived}
             archivedDeletionDate={curServer?.scheduled_deletion_at ? tzCtx.formatDate(curServer.scheduled_deletion_at) : null}
             inputRef={inputRef}
@@ -3989,6 +4000,21 @@ export default function App() {
         </div>
       )}
 
+      {/* Schedule Message Modal */}
+      {showScheduleModal && curChannel && (
+        <ScheduleModal
+          channelId={curChannel.id}
+          channelName={curChannel.name}
+          messageText={msgInput}
+          onScheduled={() => {
+            setMsgInput('');
+            api.listScheduledMessages(curChannel.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => {});
+          }}
+          onClose={() => setShowScheduleModal(false)}
+          onToast={(msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); }}
+        />
+      )}
+
       {/* Emoji picker for reactions */}
       {emojiTarget && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setEmojiTarget(null)}>
@@ -4101,37 +4127,60 @@ export default function App() {
       )}
 
       {/* Pinned Messages Panel */}
-      {showPinned && view === 'server' && curChannel && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 350, background: T.sf, borderLeft: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.bd}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: T.tx }}>
-              <span>📌</span> Pinned Messages
+      {showPinned && view === 'server' && curChannel && (() => {
+        const cats = [
+          { key: 'important', label: 'Important', icon: '🔴', color: '#ff4757' },
+          { key: 'action_required', label: 'Action Required', icon: '🟡', color: '#faa61a' },
+          { key: 'reference', label: 'Reference', icon: '🔵', color: '#3b82f6' },
+        ];
+        const grouped: Record<string, any[]> = { important: [], action_required: [], reference: [] };
+        for (const m of pinnedMsgs) grouped[m.category || 'important']?.push(m);
+        const total = pinnedMsgs.length;
+
+        return (
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 350, background: T.sf, borderLeft: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.bd}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: T.tx }}>
+                <I.Pin s={16} /> Pinned Messages
+                {total > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: T.mt, background: T.sf2, padding: '1px 6px', borderRadius: 8 }}>{total}/50</span>}
+              </div>
+              <button onClick={() => setShowPinned(false)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
             </div>
-            <button onClick={() => setShowPinned(false)} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {pinnedMsgs.length === 0 ? (
-              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-                <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>📌</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No pinned messages</div>
-                <div style={{ fontSize: 12, color: T.mt }}>Pin important messages so everyone can find them easily.</div>
-              </div>
-            ) : pinnedMsgs.map((m: any) => (
-              <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${ta(T.bd,'20')}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Av name={getName(m.author_id)} size={22} />
-                    <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{getName(m.author_id)}</span>
-                    <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default' }}>{tzCtx.formatRelative(m.created_at)}</span>
-                  </div>
-                  <button onClick={async () => { if (curServer && curChannel) { await api.unpinMessage(curServer.id, curChannel.id, m.id); setPinnedMsgs(p => p.filter(x => x.id !== m.id)); } }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Unpin" onMouseEnter={e => { e.currentTarget.style.color = T.err; }} onMouseLeave={e => { e.currentTarget.style.color = T.mt; }}>Unpin</button>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {total === 0 ? (
+                <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>📌</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No pinned messages</div>
+                  <div style={{ fontSize: 12, color: T.mt }}>Right-click a message to pin it as Important, Action Required, or Reference.</div>
                 </div>
-                <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingLeft: 28 }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
-              </div>
-            ))}
+              ) : cats.map(cat => {
+                const msgs = grouped[cat.key];
+                if (msgs.length === 0) return null;
+                return (
+                  <div key={cat.key} style={{ marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', fontSize: 11, fontWeight: 700, color: cat.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <span>{cat.icon}</span> {cat.label} <span style={{ fontSize: 10, fontWeight: 600, color: T.mt }}>({msgs.length})</span>
+                    </div>
+                    {msgs.map((m: any) => (
+                      <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${ta(T.bd, '20')}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Av name={getName(m.author_id)} size={22} />
+                            <span style={{ fontWeight: 600, fontSize: 12, color: T.tx }}>{getName(m.author_id)}</span>
+                            <span title={tzCtx.formatFullTooltip(m.created_at)} style={{ fontSize: 10, color: T.mt, cursor: 'default' }}>{tzCtx.formatRelative(m.created_at)}</span>
+                          </div>
+                          <button onClick={async () => { if (curServer && curChannel) { await api.unpinMessage(curServer.id, curChannel.id, m.id); setPinnedMsgs(p => p.filter(x => x.id !== m.id)); } }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Unpin" onMouseEnter={e => { e.currentTarget.style.color = T.err; }} onMouseLeave={e => { e.currentTarget.style.color = T.mt; }}>Unpin</button>
+                        </div>
+                        <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingLeft: 28 }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Quick Switcher (Ctrl+K) */}
       {quickSwitcher && (

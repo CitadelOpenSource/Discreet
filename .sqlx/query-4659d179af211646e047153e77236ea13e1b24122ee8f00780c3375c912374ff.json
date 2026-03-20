@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pinned_messages (channel_id, message_id, pinned_by, category)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (channel_id, message_id) DO UPDATE SET category = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4659d179af211646e047153e77236ea13e1b24122ee8f00780c3375c912374ff"
+}

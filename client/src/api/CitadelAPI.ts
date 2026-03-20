@@ -295,7 +295,7 @@ export class CitadelAPI {
 
   // ── Pins ──
   async listPins(sid: string, cid: string) { try { const r = await this.fetch(`/servers/${sid}/channels/${cid}/pins`); return r.ok ? r.json() : []; } catch { return []; } }
-  async pinMessage(sid: string, cid: string, mid: string) { return this.fetch(`/servers/${sid}/channels/${cid}/pins/${mid}`, { method: 'POST' }); }
+  async pinMessage(sid: string, cid: string, mid: string, category: string = 'important') { return this.fetch(`/servers/${sid}/channels/${cid}/pins/${mid}?category=${encodeURIComponent(category)}`, { method: 'POST' }); }
   async unpinMessage(sid: string, cid: string, mid: string) { return this.fetch(`/servers/${sid}/channels/${cid}/pins/${mid}`, { method: 'DELETE' }); }
 
   // ── Bans ──
@@ -497,6 +497,27 @@ export class CitadelAPI {
     return r.json();
   }
 
+  // ── Webhooks ──
+  async listWebhooks(sid: string) { try { const r = await this.fetch(`/servers/${sid}/webhooks`); return r.ok ? r.json() : []; } catch { return []; } }
+  async createWebhook(sid: string, data: { name: string; url: string; channel_id?: string; events: string[]; enabled?: boolean }) {
+    const r = await this.fetch(`/servers/${sid}/webhooks`, { method: 'POST', body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to create webhook' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+    return r.json();
+  }
+  async updateWebhook(wid: string, data: { name?: string; url?: string; events?: string[]; enabled?: boolean }) {
+    const r = await this.fetch(`/webhooks/${wid}`, { method: 'PUT', body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to update webhook' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+  }
+  async deleteWebhook(wid: string) {
+    const r = await this.fetch(`/webhooks/${wid}`, { method: 'DELETE' });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to delete webhook' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+  }
+  async testWebhook(sid: string, wid: string) {
+    const r = await this.fetch(`/servers/${sid}/webhooks/${wid}/test`, { method: 'POST' });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Test failed' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+    return r.json();
+  }
+
   // ── Bots ──
   async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async updateBotConfig(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
@@ -582,6 +603,18 @@ export class CitadelAPI {
   async createTask(sid: string, data: { channel_id?: string; task_type: string; config?: any; cron_expr: string; enabled?: boolean }) { return (await this.fetch(`/servers/${sid}/tasks`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async deleteTask(taskId: string) { return this.fetch(`/tasks/${taskId}`, { method: 'DELETE' }); }
   async toggleTask(taskId: string) { return (await this.fetch(`/tasks/${taskId}/toggle`, { method: 'PATCH' })).json(); }
+
+  // ── Scheduled Messages ──
+  async scheduleMessage(channelId: string, data: { content_ciphertext: string; mls_epoch?: number; send_at: string }) {
+    const r = await this.fetch(`/channels/${channelId}/schedule`, { method: 'POST', body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to schedule message' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+    return r.json();
+  }
+  async listScheduledMessages(channelId: string) { try { const r = await this.fetch(`/channels/${channelId}/scheduled`); return r.ok ? r.json() : []; } catch { return []; } }
+  async cancelScheduledMessage(id: string) {
+    const r = await this.fetch(`/scheduled/${id}`, { method: 'DELETE' });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to cancel' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); }
+  }
 
   // ── Streaming ──
   async startStream(channelId: string, title?: string, quality?: string) { try { const r = await this.fetch(`/channels/${channelId}/stream/start`, { method: 'POST', body: JSON.stringify({ title, quality: quality || '1080p' }) }); return r.ok ? r.json() : null; } catch { return null; } }

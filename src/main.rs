@@ -95,6 +95,7 @@ use discreet_server::discreet_qr_handlers;
 use discreet_server::discreet_saml;
 use discreet_server::discreet_platform_settings;
 use discreet_server::discreet_waitlist;
+use discreet_server::discreet_webhook_handlers;
 use discreet_server::discreet_websocket;
 use discreet_server::discreet_ack_handlers;
 use discreet_server::discreet_billing_handlers;
@@ -102,6 +103,7 @@ use discreet_server::discreet_bookmark_handlers;
 use discreet_server::discreet_channel_category_handlers;
 use discreet_server::discreet_playbook_handlers;
 use discreet_server::discreet_report_handlers;
+use discreet_server::discreet_schedule_handlers;
 use discreet_server::discreet_scheduled_task_handlers;
 
 /// Middleware: lockdown + maintenance mode gate.
@@ -551,6 +553,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(discreet_server::discreet_task_executor::task_executor_loop(db, st));
     }
 
+    // Background task: deliver scheduled messages every 30 seconds.
+    {
+        let db = state.db.clone();
+        tokio::spawn(discreet_schedule_handlers::run_schedule_worker(db));
+    }
+
     // Build the versioned API sub-router.
     // ALL routes registered on a single Router to avoid Axum merge() conflicts
     // with overlapping path prefixes (e.g. /servers/:id + /servers/:id/channels).
@@ -692,6 +700,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/messages/:id", axum::routing::patch(discreet_message_handlers::edit_message).delete(discreet_message_handlers::delete_message))
         .route("/messages/:id/ack", axum::routing::post(discreet_ack_handlers::ack_message))
         .route("/messages/:id/acks", axum::routing::get(discreet_ack_handlers::get_acks))
+        // ── Scheduled Messages ──
+        .route("/channels/:channel_id/schedule", axum::routing::post(discreet_schedule_handlers::create_scheduled_message))
+        .route("/channels/:channel_id/scheduled", axum::routing::get(discreet_schedule_handlers::list_scheduled_messages))
+        .route("/scheduled/:id", axum::routing::delete(discreet_schedule_handlers::cancel_scheduled_message))
         // ── Pins ──
         .route("/servers/:server_id/channels/:channel_id/pins/:message_id", axum::routing::post(discreet_pin_handlers::pin_message).delete(discreet_pin_handlers::unpin_message))
         .route("/servers/:server_id/channels/:channel_id/pins", axum::routing::get(discreet_pin_handlers::list_pinned_messages))
@@ -719,6 +731,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ── Bans ──
         .route("/servers/:server_id/bans", axum::routing::post(discreet_ban_handlers::ban_member).get(discreet_ban_handlers::list_bans))
         .route("/servers/:server_id/bans/:user_id", axum::routing::delete(discreet_ban_handlers::unban_member))
+        // ── Webhooks ──
+        .route("/servers/:server_id/webhooks", axum::routing::post(discreet_webhook_handlers::create_webhook).get(discreet_webhook_handlers::list_webhooks))
+        .route("/webhooks/:webhook_id", axum::routing::put(discreet_webhook_handlers::update_webhook).delete(discreet_webhook_handlers::delete_webhook))
         // ── Agents ──
         .route("/agents/search", axum::routing::post(discreet_agent_handlers::search_or_spawn))
         .route("/agents/spawn/:id/status", axum::routing::get(discreet_agent_handlers::get_spawn_status))

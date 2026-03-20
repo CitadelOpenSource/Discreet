@@ -1,10 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -15,6 +15,9 @@ use crate::discreet_state::AppState;
 
 const MAX_PINS_PER_CHANNEL: i64 = 50;
 
+/// Allowed pin categories.
+const VALID_CATEGORIES: &[&str] = &["important", "action_required", "reference"];
+
 #[derive(Debug, Serialize)]
 pub struct PinnedMessageInfo {
     pub id: Uuid,
@@ -23,6 +26,17 @@ pub struct PinnedMessageInfo {
     pub created_at: String,
     pub pinned_by: Uuid,
     pub pinned_at: String,
+    pub category: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PinQuery {
+    #[serde(default = "default_category")]
+    pub category: String,
+}
+
+fn default_category() -> String {
+    "important".to_string()
 }
 
 async fn verify_channel_in_server(
@@ -50,9 +64,18 @@ pub async fn pin_message(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path((server_id, channel_id, message_id)): Path<(Uuid, Uuid, Uuid)>,
+    Query(query): Query<PinQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     verify_channel_in_server(&state.db, server_id, channel_id).await?;
     require_permission(&state, server_id, auth.user_id, PERM_MANAGE_MESSAGES).await?;
+
+    // Validate category.
+    let category = query.category.to_lowercase();
+    if !VALID_CATEGORIES.contains(&category.as_str()) {
+        return Err(AppError::BadRequest(
+            "Invalid category. Must be one of: important, action_required, reference".into(),
+        ));
+    }
 
     let message_exists = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1 AND channel_id = $2 AND NOT deleted)",
@@ -82,19 +105,18 @@ pub async fn pin_message(
     }
 
     let result = sqlx::query!(
-        "INSERT INTO pinned_messages (channel_id, message_id, pinned_by)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (channel_id, message_id) DO NOTHING",
+        "INSERT INTO pinned_messages (channel_id, message_id, pinned_by, category)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (channel_id, message_id) DO UPDATE SET category = $4",
         channel_id,
         message_id,
         auth.user_id,
+        category,
     )
     .execute(&state.db)
     .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(AppError::Conflict("Message is already pinned".into()));
-    }
+    let action = if result.rows_affected() > 0 { "pinned" } else { "updated" };
 
     state
         .ws_broadcast(
@@ -104,9 +126,12 @@ pub async fn pin_message(
                 "channel_id": channel_id,
                 "message_id": message_id,
                 "pinned_by": auth.user_id,
+                "category": category,
             }),
         )
         .await;
+
+    tracing::debug!(message_id = %message_id, category = %category, "{action}");
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -155,7 +180,8 @@ pub async fn list_pinned_messages(
     require_permission(&state, server_id, auth.user_id, PERM_VIEW_CHANNEL).await?;
 
     let rows = sqlx::query!(
-        "SELECT m.id, m.content_ciphertext, m.author_id, m.created_at, p.pinned_by, p.pinned_at
+        "SELECT m.id, m.content_ciphertext, m.author_id, m.created_at, \
+                p.pinned_by, p.pinned_at, p.category
          FROM pinned_messages p
          JOIN messages m ON m.id = p.message_id
          WHERE p.channel_id = $1
@@ -175,6 +201,7 @@ pub async fn list_pinned_messages(
             created_at: r.created_at.to_rfc3339(),
             pinned_by: r.pinned_by,
             pinned_at: r.pinned_at.to_rfc3339(),
+            category: r.category,
         })
         .collect();
 
