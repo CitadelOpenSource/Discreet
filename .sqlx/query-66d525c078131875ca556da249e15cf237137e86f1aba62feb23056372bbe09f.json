@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO group_dm_messages (group_dm_id, sender_id, content_ciphertext, is_imported, created_at) VALUES ($1, $2, $3, TRUE, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "66d525c078131875ca556da249e15cf237137e86f1aba62feb23056372bbe09f"
+}

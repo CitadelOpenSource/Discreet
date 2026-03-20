@@ -78,6 +78,10 @@ openmls_rust_crypto = { version = "0.5.1", optional = true }
 # ── Archive export ────────────────────────────────────────
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
+# ── Message import ───────────────────────────────────────
+rusqlite = { version = "0.32", features = ["bundled"] }  # iMessage chat.db SQLite reader
+quick-xml = "0.36"                                        # Android SMS Backup & Restore XML parser
+
 # ── PDF generation ────────────────────────────────────────
 printpdf = "0.7"
 

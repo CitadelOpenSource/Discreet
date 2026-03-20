@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { T, ta } from '../../theme';
 import * as I from '../../icons';
 import { api } from '../../api/CitadelAPI';
@@ -92,6 +92,12 @@ export default function SettingsAccount({
     {/* Data Export */}
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Data Export</div>
     <ExportDataButton />
+
+    {/* Import Messages */}
+    <div style={{ display: sectionVisible('import-messages') ? undefined : 'none' }}>
+    <div data-section="import-messages" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12, marginTop: 20 }}>Import Messages</div>
+    <ImportMessages />
+    </div>
 
     <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,71,87,0.04)', borderRadius: 10, border: '1px solid rgba(255,71,87,0.15)' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.err, textTransform: 'uppercase', marginBottom: 14 }}>Danger Zone</div>
@@ -377,6 +383,266 @@ function ExportDataButton() {
           <button onClick={() => setState('idle')} style={{ marginLeft: 8, fontSize: 10, color: T.mt, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Dismiss</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Import Messages ─────────────────────────────────────────────────────
+
+const IMPORT_SOURCES = [
+  {
+    id: 'signal' as const,
+    label: 'Signal',
+    icon: '🔒',
+    color: '#3A76F0',
+    accept: '.zip',
+    instructions: [
+      'Open Signal Desktop',
+      'Go to File → Export messages',
+      'Choose a location and save the .zip file',
+      'Upload the exported .zip below',
+    ],
+  },
+  {
+    id: 'whatsapp' as const,
+    label: 'WhatsApp',
+    icon: '💬',
+    color: '#25D366',
+    accept: '.zip',
+    instructions: [
+      'Open WhatsApp on your phone',
+      'Go to Settings → Chats → Export Chat',
+      'Select each conversation to export',
+      'Choose "Without Media" or "Include Media"',
+      'Send/save the .zip file to your computer',
+      'Upload the .zip below',
+    ],
+  },
+  {
+    id: 'imessage' as const,
+    label: 'iMessage',
+    icon: '🍎',
+    color: '#007AFF',
+    accept: '.db',
+    instructions: [
+      'On your Mac, open Finder',
+      'Press Cmd+Shift+G and go to: ~/Library/Messages/',
+      'Copy the chat.db file to your desktop',
+      'Upload the chat.db file below',
+    ],
+  },
+  {
+    id: 'android_sms' as const,
+    label: 'Android SMS',
+    icon: '📱',
+    color: '#A4C639',
+    accept: '.xml',
+    instructions: [
+      'Install "SMS Backup & Restore" from the Play Store',
+      'Open the app and tap "Back Up Now"',
+      'Transfer the .xml backup file to your computer',
+      'Upload the .xml file below',
+    ],
+  },
+] as const;
+
+type ImportSource = typeof IMPORT_SOURCES[number]['id'];
+type JobState = { status: string; total_messages: number; imported_count: number; error_message: string | null };
+
+function ImportMessages() {
+  const [expanded, setExpanded] = useState<ImportSource | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [job, setJob] = useState<JobState | null>(null);
+  const [error, setError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
+  const startPolling = useCallback((id: string) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const data = await api.getImportJob(id);
+        setJob(data);
+        if (data.status === 'completed' || data.status === 'failed') {
+          stopPolling();
+        }
+      } catch {
+        stopPolling();
+      }
+    }, 2000);
+  }, [stopPolling]);
+
+  const handleUpload = async (source: ImportSource, file: File) => {
+    setError('');
+    setJob(null);
+    setUploading(true);
+    try {
+      const { id } = await api.createImportJob(source, file);
+      setJobId(id);
+      setJob({ status: 'pending', total_messages: 0, imported_count: 0, error_message: null });
+      startPolling(id);
+    } catch (e: any) {
+      setError(e?.message || 'Import failed');
+    }
+    setUploading(false);
+  };
+
+  const handleFile = (source: ImportSource, file: File | undefined) => {
+    if (!file) return;
+    const src = IMPORT_SOURCES.find(s => s.id === source);
+    if (src && !file.name.toLowerCase().endsWith(src.accept)) {
+      setError(`Please select a ${src.accept} file for ${src.label} import`);
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setError('File size exceeds 100 MB limit');
+      return;
+    }
+    handleUpload(source, file);
+  };
+
+  const retry = () => {
+    setJobId(null);
+    setJob(null);
+    setError('');
+  };
+
+  const pct = job && job.total_messages > 0
+    ? Math.min(100, Math.round((job.imported_count / job.total_messages) * 100))
+    : 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {IMPORT_SOURCES.map(src => {
+        const isExpanded = expanded === src.id;
+        const isActive = isExpanded && (uploading || (job && job.status !== 'completed' && job.status !== 'failed'));
+        return (
+          <div key={src.id} style={{ background: T.sf2, borderRadius: 8, border: `1px solid ${isExpanded ? ta(src.color, '66') : T.bd}`, overflow: 'hidden', transition: 'border-color 0.2s' }}>
+            {/* Source card header */}
+            <div
+              onClick={() => { if (!isActive) { setExpanded(isExpanded ? null : src.id); setError(''); setJob(null); setJobId(null); } }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: isActive ? 'default' : 'pointer', userSelect: 'none' }}
+              aria-label={`Import from ${src.label}`}
+            >
+              <span style={{ fontSize: 20, lineHeight: 1 }}>{src.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{src.label}</div>
+                <div style={{ fontSize: 11, color: T.mt }}>Import chat history from {src.label}</div>
+              </div>
+              <span style={{ fontSize: 10, color: T.mt, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+            </div>
+
+            {/* Expanded panel */}
+            {isExpanded && (
+              <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${T.bd}` }}>
+                {/* Instructions */}
+                <div style={{ margin: '12px 0', padding: '10px 12px', background: T.bg, borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>How to export from {src.label}</div>
+                  <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: T.tx, lineHeight: 1.8 }}>
+                    {src.instructions.map((step, i) => <li key={i}>{step}</li>)}
+                  </ol>
+                </div>
+
+                {/* Upload / Progress / Result */}
+                {!jobId ? (
+                  <>
+                    {/* Dropzone */}
+                    <div
+                      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(src.id, e.dataTransfer.files[0]); }}
+                      onClick={() => fileRef.current?.click()}
+                      style={{
+                        padding: '20px 14px', textAlign: 'center', borderRadius: 8, cursor: uploading ? 'wait' : 'pointer',
+                        border: `2px dashed ${dragOver ? src.color : T.bd}`,
+                        background: dragOver ? ta(src.color, '0a') : T.bg,
+                        transition: 'border-color 0.2s, background 0.2s',
+                        opacity: uploading ? 0.6 : 1,
+                      }}
+                      aria-label={`Upload ${src.accept} file`}
+                    >
+                      <I.Download />
+                      <div style={{ fontSize: 12, color: T.tx, marginTop: 6, fontWeight: 600 }}>
+                        {uploading ? 'Uploading...' : `Drop ${src.accept} file here or click to browse`}
+                      </div>
+                      <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Maximum 100 MB</div>
+                    </div>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept={src.accept}
+                      style={{ display: 'none' }}
+                      onChange={e => { handleFile(src.id, e.target.files?.[0]); if (fileRef.current) fileRef.current.value = ''; }}
+                      aria-label={`Select ${src.accept} file`}
+                    />
+                  </>
+                ) : job?.status === 'completed' ? (
+                  /* Success */
+                  <div style={{ padding: 14, background: ta(T.ok, '0a'), borderRadius: 8, border: `1px solid ${ta(T.ok, '33')}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 4 }}>Import Complete</div>
+                    <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.6 }}>
+                      Successfully imported <strong>{job.imported_count.toLocaleString()}</strong> of{' '}
+                      <strong>{job.total_messages.toLocaleString()}</strong> messages.
+                    </div>
+                    <button onClick={retry} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                      Import Another
+                    </button>
+                  </div>
+                ) : job?.status === 'failed' ? (
+                  /* Failure */
+                  <div style={{ padding: 14, background: 'rgba(255,71,87,0.06)', borderRadius: 8, border: '1px solid rgba(255,71,87,0.2)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.err, marginBottom: 4 }}>Import Failed</div>
+                    <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.6 }}>{job.error_message || 'An unexpected error occurred.'}</div>
+                    <button onClick={retry} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 6, border: 'none', background: T.err, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                      Retry
+                    </button>
+                  </div>
+                ) : (
+                  /* Progress */
+                  <div style={{ padding: 14, background: T.bg, borderRadius: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>
+                        {job?.status === 'processing' ? 'Importing...' : 'Starting...'}
+                      </span>
+                      <span style={{ fontSize: 11, color: T.mt }}>
+                        {job && job.total_messages > 0
+                          ? `${job.imported_count.toLocaleString()} / ${job.total_messages.toLocaleString()}`
+                          : 'Preparing...'}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{ height: 6, background: T.sf2, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', borderRadius: 3, transition: 'width 0.3s ease',
+                        width: `${pct}%`,
+                        background: `linear-gradient(90deg, ${src.color}, ${T.ac})`,
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: T.mt, marginTop: 6, textAlign: 'center' }}>
+                      {pct}% — polling every 2 seconds
+                    </div>
+                  </div>
+                )}
+
+                {/* Error banner */}
+                {error && !jobId && (
+                  <div style={{ fontSize: 11, color: T.err, marginTop: 8, padding: '6px 10px', background: 'rgba(255,71,87,0.06)', borderRadius: 4 }}>
+                    {error}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

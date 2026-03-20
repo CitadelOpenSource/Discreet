@@ -1354,6 +1354,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { tab: 'account',    section: 'change-email',    label: 'Email Address',        desc: 'Change or verify your email address',                   keywords: ['email', 'change email', 'verify'] },
     { tab: 'account',    section: 'security',        label: 'Security',             desc: 'Password, two-factor authentication, recovery key',     keywords: ['password', 'change password', 'two factor', '2fa', 'mfa', 'totp', 'authentication', 'two-factor', 'multi-factor', 'recovery'] },
     { tab: 'account',    section: 'active-devices',  label: 'Active Devices',       desc: 'Manage sessions and sign out other devices',            keywords: ['sessions', 'devices', 'logout', 'sign out', 'active', 'revoke'] },
+    { tab: 'account',    section: 'import-messages', label: 'Import Messages',      desc: 'Import chat history from Signal, WhatsApp, iMessage, Android SMS', keywords: ['import', 'signal', 'whatsapp', 'imessage', 'sms', 'android', 'migrate', 'transfer', 'chat history', 'messages', 'backup'] },
     { tab: 'notifications', section: 'notifications', label: 'Notifications',       desc: 'Sound customization, desktop alerts, DND schedule, quiet hours', keywords: ['notification', 'notifications', 'sound', 'alert', 'mention', 'badge', 'desktop', 'browser', 'push', 'mute', 'muted', 'do not disturb', 'dnd', 'quiet hours', 'schedule', 'moon', 'chime', 'pop', 'bell', 'ringtone', 'tone'] },
     { tab: 'accessibility', section: 'accessibility', label: 'Accessibility',       desc: 'Motion, contrast, dyslexia font, zoom, saturation',    keywords: ['accessibility', 'reduce motion', 'high contrast', 'dyslexia', 'font', 'zoom', 'saturation', 'screen reader', 'a11y'] },
     { tab: 'keybinds',   section: 'keybinds',        label: 'Keybinds',            desc: 'Keyboard shortcuts, quick switcher, mute/deafen, emoji', keywords: ['keybinds', 'keyboard', 'shortcuts', 'hotkeys', 'push to talk', 'mute', 'deafen', 'keybinding', 'ctrl+k', 'quick switcher', 'emoji picker', 'ctrl+e'] },
@@ -1379,6 +1380,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     'status': ['online status', 'custom status', 'status'],
     'avatar': ['avatar', 'picture', 'profile'], 'profile pic': ['avatar', 'profile'],
     'delete': ['delete account', 'danger zone'], 'logout': ['logout', 'sign out'],
+    'import': ['import', 'signal', 'whatsapp', 'imessage', 'sms', 'migrate'], 'migrate': ['import', 'migrate', 'transfer'],
   }), []);
 
   const searchMatches = useMemo(() => {

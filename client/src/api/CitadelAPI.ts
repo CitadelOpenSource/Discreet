@@ -478,6 +478,25 @@ export class CitadelAPI {
     return this.fetch('/users/@me', { method: 'DELETE', headers });
   }
 
+  // ── Import ──
+  async createImportJob(source: string, file: File): Promise<{ id: string }> {
+    const form = new FormData();
+    form.append('source', source);
+    form.append('file', file);
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const csrf = this.getCsrfToken();
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+    const r = await fetch(`${API_BASE}/users/@me/import`, { method: 'POST', headers, body: form, credentials: 'same-origin' });
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Import failed' } })); throw new Error(e.error?.message || e.error || `Import failed (${r.status})`); }
+    return r.json();
+  }
+  async getImportJob(id: string) {
+    const r = await this.fetch(`/users/@me/import/${id}`);
+    if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Status check failed' } })); throw new Error(e.error?.message || e.error || `Status check failed (${r.status})`); }
+    return r.json();
+  }
+
   // ── Bots ──
   async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async updateBotConfig(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
