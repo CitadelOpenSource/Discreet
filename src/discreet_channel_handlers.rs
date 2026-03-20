@@ -532,6 +532,106 @@ pub async fn delete_channel(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ─── POST /channels/:channel_id/archive ──────────────────────────────────
+
+/// Archive a channel. Archived channels are read-only and visually greyed
+/// in the sidebar. Requires MANAGE_CHANNELS permission.
+pub async fn archive_channel(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let channel = sqlx::query!(
+        "SELECT server_id, is_archived FROM channels WHERE id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    require_permission(&state, channel.server_id, auth.user_id, PERM_MANAGE_CHANNELS).await?;
+
+    if channel.is_archived {
+        return Err(AppError::BadRequest("Channel is already archived".into()));
+    }
+
+    sqlx::query!(
+        "UPDATE channels SET is_archived = TRUE, archived_at = NOW(), updated_at = NOW() WHERE id = $1",
+        channel_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    state
+        .ws_broadcast(
+            channel.server_id,
+            serde_json::json!({
+                "type": "channel_update",
+                "channel_id": channel_id,
+                "is_archived": true,
+            }),
+        )
+        .await;
+
+    tracing::info!(
+        channel_id = %channel_id,
+        user_id = %auth.user_id,
+        "Channel archived"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── POST /channels/:channel_id/unarchive ────────────────────────────────
+
+/// Unarchive a channel. Restores normal read-write access.
+/// Requires MANAGE_CHANNELS permission.
+pub async fn unarchive_channel(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let channel = sqlx::query!(
+        "SELECT server_id, is_archived FROM channels WHERE id = $1",
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    require_permission(&state, channel.server_id, auth.user_id, PERM_MANAGE_CHANNELS).await?;
+
+    if !channel.is_archived {
+        return Err(AppError::BadRequest("Channel is not archived".into()));
+    }
+
+    sqlx::query!(
+        "UPDATE channels SET is_archived = FALSE, archived_at = NULL, updated_at = NOW() WHERE id = $1",
+        channel_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    state
+        .ws_broadcast(
+            channel.server_id,
+            serde_json::json!({
+                "type": "channel_update",
+                "channel_id": channel_id,
+                "is_archived": false,
+            }),
+        )
+        .await;
+
+    tracing::info!(
+        channel_id = %channel_id,
+        user_id = %auth.user_id,
+        "Channel unarchived"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 /// Normalize a channel name: lowercase, replace spaces with hyphens, strip non-alphanumeric.

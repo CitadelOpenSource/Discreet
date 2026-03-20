@@ -25,6 +25,7 @@ export interface Channel {
   message_ttl_seconds?: number;
   min_role_position?: number;
   read_only?: boolean;
+  is_archived?: boolean;
 }
 
 export interface CategoryData {
@@ -97,6 +98,7 @@ export interface ChannelSidebarProps {
 // ─── Helpers ──────────────────────────────────────────────
 
 function chIcon(ch: Channel) {
+  if (ch.is_archived)                     return <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.5 }}>📦</span>;
   if (ch.channel_type === 'voice')        return <I.Vol />;
   if (ch.channel_type === 'forum')        return <I.Msg />;
   if (ch.channel_type === 'announcement') return <span style={{ fontSize: 14, lineHeight: 1 }}>📢</span>;
@@ -476,8 +478,13 @@ export function ChannelSidebar({
     onMoveUserToVoice,
   });
 
+  // ── Split archived from active channels ──
+  const activeChannels = channels.filter(c => !c.is_archived);
+  const archivedChannels = channels.filter(c => c.is_archived).filter(canSeeChannel);
+  const [showArchived, setShowArchived] = useState(false);
+
   // ── Uncategorized channel buckets ──
-  const uncatChannels = channels.filter(c => !c.category_id).filter(canSeeChannel);
+  const uncatChannels = activeChannels.filter(c => !c.category_id).filter(canSeeChannel);
   const uncatText         = uncatChannels.filter(c => c.channel_type === 'text'         && !c.nsfw);
   const uncatAnnouncement = uncatChannels.filter(c => c.channel_type === 'announcement' && !c.nsfw);
   const uncatForum        = uncatChannels.filter(c => c.channel_type === 'forum'        && !c.nsfw);
@@ -562,7 +569,7 @@ export function ChannelSidebar({
       {catData.map(cat => {
         const cid   = cat.category?.id   || cat.id   || '';
         const cname = cat.category?.name || cat.name || 'Category';
-        const chs   = (cat.channels || []).filter(canSeeChannel);
+        const chs   = (cat.channels || []).filter(canSeeChannel).filter(c => !c.is_archived);
 
         return (
           <div key={cid}>
@@ -588,6 +595,30 @@ export function ChannelSidebar({
           </div>
         );
       })}
+
+      {/* ── Archived channels ── */}
+      {archivedChannels.length > 0 && (
+        <div>
+          <div
+            onClick={() => setShowArchived(p => !p)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '8px 6px 4px', cursor: 'pointer',
+              fontSize: 11, fontWeight: 700, color: T.mt,
+              textTransform: 'uppercase', letterSpacing: '0.5px', borderRadius: 4,
+              opacity: 0.6,
+            }}
+          >
+            {showArchived ? <I.ChevD /> : <I.ChevR />}
+            📦 Archived ({archivedChannels.length})
+          </div>
+          {showArchived && archivedChannels.map(ch => (
+            <div key={ch.id} style={{ opacity: 0.45 }}>
+              <ChannelRow {...rowProps(ch)} indent={false} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -693,6 +693,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/servers/:server_id/channels", axum::routing::post(discreet_channel_handlers::create_channel).get(discreet_channel_handlers::list_channels))
         .route("/channels/:channel_id", axum::routing::get(discreet_channel_handlers::get_channel).patch(discreet_channel_handlers::update_channel).delete(discreet_channel_handlers::delete_channel))
         .route("/channels/:channel_id/ttl", axum::routing::put(discreet_disappearing_handlers::set_channel_ttl))
+        .route("/channels/:channel_id/archive", axum::routing::post(discreet_channel_handlers::archive_channel))
+        .route("/channels/:channel_id/unarchive", axum::routing::post(discreet_channel_handlers::unarchive_channel))
         .route("/channels/:channel_id/export", axum::routing::get(discreet_export_handlers::export_channel_zip))
         // ── Messages ──
         .route("/channels/:channel_id/messages", axum::routing::post(discreet_message_handlers::send_message).get(discreet_message_handlers::get_messages))

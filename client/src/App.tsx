@@ -3101,7 +3101,7 @@ export default function App() {
               }
             }}
             channelName={curChannel.name}
-            disabled={!!curChannel.read_only && !hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR)}
+            disabled={!!curChannel.is_archived || (!!curChannel.read_only && !hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR))}
             isEditing={!!editMsg}
             replyTo={replyTo}
             editMsg={editMsg}

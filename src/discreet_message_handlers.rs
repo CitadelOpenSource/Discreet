@@ -141,6 +141,7 @@ pub async fn send_message(
     // Look up channel to get server_id and nsfw flag, then verify membership.
     let channel = sqlx::query!(
         "SELECT c.server_id, c.nsfw, c.disappearing_messages, c.read_only,
+                c.is_archived AS channel_archived,
                 s.disappearing_messages_default, s.is_archived
          FROM channels c
          JOIN servers s ON s.id = c.server_id
@@ -155,6 +156,13 @@ pub async fn send_message(
     if channel.is_archived {
         return Err(AppError::Forbidden(
             "This server is archived and read-only. No new messages can be sent.".into(),
+        ));
+    }
+
+    // Archived channels are read-only.
+    if channel.channel_archived {
+        return Err(AppError::Forbidden(
+            "This channel is archived and read-only.".into(),
         ));
     }
 
