@@ -94,6 +94,14 @@ pub async fn upload_file_blob(
         return Err(AppError::BadRequest("File blob cannot be empty".into()));
     }
 
+    // Anonymous users: 5 MB upload limit.
+    const ANONYMOUS_MAX_UPLOAD: usize = 5 * 1024 * 1024;
+    if auth.account_tier == "anonymous" && blob_bytes.len() > ANONYMOUS_MAX_UPLOAD {
+        return Err(AppError::PayloadTooLarge(
+            "Verified accounts can upload files up to 25MB. Anonymous accounts: 5MB limit.".into(),
+        ));
+    }
+
     // Hard limit from config (MAX_UPLOAD_BYTES env, default 25 MB).
     if blob_bytes.len() > state.config.max_upload_bytes {
         return Err(AppError::PayloadTooLarge(format!(

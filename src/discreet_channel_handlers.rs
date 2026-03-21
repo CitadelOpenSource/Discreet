@@ -98,6 +98,7 @@ pub async fn create_channel(
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     crate::discreet_premium::require_verified(&auth)?;
+    crate::discreet_premium::require_not_anonymous(&auth)?;
     // MANAGE_CHANNELS required.
     require_permission(&state, server_id, auth.user_id, PERM_MANAGE_CHANNELS).await?;
 

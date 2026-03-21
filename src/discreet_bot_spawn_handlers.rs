@@ -745,6 +745,8 @@ pub async fn prompt_bot(
         }
     }
 
+    crate::discreet_premium::require_not_anonymous(&auth)?;
+
     // ── Per-server AI disable check ──────────────────────────────────────────
     let server_ai_disabled = sqlx::query_scalar!(
         "SELECT ai_disabled FROM servers WHERE id = $1",

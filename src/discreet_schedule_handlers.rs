@@ -56,6 +56,7 @@ pub async fn create_scheduled_message(
     Json(req): Json<ScheduleMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     crate::discreet_premium::require_verified(&auth)?;
+    crate::discreet_premium::require_not_anonymous(&auth)?;
 
     // ── Verify channel exists and user has send permission ───────────────
     let channel = sqlx::query!(

@@ -109,6 +109,7 @@ pub async fn search_or_spawn(
     }
 
     // Require permission to use AI agents within this server.
+    crate::discreet_premium::require_not_anonymous(&auth)?;
     require_permission(&state, req.server_id, auth.user_id, PERM_USE_AGENTS).await?;
 
     // Search existing agent channels (full-text on topic + display name).

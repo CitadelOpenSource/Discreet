@@ -323,6 +323,58 @@ pub async fn assign_role(
         }
     }
 
+    // Block anonymous users from receiving moderation/admin roles.
+    let target_tier = sqlx::query_scalar!(
+        "SELECT account_tier FROM users WHERE id = $1",
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or_else(|| "unverified".to_string());
+
+    if target_tier == "anonymous" {
+        let role_perms = sqlx::query_scalar!(
+            "SELECT permissions FROM roles WHERE id = $1",
+            role_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .unwrap_or(0);
+
+        if role_perms & crate::discreet_premium::ANONYMOUS_BLOCKED_PERMS != 0 {
+            let role_name = sqlx::query_scalar!(
+                "SELECT name FROM roles WHERE id = $1",
+                role_id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .unwrap_or_else(|| "unknown".to_string());
+
+            // Notify the assigner via WebSocket.
+            let target_username = sqlx::query_scalar!(
+                "SELECT username FROM users WHERE id = $1",
+                user_id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .unwrap_or_else(|| "unknown".to_string());
+
+            state.ws_broadcast(server_id, serde_json::json!({
+                "type": "anonymous_role_warning",
+                "username": target_username,
+                "role_name": role_name,
+                "message": "This user has an anonymous account and cannot receive moderation or administrative privileges.",
+            })).await;
+
+            return Err(AppError::Forbidden(
+                serde_json::json!({
+                    "code": "ANONYMOUS_ESCALATION_BLOCKED",
+                    "message": "This user has an anonymous account and cannot receive moderation or administrative privileges. They must verify their email to be eligible.",
+                }).to_string(),
+            ));
+        }
+    }
+
     // Upsert (ignore if already assigned).
     sqlx::query!(
         "INSERT INTO member_roles (server_id, user_id, role_id)

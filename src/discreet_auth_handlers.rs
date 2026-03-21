@@ -2146,12 +2146,18 @@ fn validate_password(password: &str) -> Result<(), AppError> {
 #[derive(Debug, Deserialize)]
 pub struct RegisterAnonymousRequest {
     pub username: String,
+    /// Client-side screen fingerprint hash (SHA-256 of dimensions+tz+platform).
+    pub fingerprint_hash: Option<String>,
+    /// Cloudflare Turnstile response token for human verification.
+    pub turnstile_token: Option<String>,
 }
 
 /// POST /auth/register-anonymous — Create an account using a BIP-39 seed phrase.
 ///
 /// Returns the 12-word recovery phrase ONCE. The server stores only the
 /// Argon2id hash — the plaintext phrase is never persisted.
+/// Collects IP addresses (including Cloudflare headers), user agent,
+/// and fingerprint for abuse prevention and law enforcement compliance.
 pub async fn register_anonymous(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -2160,6 +2166,45 @@ pub async fn register_anonymous(
     let platform = crate::discreet_platform_settings::get_platform_settings(&state).await?;
     if !platform.registrations_enabled {
         return Err(AppError::ServiceUnavailable("Registration is currently disabled.".into()));
+    }
+
+    // ── Extract IP addresses from headers ────────────────────────────────
+    let hdr = |name: &str| -> Option<String> {
+        headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
+    };
+    let cf_connecting_ip = hdr("cf-connecting-ip");
+    let forwarded_for = hdr("x-forwarded-for");
+    let cf_ipcountry = hdr("cf-ipcountry");
+    let user_agent = hdr("user-agent").unwrap_or_else(|| "unknown".to_string());
+    let accept_language = hdr("accept-language");
+
+    // Best IP: prefer Cloudflare real IP, then X-Forwarded-For first hop.
+    let registration_ip = cf_connecting_ip.clone()
+        .or_else(|| forwarded_for.as_ref().map(|f| f.split(',').next().unwrap_or("unknown").trim().to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // ── Cloudflare Turnstile verification ────────────────────────────────
+    if let Ok(secret) = std::env::var("TURNSTILE_SECRET_KEY") {
+        let token = req.turnstile_token.as_deref().unwrap_or("");
+        if token.is_empty() {
+            return Err(AppError::BadRequest("Human verification required. Please complete the challenge.".into()));
+        }
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| AppError::Internal(format!("HTTP client error: {e}")))?;
+        let resp = client
+            .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+            .form(&[("secret", secret.as_str()), ("response", token), ("remoteip", registration_ip.as_str())])
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Turnstile verification failed: {e}")))?;
+        let body: serde_json::Value = resp.json().await
+            .map_err(|e| AppError::Internal(format!("Turnstile response parse error: {e}")))?;
+        if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            tracing::warn!(ip = %registration_ip, "Turnstile verification failed for anonymous registration");
+            return Err(AppError::BadRequest("Human verification failed. Please try again.".into()));
+        }
     }
 
     validate_username(&req.username)?;
@@ -2189,22 +2234,37 @@ pub async fn register_anonymous(
     // Create user with anonymous tier.
     let user_id = Uuid::new_v4();
     sqlx::query!(
-        "INSERT INTO users (id, username, display_name, password_hash, account_tier, email_verified)
-         VALUES ($1, $2, $2, $3, 'anonymous', FALSE)",
+        "INSERT INTO users (id, username, display_name, password_hash, account_tier, email_verified, last_login_ip)
+         VALUES ($1, $2, $2, $3, 'anonymous', FALSE, $4)",
         user_id,
         req.username,
         phrase_hash,
+        registration_ip,
     )
     .execute(&state.db)
     .await?;
 
+    // ── Log detailed registration event ──────────────────────────────────
+    let _ = sqlx::query!(
+        "INSERT INTO anonymous_registrations \
+             (user_id, registration_ip, forwarded_for, cf_connecting_ip, cf_ipcountry, \
+              user_agent, accept_language, screen_fingerprint_hash, turnstile_token) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        user_id,
+        registration_ip,
+        forwarded_for,
+        cf_connecting_ip,
+        cf_ipcountry,
+        user_agent,
+        accept_language,
+        req.fingerprint_hash,
+        req.turnstile_token,
+    )
+    .execute(&state.db)
+    .await;
+
     // IP rate limit logging.
-    let ip = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    let _ = sqlx::query!("INSERT INTO registrations_log (ip_address) VALUES ($1)", ip)
+    let _ = sqlx::query!("INSERT INTO registrations_log (ip_address) VALUES ($1)", registration_ip)
         .execute(&state.db)
         .await;
 
@@ -2212,7 +2272,13 @@ pub async fn register_anonymous(
     let (access_token, refresh_token, _) =
         create_session(&state, user_id, Some("anonymous")).await?;
 
-    tracing::info!(user_id = %user_id, username = %req.username, "Anonymous user registered");
+    tracing::info!(
+        user_id = %user_id,
+        username = %req.username,
+        ip = %registration_ip,
+        country = cf_ipcountry.as_deref().unwrap_or("??"),
+        "Anonymous user registered"
+    );
 
     Ok((
         StatusCode::CREATED,
@@ -2236,6 +2302,7 @@ pub struct LoginAnonymousRequest {
 /// POST /auth/login-anonymous — Authenticate with username + recovery phrase.
 pub async fn login_anonymous(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<LoginAnonymousRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // Rate limit: 5 per minute per username.
@@ -2273,10 +2340,22 @@ pub async fn login_anonymous(
         return Err(AppError::Unauthorized("Invalid username or recovery phrase".into()));
     }
 
+    // Update last_login_ip for anonymous users.
+    let login_ip = headers.get("cf-connecting-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let _ = sqlx::query!(
+        "UPDATE users SET last_login_ip = $1 WHERE id = $2",
+        login_ip,
+        user.id,
+    ).execute(&state.db).await;
+
     let (access_token, refresh_token, _) =
         create_session(&state, user.id, Some("anonymous")).await?;
 
-    tracing::info!(user_id = %user.id, "Anonymous user logged in");
+    tracing::info!(user_id = %user.id, ip = %login_ip, "Anonymous user logged in");
 
     Ok(Json(serde_json::json!({
         "access_token": access_token,

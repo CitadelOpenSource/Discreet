@@ -59,6 +59,35 @@ pub fn require_pro(auth: &AuthUser) -> Result<(), AppError> {
     require_tier(auth, "pro")
 }
 
+/// Require a non-anonymous account. Anonymous users must add an email
+/// to upgrade before accessing restricted features.
+pub fn require_not_anonymous(auth: &AuthUser) -> Result<(), AppError> {
+    if auth.account_tier == "anonymous" {
+        return Err(AppError::Forbidden(
+            "This feature requires a verified account. Add an email to upgrade.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Permission bits that anonymous users cannot hold via role assignment.
+/// These represent moderation and administrative capabilities.
+pub const ANONYMOUS_BLOCKED_PERMS: i64 =
+    crate::discreet_permissions::Permission::KICK_MEMBERS
+    | crate::discreet_permissions::Permission::BAN_MEMBERS
+    | crate::discreet_permissions::Permission::MANAGE_CHANNELS
+    | crate::discreet_permissions::Permission::MANAGE_SERVER
+    | crate::discreet_permissions::Permission::MANAGE_ROLES
+    | crate::discreet_permissions::Permission::MANAGE_MESSAGES
+    | crate::discreet_permissions::Permission::MANAGE_WEBHOOKS
+    | crate::discreet_permissions::Permission::MANAGE_SCHEDULED
+    | crate::discreet_permissions::Permission::MANAGE_AUTOMOD
+    | crate::discreet_permissions::Permission::MANAGE_BOTS
+    | crate::discreet_permissions::Permission::VIEW_AUDIT_LOG
+    | crate::discreet_permissions::Permission::ARCHIVE_CHANNELS
+    | crate::discreet_permissions::Permission::ADMINISTRATOR
+    | crate::discreet_permissions::Permission::TRANSFER_OWNERSHIP;
+
 /// GET /api/v1/subscription — current user's subscription.
 pub async fn get_subscription(
     auth: AuthUser,
