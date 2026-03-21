@@ -60,6 +60,7 @@ pub async fn send_friend_request(
     State(state): State<Arc<AppState>>,
     Json(req): Json<FriendRequestBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    crate::discreet_premium::require_verified(&auth)?;
     // Guests cannot send friend requests.
     let is_guest = sqlx::query_scalar!(
         "SELECT is_guest FROM users WHERE id = $1",

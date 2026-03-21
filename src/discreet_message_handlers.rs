@@ -123,6 +123,8 @@ pub async fn send_message(
     Path(channel_id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    crate::discreet_premium::require_verified(&auth)?;
+
     // Validate ciphertext isn't empty.
     if req.content_ciphertext.is_empty() {
         return Err(AppError::BadRequest(

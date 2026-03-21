@@ -170,6 +170,7 @@ pub async fn create_server(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateServerRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    crate::discreet_premium::require_verified(&auth)?;
     // Guests cannot create servers — must register first.
     let is_guest: bool = sqlx::query_scalar!(
         "SELECT is_guest FROM users WHERE id = $1",

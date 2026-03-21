@@ -25,7 +25,7 @@ use crate::discreet_state::AppState;
 
 // ── Tier ordering (matches frontend tiers.ts) ─────────────────────────────
 
-const TIER_ORDER: &[&str] = &["guest", "unverified", "verified", "pro", "teams", "enterprise"];
+const TIER_ORDER: &[&str] = &["guest", "unverified", "anonymous", "verified", "pro", "team", "admin"];
 
 fn tier_rank(t: &str) -> usize {
     TIER_ORDER.iter().position(|&x| x == t).unwrap_or(0)
@@ -45,8 +45,12 @@ pub fn require_tier(auth: &AuthUser, needed: &str) -> Result<(), AppError> {
     }
 }
 
-/// Convenience: require at least `verified` (email confirmed).
+/// Require at least `verified` OR `anonymous` (seed-phrase accounts have
+/// full access without email verification).
 pub fn require_verified(auth: &AuthUser) -> Result<(), AppError> {
+    if auth.account_tier == "anonymous" {
+        return Ok(()); // Anonymous users have full access
+    }
     require_tier(auth, "verified")
 }
 

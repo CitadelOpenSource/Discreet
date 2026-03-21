@@ -179,6 +179,27 @@ export class CitadelAPI {
     return { ok: res.ok, data: d };
   }
 
+  async registerAnonymous(username: string) {
+    const res = await fetch(`${API_BASE}/auth/register-anonymous`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const d = await res.json();
+    if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user_id, username);
+    return { ok: res.ok, data: d };
+  }
+
+  async loginAnonymous(username: string, recoveryPhrase: string) {
+    const res = await fetch(`${API_BASE}/auth/login-anonymous`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, recovery_phrase: recoveryPhrase }),
+      credentials: 'same-origin',
+    });
+    const d = await res.json();
+    if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
+    return { ok: res.ok, data: d };
+  }
+
   async verifyCode(code: string) {
     const res = await this.authFetch(`${API_BASE}/auth/verify-code`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

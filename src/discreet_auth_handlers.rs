@@ -2141,6 +2141,150 @@ fn validate_password(password: &str) -> Result<(), AppError> {
     }
 }
 
+// ─── Anonymous Registration (BIP-39 Seed Phrase) ────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterAnonymousRequest {
+    pub username: String,
+}
+
+/// POST /auth/register-anonymous — Create an account using a BIP-39 seed phrase.
+///
+/// Returns the 12-word recovery phrase ONCE. The server stores only the
+/// Argon2id hash — the plaintext phrase is never persisted.
+pub async fn register_anonymous(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<RegisterAnonymousRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let platform = crate::discreet_platform_settings::get_platform_settings(&state).await?;
+    if !platform.registrations_enabled {
+        return Err(AppError::ServiceUnavailable("Registration is currently disabled.".into()));
+    }
+
+    validate_username(&req.username)?;
+
+    // Check username uniqueness.
+    let exists = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)",
+        req.username,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    if exists.unwrap_or(false) {
+        return Err(AppError::Conflict("Username already taken".into()));
+    }
+
+    // Generate 12-word BIP-39 mnemonic from 16 bytes of cryptographic entropy.
+    let mut entropy = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut entropy);
+    let mnemonic = bip39::Mnemonic::from_entropy(&entropy)
+        .map_err(|e| AppError::Internal(format!("Mnemonic generation failed: {e}")))?;
+    let phrase = mnemonic.to_string();
+
+    // Hash the mnemonic with Argon2id (same as password hashing).
+    let phrase_hash = hash_password(&phrase)?;
+
+    // Create user with anonymous tier.
+    let user_id = Uuid::new_v4();
+    sqlx::query!(
+        "INSERT INTO users (id, username, display_name, password_hash, account_tier, email_verified)
+         VALUES ($1, $2, $2, $3, 'anonymous', FALSE)",
+        user_id,
+        req.username,
+        phrase_hash,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // IP rate limit logging.
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let _ = sqlx::query!("INSERT INTO registrations_log (ip_address) VALUES ($1)", ip)
+        .execute(&state.db)
+        .await;
+
+    // Create session.
+    let (access_token, refresh_token, _) =
+        create_session(&state, user_id, Some("anonymous")).await?;
+
+    tracing::info!(user_id = %user_id, username = %req.username, "Anonymous user registered");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "user_id": user_id,
+            "username": req.username,
+            "recovery_phrase": phrase,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "account_tier": "anonymous",
+        })),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginAnonymousRequest {
+    pub username: String,
+    pub recovery_phrase: String,
+}
+
+/// POST /auth/login-anonymous — Authenticate with username + recovery phrase.
+pub async fn login_anonymous(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<LoginAnonymousRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Rate limit: 5 per minute per username.
+    let rl_key = format!("anon_login_rl:{}", req.username);
+    let mut redis_conn = state.redis.clone();
+    let count: i64 = crate::discreet_error::redis_or_503(
+        redis::cmd("INCR").arg(&rl_key).query_async(&mut redis_conn).await,
+    )?;
+    if count == 1 {
+        let _: Result<(), _> = redis::cmd("EXPIRE").arg(&rl_key).arg(60u64).query_async(&mut redis_conn).await;
+    }
+    if count > 5 {
+        return Err(AppError::RateLimited("Too many login attempts. Try again in a minute.".into()));
+    }
+
+    // Look up the user.
+    let user = sqlx::query!(
+        "SELECT id, password_hash, account_tier, is_banned FROM users WHERE username = $1",
+        req.username,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| {
+        // Same error for not-found and wrong-phrase to prevent user enumeration.
+        AppError::Unauthorized("Invalid username or recovery phrase".into())
+    })?;
+
+    if user.is_banned {
+        return Err(AppError::Unauthorized("Account is banned".into()));
+    }
+
+    // Verify the recovery phrase against the stored Argon2id hash.
+    let valid = verify_password(&req.recovery_phrase, &user.password_hash)?;
+    if !valid {
+        return Err(AppError::Unauthorized("Invalid username or recovery phrase".into()));
+    }
+
+    let (access_token, refresh_token, _) =
+        create_session(&state, user.id, Some("anonymous")).await?;
+
+    tracing::info!(user_id = %user.id, "Anonymous user logged in");
+
+    Ok(Json(serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": { "id": user.id, "username": req.username },
+    })))
+}
+
 // ─── TOTP Secret Encryption ─────────────────────────────────────────────
 // Encrypts TOTP secrets at rest using AES-256-GCM so a database breach
 // does not expose raw TOTP seeds.

@@ -86,6 +86,7 @@ pub async fn upload_file_blob(
     Path(channel_id): Path<Uuid>,
     Json(req): Json<UploadFileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    crate::discreet_premium::require_verified(&auth)?;
     // Decode base64, then validate size / MIME allowlist / filename.
     let blob_bytes = decode_base64(&req.encrypted_blob)?;
 

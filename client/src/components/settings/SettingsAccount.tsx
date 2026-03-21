@@ -3,6 +3,7 @@ import { T, ta } from '../../theme';
 import * as I from '../../icons';
 import { api } from '../../api/CitadelAPI';
 import { TIER_META } from '../../utils/tiers';
+import { VerificationGate, maskEmail } from '../VerificationGate';
 
 interface UserSettings { [key: string]: unknown; }
 
@@ -47,6 +48,9 @@ export default function SettingsAccount({
       }}
     /></div>
     </div>
+
+    {/* Account Tier */}
+    <AccountTierBanner platformUser={platformUser} />
 
     {/* Identity */}
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Identity</div>
@@ -112,6 +116,53 @@ export default function SettingsAccount({
     </div>
     </div>
   </>);
+}
+
+// ─── Account Tier Banner ─────────────────────────────────────────────────────
+
+function AccountTierBanner({ platformUser }: { platformUser?: any }) {
+  const tier = platformUser?.account_tier || 'unverified';
+  const email = platformUser?.email || '';
+
+  if (tier === 'unverified') {
+    return (
+      <div style={{ padding: '12px 14px', background: 'rgba(250,166,26,0.08)', borderRadius: 10, border: '1px solid rgba(250,166,26,0.2)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#faa61a' }}>Email not verified</div>
+            <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Some features are restricted until you verify your email address.</div>
+          </div>
+        </div>
+        <VerificationGate tier={tier} maskedEmail={email ? maskEmail(email) : undefined} onVerified={() => window.location.reload()}>
+          <div style={{ fontSize: 12, color: T.ac, fontWeight: 600 }}>✓ Verified</div>
+        </VerificationGate>
+      </div>
+    );
+  }
+
+  if (tier === 'verified') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: ta(T.ac, '06'), borderRadius: 8, border: `1px solid ${ta(T.ac, '20')}`, marginBottom: 16 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill={T.ac}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.ac }}>Email verified</span>
+      </div>
+    );
+  }
+
+  if (tier === 'pro') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(240,178,50,0.06)', borderRadius: 8, border: '1px solid rgba(240,178,50,0.2)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>⭐</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#f0b232' }}>Pro Member</span>
+        </div>
+        <span style={{ fontSize: 11, color: T.mt, cursor: 'pointer' }}>Manage subscription</span>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // ─── Passkey Manager ────────────────────────────────────────────────────────

@@ -1207,6 +1207,12 @@ export default function App() {
         alert(evt.reason || 'Your account has been suspended.');
         return;
       }
+      if (evt.type === 'account_verified') {
+        setMe((prev: any) => prev ? { ...prev, email_verified: true, account_tier: 'verified' } : prev);
+        setToast('Email verified! Full access unlocked.');
+        setTimeout(() => setToast(''), 4000);
+        return;
+      }
       if (evt.type === 'maintenance_mode') {
         setMaintenanceMsg(evt.message || 'Discreet is undergoing scheduled maintenance.');
         return;

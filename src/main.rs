@@ -566,6 +566,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_v1 = axum::Router::new()
         // ── Auth ──
         .route("/auth/register", axum::routing::post(discreet_auth_handlers::register))
+        .route("/auth/register-anonymous", axum::routing::post(discreet_auth_handlers::register_anonymous))
+        .route("/auth/login-anonymous", axum::routing::post(discreet_auth_handlers::login_anonymous))
         .route("/auth/guest", axum::routing::post(discreet_auth_handlers::register_guest))
         .route("/auth/login", axum::routing::post(discreet_auth_handlers::login))
         .route("/auth/upgrade", axum::routing::post(discreet_auth_handlers::upgrade_account))

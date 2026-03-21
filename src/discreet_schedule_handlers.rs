@@ -55,6 +55,8 @@ pub async fn create_scheduled_message(
     Path(channel_id): Path<Uuid>,
     Json(req): Json<ScheduleMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    crate::discreet_premium::require_verified(&auth)?;
+
     // ── Verify channel exists and user has send permission ───────────────
     let channel = sqlx::query!(
         "SELECT server_id FROM channels WHERE id = $1",

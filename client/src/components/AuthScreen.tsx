@@ -3,7 +3,7 @@
  * First thing users see before authentication.
  */
 import React, { useState, useMemo, useEffect } from 'react';
-import { T, getInp, btn } from '../theme';
+import { T, ta, getInp, btn } from '../theme';
 import { api, storageBlocked, _storage } from '../api/CitadelAPI';
 
 // ─── WebAuthn base64url helpers ──────────────────────────────────────────────
@@ -120,6 +120,13 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [dob, setDob]             = useState('');
   const [termsOk, setTermsOk]     = useState(false);
 
+  // Anonymous registration
+  const [anonMode, setAnonMode]             = useState(false);
+  const [recoveryPhrase, setRecoveryPhrase] = useState('');
+  const [phraseConfirmed, setPhraseConfirmed] = useState(false);
+  const [loginWithPhrase, setLoginWithPhrase] = useState(false);
+  const [phraseInput, setPhraseInput]         = useState('');
+
   // OAuth providers + SAML SSO
   const [oauthProviders, setOauthProviders] = useState<{ provider: string; client_id: string }[]>([]);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
@@ -206,6 +213,40 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     setConfirmPw('');
     setForgotShown(false);
     setFpStep('email'); setFpEmail(''); setFpToken(''); setFpNewPw(''); setFpError(''); setFpMsg('');
+  };
+
+  const submitAnonymous = async () => {
+    if (!username.trim()) { setError('Username is required'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.registerAnonymous(username.trim());
+      if (res.ok && res.data?.recovery_phrase) {
+        setRecoveryPhrase(res.data.recovery_phrase);
+      } else {
+        setError(res.data?.error?.message || res.data?.error || 'Registration failed');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Registration failed');
+    }
+    setLoading(false);
+  };
+
+  const submitLoginAnonymous = async () => {
+    if (!username.trim() || !phraseInput.trim()) { setError('Username and recovery phrase are required'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.loginAnonymous(username.trim(), phraseInput.trim());
+      if (res.ok) {
+        onAuth();
+      } else {
+        setError(res.data?.error?.message || res.data?.error || 'Invalid username or recovery phrase');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Login failed');
+    }
+    setLoading(false);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -603,8 +644,95 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10, color: T.mt, lineHeight: 1.5 }}>
             Guest accounts have limited access (no servers, voice, or friends). Upgrade anytime.
           </div>
+
+          {/* Anonymous Registration */}
+          {mode === 'register' && !anonMode && (
+            <button type="button" onClick={() => setAnonMode(true)}
+              style={{ ...btn(true), background: T.sf2, color: T.ac, border: `1px solid ${ta(T.ac, '33')}`, width: '100%', marginTop: 10 }}>
+              Register Anonymously — No email required
+            </button>
+          )}
+          {mode === 'register' && anonMode && !recoveryPhrase && (
+            <div style={{ marginTop: 10, padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Anonymous Registration</div>
+              <div style={{ fontSize: 11, color: T.mt, marginBottom: 10, lineHeight: 1.5 }}>No email, no phone number. You'll receive a 12-word recovery phrase instead of a password.</div>
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Choose a username" style={{ ...getInp(), marginBottom: 8 }} />
+              {error && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{error}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setAnonMode(false)} style={{ ...btn(true), background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, flex: 1 }}>Cancel</button>
+                <button type="button" onClick={submitAnonymous} disabled={loading || !username.trim()} style={{ ...btn(!loading && !!username.trim()), flex: 1 }}>{loading ? 'Creating...' : 'Create Account'}</button>
+              </div>
+            </div>
+          )}
+
+          {/* Login with Recovery Phrase */}
+          {mode === 'login' && !loginWithPhrase && (
+            <button type="button" onClick={() => setLoginWithPhrase(true)}
+              style={{ background: 'none', border: 'none', color: T.ac, fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0, marginTop: 10 }}>
+              Login with Recovery Phrase
+            </button>
+          )}
+          {mode === 'login' && loginWithPhrase && (
+            <div style={{ marginTop: 10, padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Recovery Phrase Login</div>
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" style={{ ...getInp(), marginBottom: 8 }} />
+              <textarea value={phraseInput} onChange={e => setPhraseInput(e.target.value)} placeholder="Enter your 12-word recovery phrase" rows={3}
+                style={{ ...getInp(), resize: 'vertical', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, marginBottom: 8 }} />
+              {error && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{error}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setLoginWithPhrase(false)} style={{ ...btn(true), background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, flex: 1 }}>Cancel</button>
+                <button type="button" onClick={submitLoginAnonymous} disabled={loading || !username.trim() || !phraseInput.trim()} style={{ ...btn(!loading && !!username.trim() && !!phraseInput.trim()), flex: 1 }}>{loading ? 'Verifying...' : 'Log In'}</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Recovery phrase modal (anonymous registration success) */}
+      {recoveryPhrase && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 480, background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 'clamp(24px, 5vw, 36px)', boxShadow: '0 12px 48px rgba(0,0,0,0.5)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🔐</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: T.tx }}>Your Recovery Phrase</div>
+              <div style={{ fontSize: 12, color: T.mt, marginTop: 4 }}>This is the <strong>only</strong> way to access your account.</div>
+            </div>
+
+            <div style={{ padding: '16px 20px', background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}`, fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 600, color: T.ac, lineHeight: 2, textAlign: 'center', marginBottom: 16, wordSpacing: '0.5em' }}>
+              {recoveryPhrase}
+            </div>
+
+            <div style={{ padding: '10px 14px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#ff4757', lineHeight: 1.6 }}>
+              <strong>This is the ONLY way to recover your account.</strong> We cannot help you if you lose these words. Write them down and store them safely.
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button type="button" onClick={() => navigator.clipboard?.writeText(recoveryPhrase)}
+                style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Copy to clipboard
+              </button>
+              <button type="button" onClick={() => {
+                const blob = new Blob([`Discreet Recovery Phrase\n\nUsername: ${username}\nPhrase: ${recoveryPhrase}\n\nStore this file securely. Delete after writing down the words.`], { type: 'text/plain' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'discreet-recovery.txt'; a.click(); URL.revokeObjectURL(a.href);
+              }}
+                style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Download as file
+              </button>
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
+              <input type="checkbox" checked={phraseConfirmed} onChange={e => setPhraseConfirmed(e.target.checked)}
+                style={{ accentColor: T.ac, width: 16, height: 16, flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>I have saved my recovery phrase and understand it cannot be retrieved later.</span>
+            </label>
+
+            <button type="button" disabled={!phraseConfirmed} onClick={() => { setRecoveryPhrase(''); onAuth(); }}
+              style={{ ...btn(phraseConfirmed), width: '100%' }}>
+              {phraseConfirmed ? 'Continue to Discreet' : 'Save your phrase first'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Recovery key modal */}
       {recoveryKey && (

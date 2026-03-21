@@ -94,6 +94,7 @@ pub async fn create_webhook(
     Json(req): Json<CreateWebhookRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&state, server_id, auth.user_id, Permission::MANAGE_SERVER).await?;
+    crate::discreet_premium::require_verified(&auth)?;
 
     // ── Validate name ────────────────────────────────────────────────────
     let name = req.name.trim().to_string();
