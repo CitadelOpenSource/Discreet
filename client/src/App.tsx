@@ -36,6 +36,7 @@ import { loadConfig as loadNightConfig, shouldActivate as shouldNightActivate } 
 import { TermsOfService } from './components/legal/TermsOfService';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { DownloadPage } from './components/DownloadPage';
+import { WarrantCanary } from './components/legal/WarrantCanary';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
 import { InvitePreview } from './components/InvitePreview';
@@ -211,6 +212,24 @@ function GlobalStyles() {
       .bubbles-on .msg-bubble-self { background: var(--bubble-self-bg, rgba(0,212,170,0.12)); margin-left: auto; border-bottom-right-radius: 4px; }
       .bubbles-on .msg-bubble-other { background: var(--bubble-other-bg, rgba(255,255,255,0.04)); border-bottom-left-radius: 4px; }
       .bubbles-on.bubbles-aligned .msg-bubble-self { margin-left: 0; }
+
+      /* ── Date separators ───────────────────────────── */
+      .date-separator {
+        display: flex; align-items: center; gap: 12px;
+        padding: 8px 16px; color: var(--mt, #64748b);
+        font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.5px; user-select: none;
+      }
+      .date-separator::before, .date-separator::after {
+        content: ''; flex: 1; height: 1px;
+        background: var(--bd, rgba(226,232,240,0.08));
+      }
+
+      /* ── Message grouping: compact continuation messages ── */
+      .msg-grouped .msg-avatar { visibility: hidden; width: 0; overflow: hidden; }
+      .msg-grouped .msg-name { display: none !important; }
+      .msg-grouped .msg-ts { opacity: 0; transition: opacity 0.15s; }
+      .msg-grouped:hover .msg-ts { opacity: 1; }
 
       /* ── Nighttime mode ─────────────────────────────── */
       .nighttime-active { transition: background 0.5s ease, color 0.5s ease; }
@@ -652,12 +671,15 @@ export default function App() {
   const [friendsOnlyMode, setFriendsOnlyMode] = useState(() => localStorage.getItem('d_friends_only') === 'true');
   const [aiDisabled, setAiDisabled] = useState(() => localStorage.getItem('d_ai_disabled') === 'true');
   const [friendsOnlyExceptions, setFriendsOnlyExceptions] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem('d_friends_only_exceptions') || '[]')); } catch { return new Set(); } });
+  const [mutedChannels, setMutedChannels] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('d_muted_channels') || '{}'); } catch { return {}; } });
+  const [channelNotifPopover, setChannelNotifPopover] = useState<{ channelId: string; x: number; y: number } | null>(null);
   const [friendIdSet, setFriendIdSet] = useState<Set<string>>(new Set());
   const [dndSchedule, setDndSchedule] = useState({ enabled: false, start: '22:00', end: '08:00', days: '0,1,2,3,4,5,6' });
   const [serverNotifLevels, setServerNotifLevels] = useState<Record<string, string>>({}); // server_id → 'all'|'mentions'|'nothing'
   const [serverVisibility, setServerVisibility] = useState<Record<string, string | null>>({}); // server_id → null|'online'|'idle'|'invisible'
   const [msgDensity, setMsgDensity] = useState<'compact' | 'cozy' | 'spacious'>(() => (localStorage.getItem('d_msg_density') as any) || 'cozy');
   const [chatBubbles, setChatBubbles] = useState(() => localStorage.getItem('d_chat_bubbles') === 'true');
+  const showTimestamps = localStorage.getItem('d_show_timestamps') !== 'false';
   const [bubblePosition, setBubblePosition] = useState<'standard' | 'aligned'>(() => (localStorage.getItem('d_bubble_position') as any) || 'standard');
   const [chatFontSize, setChatFontSize] = useState(() => parseInt(localStorage.getItem('d_chat_font_size') || '14', 10));
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
@@ -1024,6 +1046,8 @@ export default function App() {
         if (s.message_density) { setMsgDensity(s.message_density); localStorage.setItem('d_msg_density', s.message_density); }
         if (s.chat_bubbles !== undefined) { setChatBubbles(!!s.chat_bubbles); localStorage.setItem('d_chat_bubbles', String(!!s.chat_bubbles)); }
         if (s.bubble_position) { setBubblePosition(s.bubble_position); localStorage.setItem('d_bubble_position', s.bubble_position); }
+        if (s.timestamp_format) { localStorage.setItem('d_timestamp_format', s.timestamp_format); tzCtx.setTimestampFormat(s.timestamp_format); }
+        if (s.show_timestamps !== undefined) { localStorage.setItem('d_show_timestamps', String(s.show_timestamps)); }
         if (s.chat_font_size) { setChatFontSize(s.chat_font_size); localStorage.setItem('d_chat_font_size', String(s.chat_font_size)); document.documentElement.style.setProperty('--chat-font-size', `${s.chat_font_size}px`); }
         // Load default online status
         if (s.default_status && s.default_status !== 'online' && !localStorage.getItem('d_manual_status')) {
@@ -2060,6 +2084,7 @@ export default function App() {
   if (pathname === '/app/terms' || pathname === '/terms') return <TermsOfService />;
   if (pathname === '/app/privacy' || pathname === '/privacy') return <PrivacyPolicy />;
   if (pathname === '/download' || pathname === '/app/download') return <DownloadPage />;
+  if (pathname === '/canary' || pathname === '/app/canary') return <WarrantCanary />;
 
   if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
   if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
@@ -2339,7 +2364,7 @@ export default function App() {
               ])}
               unreadCounts={unreadCounts}
               mentionCounts={mentionCounts}
-              mutedChannels={{}}
+              mutedChannels={mutedChannels}
               videoStreams={{}}
               streamStatus={streamStatus}
               sframeActive={vc.sframeActive}
@@ -2368,10 +2393,25 @@ export default function App() {
               onMoveUserToVoice={() => {}}
               onChannelCtx={(e: React.MouseEvent, ch: any) => {
                 e.preventDefault();
+                const chMuted = !!mutedChannels[ch.id];
                 const items: CtxMenuItem[] = [
                   { label: 'Invite to Channel', icon: <I.UserPlus />, fn: () => openInviteModal() },
                 ];
                 if (curChannel?.id !== ch.id) items.push({ label: 'Mark as Read', icon: <I.Check />, fn: () => setUnreadCounts(p => { const n = { ...p }; delete n[ch.id]; return n; }) });
+                items.push({
+                  label: 'Notification Settings', icon: <I.Bell />,
+                  fn: () => setChannelNotifPopover({ channelId: ch.id, x: e.clientX, y: e.clientY }),
+                });
+                items.push({
+                  label: chMuted ? 'Unmute Channel' : 'Mute Channel', icon: chMuted ? <I.Vol /> : <I.BellOff />,
+                  fn: () => {
+                    const next = !chMuted;
+                    setMutedChannels(prev => { const n = { ...prev, [ch.id]: next }; if (!next) delete n[ch.id]; localStorage.setItem('d_muted_channels', JSON.stringify(n)); return n; });
+                    api.updateChannelSettings(ch.id, { muted: next }).catch(() => {});
+                    setToast(next ? `#${ch.name} muted` : `#${ch.name} unmuted`);
+                    setTimeout(() => setToast(''), 2000);
+                  },
+                });
                 items.push({ label: 'Copy Channel ID', icon: <I.Copy />, fn: () => navigator.clipboard?.writeText(ch.id) });
                 if (friendsOnlyMode) {
                   const isException = friendsOnlyExceptions.has(ch.id);
@@ -4201,6 +4241,21 @@ export default function App() {
         />
       )}
 
+      {/* Channel Notification Popover */}
+      {channelNotifPopover && (
+        <ChannelNotifPopover
+          channelId={channelNotifPopover.channelId}
+          x={channelNotifPopover.x}
+          y={channelNotifPopover.y}
+          isMuted={!!mutedChannels[channelNotifPopover.channelId]}
+          onMute={(muted, until) => {
+            setMutedChannels(prev => { const n = { ...prev, [channelNotifPopover.channelId]: muted }; if (!muted) delete n[channelNotifPopover.channelId]; localStorage.setItem('d_muted_channels', JSON.stringify(n)); return n; });
+            api.updateChannelSettings(channelNotifPopover.channelId, { muted, muted_until: until || null }).catch(() => {});
+          }}
+          onClose={() => setChannelNotifPopover(null)}
+        />
+      )}
+
       {/* Delete Server Modal */}
       {deleteServerTarget && (
         <DeleteServerModal
@@ -4843,6 +4898,200 @@ function DeleteServerModal({ serverId, serverName, onTransferInstead, onDeleted,
             </button>
           </div>
         </>)}
+      </div>
+    </div>
+  );
+}
+
+// ─── Channel Notification Popover ───────────────────────────────────────────
+
+const MUTE_DURATIONS = [
+  { label: '15 minutes', ms: 15 * 60 * 1000 },
+  { label: '1 hour', ms: 60 * 60 * 1000 },
+  { label: '8 hours', ms: 8 * 60 * 60 * 1000 },
+  { label: '24 hours', ms: 24 * 60 * 60 * 1000 },
+  { label: 'Until I turn it off', ms: 0 },
+];
+
+const NOTIF_LEVELS = [
+  { value: 'default', label: 'Use server default', desc: 'Inherit from server settings' },
+  { value: 'all', label: 'All messages', desc: 'Get notified for every message' },
+  { value: 'mentions', label: 'Mentions only', desc: 'Only @mentions and direct messages' },
+  { value: 'nothing', label: 'Nothing', desc: 'No notifications from this channel' },
+];
+
+function ChannelNotifPopover({ channelId, x, y, isMuted, onMute, onClose }: {
+  channelId: string;
+  x: number;
+  y: number;
+  isMuted: boolean;
+  onMute: (muted: boolean, until?: string) => void;
+  onClose: () => void;
+}) {
+  const [level, setLevel] = React.useState('default');
+  const [suppressEveryone, setSuppressEveryone] = React.useState(false);
+  const [suppressRoles, setSuppressRoles] = React.useState(false);
+  const [showMutePicker, setShowMutePicker] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const popRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    api.getChannelSettings(channelId).then(data => {
+      if (cancelled || !data) return;
+      if (data.notification_level) setLevel(data.notification_level);
+      if (data.suppress_everyone) setSuppressEveryone(true);
+      if (data.suppress_role_mentions) setSuppressRoles(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [channelId]);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onClick = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
+  }, [onClose]);
+
+  const saveLevel = async (val: string) => {
+    setLevel(val);
+    setSaving(true);
+    try { await api.updateChannelSettings(channelId, { notification_level: val }); }
+    catch { /* fire-and-forget UI update */ }
+    setSaving(false);
+  };
+
+  const saveSuppress = async (field: 'suppress_everyone' | 'suppress_role_mentions', val: boolean) => {
+    if (field === 'suppress_everyone') setSuppressEveryone(val);
+    else setSuppressRoles(val);
+    try { await api.updateChannelSettings(channelId, { [field]: val }); }
+    catch { /* fire-and-forget UI update */ }
+  };
+
+  const handleMuteDuration = (ms: number) => {
+    const until = ms > 0 ? new Date(Date.now() + ms).toISOString() : undefined;
+    onMute(true, until);
+    setShowMutePicker(false);
+  };
+
+  const popStyle: React.CSSProperties = {
+    position: 'fixed',
+    left: Math.min(x, window.innerWidth - 300),
+    top: Math.min(y, window.innerHeight - 460),
+    width: 280,
+    background: T.sf,
+    border: `1px solid ${T.bd}`,
+    borderRadius: 10,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+    zIndex: 10003,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  };
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
+  };
+
+  const radioRow = (val: string, label: string, desc: string) => (
+    <div key={val} onClick={() => saveLevel(val)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', background: level === val ? `${T.ac}18` : 'transparent' }}
+      role="radio" aria-checked={level === val} aria-label={label}>
+      <div style={{
+        width: 16, height: 16, borderRadius: '50%', border: `2px solid ${level === val ? T.ac : T.mt}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2,
+      }}>
+        {level === val && <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.ac }} />}
+      </div>
+      <div>
+        <div style={{ fontSize: 13, color: T.tx, fontWeight: level === val ? 600 : 400 }}>{label}</div>
+        <div style={{ fontSize: 11, color: T.mt, marginTop: 1 }}>{desc}</div>
+      </div>
+    </div>
+  );
+
+  const toggleRow = (label: string, checked: boolean, onChange: (v: boolean) => void) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px' }}>
+      <span style={{ fontSize: 13, color: T.tx }}>{label}</span>
+      <div onClick={() => onChange(!checked)} style={{
+        width: 36, height: 20, borderRadius: 10, background: checked ? T.ac : T.sf2,
+        cursor: 'pointer', position: 'relative', transition: 'background 0.15s',
+      }} role="switch" aria-checked={checked} aria-label={label}>
+        <div style={{
+          width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute',
+          top: 2, left: checked ? 18 : 2, transition: 'left 0.15s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div ref={popRef} style={popStyle}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: T.tx }}>Notification Settings</span>
+        {saving && <span style={{ fontSize: 10, color: T.mt }}>Saving...</span>}
+      </div>
+
+      {/* Notification level */}
+      <div>
+        <div style={sectionLabel}>Notification Frequency</div>
+        <div role="radiogroup">{NOTIF_LEVELS.map(l => radioRow(l.value, l.label, l.desc))}</div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: T.bd, margin: '2px 0' }} />
+
+      {/* Mute */}
+      <div>
+        <div style={sectionLabel}>Mute Channel</div>
+        {isMuted ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px' }}>
+            <span style={{ fontSize: 13, color: T.mt, flex: 1 }}>Channel is muted</span>
+            <button onClick={() => onMute(false)} style={{
+              padding: '4px 12px', borderRadius: 6, border: `1px solid ${T.bd}`,
+              background: T.sf2, color: T.tx, fontSize: 12, cursor: 'pointer',
+            }} aria-label="Unmute channel">Unmute</button>
+          </div>
+        ) : showMutePicker ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {MUTE_DURATIONS.map(d => (
+              <div key={d.label} onClick={() => handleMuteDuration(d.ms)} style={{
+                padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: T.tx,
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = `${T.ac}18`)}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                {d.label}
+              </div>
+            ))}
+            <div onClick={() => setShowMutePicker(false)} style={{
+              padding: '4px 8px', fontSize: 11, color: T.mt, cursor: 'pointer', textAlign: 'center',
+            }}>Cancel</div>
+          </div>
+        ) : (
+          <div onClick={() => setShowMutePicker(true)} style={{
+            padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: T.tx,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+            onMouseEnter={e => (e.currentTarget.style.background = `${T.ac}18`)}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            &#128263; Mute channel...
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: T.bd, margin: '2px 0' }} />
+
+      {/* Suppress toggles */}
+      <div>
+        <div style={sectionLabel}>Suppress</div>
+        {toggleRow('Suppress @everyone', suppressEveryone, v => saveSuppress('suppress_everyone', v))}
+        {toggleRow('Suppress role mentions', suppressRoles, v => saveSuppress('suppress_role_mentions', v))}
       </div>
     </div>
   );

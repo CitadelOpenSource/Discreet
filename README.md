@@ -16,7 +16,7 @@ Discreet — End-to-end encrypted messaging with the community features you actu
 
 ## What's inside
 
-[See the complete feature list](docs/FEATURES.md) — 150+ features across backend, frontend, crypto, and infrastructure.
+[See the complete feature list (150+ features)](FEATURES.md)
 
 The short version:
 

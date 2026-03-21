@@ -179,10 +179,10 @@ export class CitadelAPI {
     return { ok: res.ok, data: d };
   }
 
-  async registerAnonymous(username: string) {
+  async registerAnonymous(username: string, fingerprintHash?: string, turnstileToken?: string) {
     const res = await fetch(`${API_BASE}/auth/register-anonymous`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, fingerprint_hash: fingerprintHash || undefined, turnstile_token: turnstileToken || undefined }),
     });
     const d = await res.json();
     if (res.ok) this.setAuth(d.access_token, d.refresh_token, d.user_id, username);
@@ -470,6 +470,8 @@ export class CitadelAPI {
   async complianceExport(serverId: string, startDate: string, endDate: string, format: string) { const r = await this.fetch('/admin/export', { method: 'POST', body: JSON.stringify({ server_id: serverId, start_date: startDate, end_date: endDate, format }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Export failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
   async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
+  async getChannelSettings(cid: string) { try { const r = await this.fetch(`/channels/${cid}/notification-settings`); return r.ok ? r.json() : null; } catch { return null; } }
+  async updateChannelSettings(cid: string, s: any) { return this.fetch(`/channels/${cid}/notification-settings`, { method: 'PUT', body: JSON.stringify(s) }); }
   async saveTimezone(timezone: string) { return this.fetch('/settings/timezone', { method: 'POST', body: JSON.stringify({ timezone }) }); }
   /** Verify password and get a single-use reauth token (5 min TTL). */
   async verifyPassword(password: string): Promise<{ reauth_token: string; expires_in: number }> {

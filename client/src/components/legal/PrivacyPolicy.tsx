@@ -3,24 +3,29 @@
  * Route: /app/privacy (accessible without authentication)
  */
 import React from 'react';
-import { T } from '../../theme';
+import { getLandingColors } from '../../hooks/useLandingTheme';
 
-const S: Record<string, React.CSSProperties> = {
-  page: { background: T.bg, color: T.tx, minHeight: '100vh', padding: '60px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 },
-  wrap: { maxWidth: 720, margin: '0 auto' },
-  h1: { fontSize: 32, fontWeight: 800, marginBottom: 8, letterSpacing: -0.5 },
-  updated: { fontSize: 13, color: T.mt, marginBottom: 40 },
-  h2: { fontSize: 20, fontWeight: 700, marginTop: 36, marginBottom: 12, color: T.ac },
-  p: { fontSize: 14, color: T.mt, marginBottom: 12 },
-  ul: { fontSize: 14, color: T.mt, marginBottom: 12, paddingLeft: 24 },
-  li: { marginBottom: 6 },
-  strong: { color: T.tx, fontWeight: 600 },
-  back: { display: 'inline-block', marginBottom: 32, color: T.ac, textDecoration: 'none', fontSize: 14, fontWeight: 600 },
-  footer: { marginTop: 48, paddingTop: 24, borderTop: `1px solid ${T.bd}`, fontSize: 12, color: T.mt },
-  highlight: { padding: '14px 16px', background: 'rgba(0,212,170,0.05)', border: '1px solid rgba(0,212,170,0.15)', borderRadius: 8, marginBottom: 12, fontSize: 14, color: T.ac, lineHeight: 1.6 },
-};
+function useS() {
+  const C = getLandingColors();
+  return {
+    page: { background: C.bg, color: C.tx, minHeight: '100vh', padding: '60px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 } as React.CSSProperties,
+    wrap: { maxWidth: 720, margin: '0 auto' } as React.CSSProperties,
+    h1: { fontSize: 32, fontWeight: 800, marginBottom: 8, letterSpacing: -0.5 } as React.CSSProperties,
+    updated: { fontSize: 13, color: C.mt, marginBottom: 40 } as React.CSSProperties,
+    h2: { fontSize: 20, fontWeight: 700, marginTop: 36, marginBottom: 12, color: C.ac } as React.CSSProperties,
+    p: { fontSize: 14, color: C.mt, marginBottom: 12 } as React.CSSProperties,
+    ul: { fontSize: 14, color: C.mt, marginBottom: 12, paddingLeft: 24 } as React.CSSProperties,
+    li: { marginBottom: 6 } as React.CSSProperties,
+    strong: { color: C.tx, fontWeight: 600 } as React.CSSProperties,
+    back: { display: 'inline-block', marginBottom: 32, color: C.ac, textDecoration: 'none', fontSize: 14, fontWeight: 600 } as React.CSSProperties,
+    footer: { marginTop: 48, paddingTop: 24, borderTop: `1px solid ${C.bd}`, fontSize: 12, color: C.mt } as React.CSSProperties,
+    highlight: { padding: '14px 16px', background: 'rgba(0,212,170,0.05)', border: '1px solid rgba(0,212,170,0.15)', borderRadius: 8, marginBottom: 12, fontSize: 14, color: C.ac, lineHeight: 1.6 } as React.CSSProperties,
+    ac: C.ac, mt: C.mt,
+  };
+}
 
 export function PrivacyPolicy() {
+  const S = useS();
   return (
     <div style={S.page}>
       <div style={S.wrap}>
@@ -159,7 +164,7 @@ export function PrivacyPolicy() {
           collected data from a child under 13, we will delete the account and
           associated data promptly. If you believe a child under 13 is using Discreet,
           please contact us at{' '}
-          <a href="mailto:dev@discreetai.net" style={{ color: T.ac }}>dev@discreetai.net</a>.
+          <a href="mailto:dev@discreetai.net" style={{ color: S.ac }}>dev@discreetai.net</a>.
         </p>
 
         {/* ── Changes ── */}
@@ -174,14 +179,14 @@ export function PrivacyPolicy() {
         <h2 style={S.h2}>9. Contact</h2>
         <p style={S.p}>
           Questions or concerns about your privacy? Contact us at{' '}
-          <a href="mailto:dev@discreetai.net" style={{ color: T.ac }}>dev@discreetai.net</a>.
+          <a href="mailto:dev@discreetai.net" style={{ color: S.ac }}>dev@discreetai.net</a>.
         </p>
 
         <div style={S.footer}>
           <p>Copyright &copy; 2024-2026 Discreet contributors. Patent Pending.</p>
           <p style={{ marginTop: 8 }}>
-            <a href="/app/terms" style={{ color: T.ac, marginRight: 16 }}>Terms of Service</a>
-            <a href="/app" style={{ color: T.mt }}>Back to Discreet</a>
+            <a href="/app/terms" style={{ color: S.ac, marginRight: 16 }}>Terms of Service</a>
+            <a href="/app" style={{ color: S.mt }}>Back to Discreet</a>
           </p>
         </div>
       </div>

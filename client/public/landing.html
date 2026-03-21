@@ -47,15 +47,46 @@
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
+
+    /* ── Theme custom properties ── */
+    :root, [data-theme="dark"] {
+      --bg: #0a0e17; --sf: #141922; --tx: #e2e8f0; --mt: #94a3b8;
+      --bd: rgba(226,232,240,0.08); --ac: #00D4AA; --ac2: #00B894;
+      --card-bg: rgba(226,232,240,0.03); --card-bd: rgba(226,232,240,0.07);
+      --card-hover-bd: rgba(0,212,170,0.2); --card-hover-bg: rgba(0,212,170,0.03);
+      --table-even: rgba(226,232,240,0.02); --trust-color: #475569;
+      --copyright-color: #334155; --cta-text: #0a0e17;
+    }
+    [data-theme="light"] {
+      --bg: #ffffff; --sf: #f5f5f5; --tx: #1a1a2e; --mt: #6b7280;
+      --bd: rgba(0,0,0,0.08); --ac: #00A88A; --ac2: #009577;
+      --card-bg: rgba(0,0,0,0.02); --card-bd: rgba(0,0,0,0.08);
+      --card-hover-bd: rgba(0,168,138,0.25); --card-hover-bg: rgba(0,168,138,0.04);
+      --table-even: rgba(0,0,0,0.02); --trust-color: #9ca3af;
+      --copyright-color: #9ca3af; --cta-text: #ffffff;
+    }
+
     body {
-      background: #0a0e17;
-      color: #e2e8f0;
+      background: var(--bg);
+      color: var(--tx);
       font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       line-height: 1.6;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      transition: background 0.3s ease, color 0.3s ease;
     }
     a { color: inherit; text-decoration: none; }
+
+    /* ── Theme toggle ── */
+    .theme-toggle {
+      background: none; border: 1px solid var(--bd); border-radius: 8px;
+      cursor: pointer; padding: 6px 8px; color: var(--mt); font-size: 1.1rem;
+      line-height: 1; display: flex; align-items: center; justify-content: center;
+      transition: color 0.3s, border-color 0.3s, transform 0.3s;
+    }
+    .theme-toggle:hover { color: var(--ac); border-color: var(--ac); }
+    .theme-toggle .icon { display: inline-block; transition: transform 0.3s ease; }
+    [data-theme="light"] .theme-toggle .icon { transform: rotate(180deg); }
 
     /* ── Scroll animations ── */
     .animate-on-scroll {
@@ -81,7 +112,7 @@
       font-size: 1.5rem;
       font-weight: 900;
       letter-spacing: -0.02em;
-      background: linear-gradient(135deg, #00D4AA, #00B894);
+      background: linear-gradient(135deg, var(--ac), var(--ac2));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -94,8 +125,8 @@
     }
     nav .links a:hover { opacity: 1; }
     nav .links .nav-cta {
-      background: #00D4AA;
-      color: #0a0e17;
+      background: var(--ac);
+      color: var(--cta-text);
       padding: 0.5rem 1.25rem;
       border-radius: 8px;
       font-weight: 700;
@@ -127,7 +158,7 @@
     }
     #hero p {
       font-size: 1.15rem;
-      color: #94a3b8;
+      color: var(--mt);
       max-width: 560px;
       margin-bottom: 2.5rem;
       line-height: 1.7;
@@ -145,9 +176,9 @@
     }
     .btn:hover { opacity: 0.9; }
     .btn:active { transform: scale(0.98); }
-    .btn-primary { background: linear-gradient(135deg, #00D4AA, #00B894); color: #0a0e17; }
-    .btn-secondary { background: transparent; color: #e2e8f0; border: 1px solid rgba(226, 232, 240, 0.2); }
-    .btn-secondary:hover { border-color: rgba(226, 232, 240, 0.45); }
+    .btn-primary { background: linear-gradient(135deg, var(--ac), var(--ac2)); color: var(--cta-text); }
+    .btn-secondary { background: transparent; color: var(--tx); border: 1px solid var(--bd); }
+    .btn-secondary:hover { border-color: var(--mt); }
 
     /* ── App preview ── */
     .app-preview {
@@ -193,7 +224,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #475569;
+      color: var(--trust-color);
     }
 
     /* ── Features ── */
@@ -206,15 +237,15 @@
       padding: 2rem 2rem 4rem;
     }
     .card {
-      background: rgba(226, 232, 240, 0.03);
-      border: 1px solid rgba(226, 232, 240, 0.07);
+      background: var(--card-bg);
+      border: 1px solid var(--card-bd);
       border-radius: 14px;
       padding: 2rem;
       transition: border-color 0.2s, background 0.2s;
     }
     .card:hover {
-      border-color: rgba(0, 212, 170, 0.2);
-      background: rgba(0, 212, 170, 0.03);
+      border-color: var(--card-hover-bd);
+      background: var(--card-hover-bg);
     }
     .card .card-icon {
       font-size: 1.5rem;
@@ -225,9 +256,9 @@
       font-size: 1.1rem;
       font-weight: 700;
       margin-bottom: 0.4rem;
-      color: #e2e8f0;
+      color: var(--tx);
     }
-    .card p { font-size: 0.9rem; color: #94a3b8; line-height: 1.6; }
+    .card p { font-size: 0.9rem; color: var(--mt); line-height: 1.6; }
 
     /* ── Comparison ── */
     #comparison {
@@ -251,18 +282,18 @@
       text-align: left;
       padding: 0.75rem 1rem;
       font-weight: 700;
-      border-bottom: 2px solid rgba(226, 232, 240, 0.12);
+      border-bottom: 2px solid var(--bd);
       font-size: 0.85rem;
     }
-    #comparison th:last-child { color: #00D4AA; }
+    #comparison th:last-child { color: var(--ac); }
     #comparison td {
       padding: 0.7rem 1rem;
-      border-bottom: 1px solid rgba(226, 232, 240, 0.05);
+      border-bottom: 1px solid var(--bd);
     }
-    #comparison tr:nth-child(even) td { background: rgba(226, 232, 240, 0.02); }
+    #comparison tr:nth-child(even) td { background: var(--table-even); }
     #comparison td:first-child { font-weight: 500; }
-    .y { color: #00D4AA; }
-    .n { color: #64748b; }
+    .y { color: var(--ac); }
+    .n { color: var(--mt); }
 
     /* ── Waitlist ── */
     #waitlist {
@@ -317,7 +348,7 @@
 
     /* ── Footer ── */
     footer {
-      border-top: 1px solid rgba(226, 232, 240, 0.06);
+      border-top: 1px solid var(--bd);
       max-width: 1120px;
       margin: 0 auto;
       padding: 3rem 2rem 2rem;
@@ -332,28 +363,28 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    footer .foot-brand .tagline { font-size: 0.85rem; color: #475569; margin-top: 0.5rem; }
+    footer .foot-brand .tagline { font-size: 0.85rem; color: var(--trust-color); margin-top: 0.5rem; }
     footer .foot-col h4 {
       font-size: 0.7rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: #475569;
+      color: var(--trust-color);
       margin-bottom: 0.75rem;
     }
     footer .foot-col a, footer .foot-col span {
       display: block;
       font-size: 0.85rem;
-      color: #94a3b8;
+      color: var(--mt);
       margin-bottom: 0.4rem;
     }
-    footer .foot-col a:hover { color: #e2e8f0; }
+    footer .foot-col a:hover { color: var(--tx); }
     .copyright {
       max-width: 1120px;
       margin: 0 auto;
       padding: 1.25rem 2rem 2rem;
       font-size: 0.75rem;
-      color: #334155;
+      color: var(--copyright-color);
       text-align: center;
     }
 
@@ -379,6 +410,9 @@
     <div class="links">
       <a href="/download">Download</a>
       <a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode" title="Toggle theme">
+        <span class="icon" id="theme-icon">&#9790;</span>
+      </button>
       <a href="/app" class="nav-cta">Open App</a>
     </div>
   </nav>
@@ -538,6 +572,7 @@
       <h4>Legal</h4>
       <a href="/app/terms">Terms of Service</a>
       <a href="/app/privacy">Privacy Policy</a>
+      <a href="/canary">Warrant Canary</a>
     </div>
     <div class="foot-col">
       <h4>Business</h4>
@@ -548,6 +583,25 @@
   <div class="copyright">Copyright &copy; 2024&ndash;2026 Discreet contributors. Patent Pending. AGPL-3.0-or-later.</div>
 
   <script>
+    // ── Theme toggle (light/dark) ──
+    (function() {
+      var stored = localStorage.getItem('d_landing_theme');
+      var theme = stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      updateIcon(theme);
+    })();
+    function updateIcon(theme) {
+      var el = document.getElementById('theme-icon');
+      if (el) el.innerHTML = theme === 'light' ? '&#9728;' : '&#9790;'; // ☀ or ☾
+    }
+    function toggleTheme() {
+      var current = document.documentElement.getAttribute('data-theme') || 'dark';
+      var next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('d_landing_theme', next);
+      updateIcon(next);
+    }
+
     // ── IntersectionObserver for scroll animations ──
     (function() {
       var els = document.querySelectorAll('.animate-on-scroll');

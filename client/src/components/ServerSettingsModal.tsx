@@ -1699,23 +1699,37 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     }
   };
 
-  const tabs = [
-    { id: 'overview',    label: 'Overview' },
-    { id: 'channels',    label: channels.length ? `Channels (${channels.length})` : 'Channels' },
-    { id: 'roles',       label: roles.length ? `Roles (${roles.length})` : 'Roles' },
-    { id: 'members',     label: mgmtMembers.length ? `Members (${mgmtMembers.length})` : 'Members' },
-    { id: 'bots',        label: serverBots.length ? `Bots (${serverBots.length})` : 'Bots' },
-    { id: 'emoji',       label: 'Emoji' },
-    { id: 'events',      label: 'Events' },
-    { id: 'invites',     label: 'Invites' },
-    { id: 'moderation',  label: 'Moderation' },
-    { id: 'data',        label: 'Data Management' },
-    { id: 'bans',        label: 'Bans' },
-    { id: 'playbooks',   label: 'Playbooks' },
-    { id: 'automation',  label: 'Automation' },
-    { id: 'webhooks',    label: 'Webhooks' },
-    { id: 'audit',       label: 'Audit Log' },
+  const isOwner = server.owner_id === api.userId;
+  const tabGroups = [
+    { heading: 'Server', tabs: [
+      { id: 'overview',   label: 'Overview' },
+      { id: 'roles',      label: roles.length ? `Roles (${roles.length})` : 'Roles' },
+      { id: 'emoji',      label: 'Emoji' },
+    ]},
+    { heading: 'Channels', tabs: [
+      { id: 'channels',   label: channels.length ? `Channels (${channels.length})` : 'Channels' },
+    ]},
+    { heading: 'Members', tabs: [
+      { id: 'members',    label: mgmtMembers.length ? `Members (${mgmtMembers.length})` : 'Members' },
+      { id: 'invites',    label: 'Invites' },
+      { id: 'bans',       label: 'Bans' },
+    ]},
+    { heading: 'Moderation', tabs: [
+      { id: 'moderation',  label: 'Moderation' },
+      { id: 'audit',       label: 'Audit Log' },
+    ]},
+    { heading: 'Integrations', tabs: [
+      { id: 'bots',        label: serverBots.length ? `Bots (${serverBots.length})` : 'Bots' },
+      { id: 'webhooks',    label: 'Webhooks' },
+      { id: 'automation',  label: 'Automation' },
+    ]},
+    { heading: 'Other', tabs: [
+      { id: 'events',      label: 'Events' },
+      { id: 'playbooks',   label: 'Playbooks' },
+      { id: 'data',        label: 'Data Management' },
+    ]},
   ];
+  const tabs = tabGroups.flatMap(g => g.tabs);
 
   const actionLabels: Record<string, string> = {
     MEMBER_BAN: 'Banned member', MEMBER_UNBAN: 'Unbanned member',
@@ -1729,18 +1743,49 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
 
   return (
     <Modal title={server?.name || 'Server Settings'} onClose={onClose} wide>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${T.bd}`, paddingBottom: 10 }}>
-        {tabs.map(t => (
-          <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent' }}>{t.label}</div>
+      <div style={{ display: 'flex', gap: 0, minHeight: 400 }}>
+      {/* ── Sidebar ── */}
+      <div style={{ width: 180, flexShrink: 0, borderRight: `1px solid ${T.bd}`, paddingRight: 12, marginRight: 16, overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
+        {tabGroups.map(group => (
+          <div key={group.heading} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', padding: '4px 8px', marginBottom: 2 }}>{group.heading}</div>
+            {group.tabs.map(t => (
+              <div key={t.id} onClick={() => {
+                setTab(t.id);
+                if (t.id === 'bots') api.listBots(server.id).then(b => setServerBots(Array.isArray(b) ? b : []));
+                if (t.id === 'channels') { api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : [])); api.listCategories(server.id).then(c => setCategories(Array.isArray(c) ? c : [])); }
+                if (t.id === 'audit') api.getAuditLog(server.id).then(a => setAuditLog(Array.isArray(a) ? a : []));
+                if (t.id === 'bans') api.listBans(server.id).then(b => setBans(Array.isArray(b) ? b : []));
+                if (t.id === 'invites') { setInvitesLoading(true); api.listInvites(server.id).then(inv => { setInvites(Array.isArray(inv) ? inv : []); setInvitesLoading(false); }).catch(() => setInvitesLoading(false)); }
+                if (t.id === 'roles') api.listRoles(server.id).then(r => setRoles(Array.isArray(r) ? r : []));
+                if (t.id === 'webhooks' && channels.length === 0) api.listChannels(server.id).then(c => setChannels(Array.isArray(c) ? c : []));
+              }}
+                style={{
+                  padding: '5px 8px', borderRadius: 4, fontSize: 12, fontWeight: tab === t.id ? 600 : 500,
+                  cursor: 'pointer', marginBottom: 1,
+                  color: tab === t.id ? T.ac : T.mt,
+                  background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent',
+                  transition: 'color .15s, background .15s',
+                }}
+                onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.background = 'transparent'; }}
+              >{t.label}</div>
+            ))}
+          </div>
         ))}
       </div>
+      {/* ── Content ── */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
 
       {tab === 'overview' && (<>
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Server Name</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>
+            Server Name
+            {!isOwner && <span style={{ fontSize: 9, color: T.mt, fontWeight: 400, textTransform: 'none' }}><I.Lock s={9} /> Owner only</span>}
+          </label>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input style={{ ...getInp(), flex: 1 }} value={name} onChange={e => setName(e.target.value)} />
-            <button onClick={saveName} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 18px' }}>Save</button>
+            <input style={{ ...getInp(), flex: 1, opacity: isOwner ? 1 : 0.5 }} value={name} onChange={e => { if (isOwner) setName(e.target.value); }} readOnly={!isOwner} />
+            {isOwner && <button onClick={saveName} className="pill-btn" style={{ background: T.ac, color: '#000', padding: '8px 18px' }}>Save</button>}
           </div>
           {saved && <div style={{ color: T.ac, fontSize: 12, marginTop: 6 }}>{saved}</div>}
         </div>
@@ -1917,6 +1962,51 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: serverBotTags ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
             </div>
           </div>
+        </div>
+
+        {/* System Messages Channel */}
+        <div style={{ marginTop: 16, marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>System Messages Channel</label>
+          <select style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            value={localStorage.getItem(`d_sysmsg_ch_${server.id}`) || ''}
+            onChange={e => { localStorage.setItem(`d_sysmsg_ch_${server.id}`, e.target.value); api.updateServer(server.id, { system_channel_id: e.target.value || null } as any).catch(() => {}); }}
+          >
+            <option value="">Default (first text channel)</option>
+            {channels.filter(c => c.channel_type !== 'voice').map(ch => (
+              <option key={ch.id} value={ch.id}># {ch.name}</option>
+            ))}
+          </select>
+          <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Where join/leave and system messages are posted.</div>
+        </div>
+
+        {/* Inactive Timeout */}
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Inactive Voice Timeout</label>
+          <select style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            value={localStorage.getItem(`d_idle_timeout_${server.id}`) || '300'}
+            onChange={e => { localStorage.setItem(`d_idle_timeout_${server.id}`, e.target.value); }}
+          >
+            <option value="60">1 minute</option>
+            <option value="300">5 minutes</option>
+            <option value="900">15 minutes</option>
+            <option value="1800">30 minutes</option>
+            <option value="3600">1 hour</option>
+          </select>
+          <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Move idle users out of voice after this duration.</div>
+        </div>
+
+        {/* Default Notification Level */}
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Default Notification Level</label>
+          <select style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            value={localStorage.getItem(`d_default_notif_${server.id}`) || 'mentions'}
+            onChange={e => { localStorage.setItem(`d_default_notif_${server.id}`, e.target.value); api.updateServer(server.id, { default_notification_level: e.target.value } as any).catch(() => {}); }}
+          >
+            <option value="all">All Messages</option>
+            <option value="mentions">Mentions Only</option>
+            <option value="nothing">Nothing</option>
+          </select>
+          <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Notification level for new members joining this server.</div>
         </div>
 
         {/* AI Agents Toggle — owner or manage_bots permission */}
@@ -2167,8 +2257,26 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               </select>
             </div>
 
-            {/* filter pills */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {/* Prune + filter pills */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              {isOwner && (
+                <select
+                  onChange={async e => {
+                    const days = parseInt(e.target.value);
+                    if (!days) return;
+                    if (!confirm(`Remove members with no roles who haven't been active in ${days} days?`)) return;
+                    try { await api.fetch(`/servers/${server.id}/prune?days=${days}`, { method: 'POST' }); if (onUpdate) onUpdate(); } catch {}
+                    e.target.value = '';
+                  }}
+                  style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.mt, fontSize: 11, cursor: 'pointer' }}
+                >
+                  <option value="">Prune Inactive…</option>
+                  <option value="1">1 day</option>
+                  <option value="7">7 days</option>
+                  <option value="14">14 days</option>
+                  <option value="30">30 days</option>
+                </select>
+              )}
               {(['all', 'online', 'offline', 'bots'] as const).map(f => (
                 <button
                   key={f}
@@ -2887,6 +2995,8 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           </div>
         ))}
       </>)}
+      </div>{/* end content */}
+      </div>{/* end sidebar+content flex */}
     </Modal>
   );
 }

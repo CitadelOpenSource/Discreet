@@ -150,6 +150,39 @@ function AccountTierBanner({ platformUser }: { platformUser?: any }) {
     );
   }
 
+  if (tier === 'anonymous') {
+    const [addingEmail, setAddingEmail] = React.useState(false);
+    const [anonEmail, setAnonEmail] = React.useState('');
+    return (
+      <div style={{ padding: '12px 14px', background: 'rgba(250,166,26,0.06)', borderRadius: 10, border: '1px solid rgba(250,166,26,0.15)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 16 }}>🔒</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#faa61a' }}>Anonymous Account — Limited Features</div>
+            <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>Some features require a verified email. Add one to upgrade.</div>
+          </div>
+        </div>
+        {!addingEmail ? (
+          <button onClick={() => setAddingEmail(true)} style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${ta(T.ac, '44')}`, background: ta(T.ac, '12'), color: T.ac, fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8 }}>
+            Add Email to Upgrade
+          </button>
+        ) : (
+          <div style={{ marginBottom: 8 }}>
+            <input value={anonEmail} onChange={e => setAnonEmail(e.target.value)} placeholder="your@email.com" type="email"
+              style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 6 }} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => setAddingEmail(false)} style={{ flex: 1, padding: '6px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={async () => { try { await api.changeEmail(anonEmail, '', undefined); setAddingEmail(false); } catch {} }} style={{ flex: 1, padding: '6px 12px', borderRadius: 6, border: 'none', background: T.ac, color: '#000', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Send Code</button>
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 10, color: T.mt, lineHeight: 1.5 }}>Your recovery phrase was shown once at account creation. We cannot retrieve it.</div>
+        {platformUser?.id && <div style={{ fontSize: 10, color: T.mt, fontFamily: 'monospace', marginTop: 4 }}>ID: {platformUser.id}</div>}
+        {platformUser?.created_at && <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Created: {new Date(platformUser.created_at).toLocaleDateString()}</div>}
+      </div>
+    );
+  }
+
   if (tier === 'pro') {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(240,178,50,0.06)', borderRadius: 8, border: '1px solid rgba(240,178,50,0.2)', marginBottom: 16 }}>

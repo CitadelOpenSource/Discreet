@@ -2,14 +2,20 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
+export type TimestampFormat = 'relative' | '12h' | '24h';
+
 interface TimezoneCtx {
   timezone: string;
   setTimezone: (tz: string) => void;
+  timestampFormat: TimestampFormat;
+  setTimestampFormat: (f: TimestampFormat) => void;
   /** Format a date string or Date using the user's timezone. */
   formatTime: (d: string | Date, opts?: Intl.DateTimeFormatOptions) => string;
   formatDate: (d: string | Date, opts?: Intl.DateTimeFormatOptions) => string;
   /** Progressive relative: "Just now", "5m ago", "3:45 PM", "Yesterday 3:45 PM", "Mar 14, 3:45 PM" */
   formatRelative: (d: string | Date) => string;
+  /** Format timestamp using the user's selected format (relative, 12h, 24h). */
+  formatTimestamp: (d: string | Date) => string;
   /** Full datetime with timezone for tooltip: "Friday, March 14, 2026 3:45:12 PM EST" */
   formatFullTooltip: (d: string | Date) => string;
   /** Date divider label: "Today", "Yesterday", or "March 14, 2026" */
@@ -19,9 +25,12 @@ interface TimezoneCtx {
 const TimezoneContext = createContext<TimezoneCtx>({
   timezone: detected,
   setTimezone: () => {},
+  timestampFormat: 'relative',
+  setTimestampFormat: () => {},
   formatTime: (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   formatDate: (d) => new Date(d).toLocaleDateString(),
   formatRelative: (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+  formatTimestamp: (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
   formatFullTooltip: (d) => new Date(d).toLocaleString(),
   dateDividerLabel: (d) => new Date(d).toLocaleDateString(),
 });
@@ -59,6 +68,9 @@ function yesterdayInTz(now: Date, target: Date, tz: string): boolean {
 
 export function TimezoneProvider({ children }: { children: React.ReactNode }) {
   const [timezone, setTimezone] = useState(detected);
+  const [timestampFormat, setTimestampFormat] = useState<TimestampFormat>(
+    () => (localStorage.getItem('d_timestamp_format') as TimestampFormat) || 'relative'
+  );
 
   const formatTime = useCallback((d: string | Date, opts?: Intl.DateTimeFormatOptions) => {
     const date = typeof d === 'string' ? new Date(d) : d;
@@ -125,8 +137,26 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     });
   }, [timezone]);
 
+  const handleSetTimestampFormat = useCallback((f: TimestampFormat) => {
+    setTimestampFormat(f);
+    localStorage.setItem('d_timestamp_format', f);
+  }, []);
+
+  /** Format timestamp using the user's selected format preference. */
+  const formatTimestamp = useCallback((d: string | Date): string => {
+    const date = typeof d === 'string' ? new Date(d) : d;
+    if (timestampFormat === '12h') {
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: timezone });
+    }
+    if (timestampFormat === '24h') {
+      return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone });
+    }
+    // 'relative' — use the existing progressive relative formatter.
+    return formatRelative(d);
+  }, [timestampFormat, timezone, formatRelative]);
+
   return (
-    <TimezoneContext.Provider value={{ timezone, setTimezone, formatTime, formatDate, formatRelative, formatFullTooltip, dateDividerLabel }}>
+    <TimezoneContext.Provider value={{ timezone, setTimezone, timestampFormat, setTimestampFormat: handleSetTimestampFormat, formatTime, formatDate, formatRelative, formatTimestamp, formatFullTooltip, dateDividerLabel }}>
       {children}
     </TimezoneContext.Provider>
   );

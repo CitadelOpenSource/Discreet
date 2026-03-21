@@ -1345,7 +1345,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     { tab: 'discover',   section: 'discover',        label: 'Discover Features',    desc: 'Explore features you haven\'t set up yet',                     keywords: ['discover', 'features', 'new', 'setup', 'getting started', 'onboarding', 'tips', 'tour'] },
     { tab: 'appearance', section: 'theme',           label: 'Theme & Colors',       desc: 'Dark mode, light mode, accent color, density, chat font size, bubbles', keywords: ['theme', 'dark', 'light', 'dark mode', 'accent', 'color', 'font', 'font size', 'compact', 'mode', 'density', 'spacing', 'layout', 'chat width', 'language', 'locale', 'timezone', 'time zone', 'message density', 'cozy', 'spacious', 'chat font', 'chat font size', 'bubble', 'bubbles', 'chat bubbles', 'imessage', 'messenger'] },
     { tab: 'appearance', section: 'display-options',  label: 'Display Options',      desc: 'Embeds, avatars, timestamps, typing indicators, emoji, nighttime mode', keywords: ['display', 'embeds', 'embed', 'link preview', 'avatar', 'timestamp', 'typing', 'indicator', 'emoji', 'animate', 'sticker', 'smooth scroll', 'twemoji', 'recently used emojis', 'emoji history', 'slash', 'suggestions', 'nighttime', 'night mode', 'bedtime', 'sleep', 'blue light', 'moon', 'dark mode schedule'] },
-    { tab: 'voice',      section: 'voice',           label: 'Voice & Audio',        desc: 'Microphone, speaker, noise suppression, push to talk, leave confirmation',  keywords: ['voice', 'audio', 'microphone', 'mic', 'speaker', 'input', 'output', 'volume', 'noise', 'gate', 'compressor', 'echo', 'cancellation', 'noise suppression', 'push to talk', 'ptt', 'voice activation', 'sensitivity', 'confirm', 'leave', 'disconnect'] },
+    { tab: 'voice',      section: 'voice',           label: 'Voice & Video',        desc: 'Microphone, speaker, camera, noise suppression, push to talk, video quality',  keywords: ['voice', 'audio', 'video', 'camera', 'microphone', 'mic', 'speaker', 'input', 'output', 'volume', 'noise', 'gate', 'compressor', 'echo', 'cancellation', 'noise suppression', 'push to talk', 'ptt', 'voice activation', 'sensitivity', 'confirm', 'leave', 'disconnect', 'webcam', 'resolution', 'fps'] },
     { tab: 'video',      section: 'video',           label: 'Video & Streaming',    desc: 'Camera, resolution, FPS, screen sharing',               keywords: ['video', 'camera', 'webcam', 'resolution', 'fps', 'screen share', 'streaming', 'quality'] },
     { tab: 'profile',    section: 'profile',         label: 'My Profile',           desc: 'Display name, avatar, bio, custom status',              keywords: ['avatar', 'picture', 'profile', 'photo', 'upload', 'display name', 'bio', 'about me', 'custom status', 'name'] },
     { tab: 'profile',    section: 'avatar-creator',   label: 'Avatar Creator',       desc: 'Create and customize your avatar',                      keywords: ['avatar', 'creation', 'builder', 'randomize', 'create avatar'] },
@@ -1519,16 +1519,31 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
 
   const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
-  const tabs = [
-    { id: 'discover', label: '✦ Discover' }, { id: 'appearance', label: 'Appearance' }, { id: 'voice', label: 'Voice & Audio' },
-    { id: 'video', label: 'Video' }, { id: 'streaming', label: 'Streaming' },
-    { id: 'profile', label: 'My Profile' }, { id: 'privacy', label: 'Privacy' },
-    { id: 'account', label: 'Account' }, { id: 'notifications', label: 'Notifications' },
-    { id: 'accessibility', label: 'Accessibility' }, { id: 'keybinds', label: 'Keybinds' },
-    { id: 'network', label: 'Network' }, { id: 'advanced', label: 'Advanced' }, { id: 'about', label: 'About' },
-    ...(isStaff ? [{ id: 'admin', label: '⚙ Admin' }] : []),
-    ...(isStaff ? [{ id: 'dev-tools', label: '🔧 Dev Tools' }] : []),
+  const tabGroups = [
+    { heading: 'User Settings', tabs: [
+      { id: 'account', label: 'Account' },
+      { id: 'profile', label: 'Profile' },
+      { id: 'privacy', label: 'Privacy & Safety' },
+      { id: 'notifications', label: 'Notifications' },
+    ]},
+    { heading: 'App Settings', tabs: [
+      { id: 'appearance', label: 'Appearance' },
+      { id: 'voice', label: 'Voice & Video' },
+      { id: 'keybinds', label: 'Keybinds' },
+      { id: 'accessibility', label: 'Accessibility' },
+    ]},
+    { heading: 'Misc', tabs: [
+      { id: 'discover', label: '✦ Discover' },
+      { id: 'network', label: 'Network' },
+      { id: 'advanced', label: 'Advanced' },
+      { id: 'about', label: 'About' },
+    ]},
+    ...(isStaff ? [{ heading: 'Staff', tabs: [
+      { id: 'admin', label: '⚙ Admin' },
+      { id: 'dev-tools', label: '🔧 Dev Tools' },
+    ]}] : []),
   ];
+  const tabs = tabGroups.flatMap(g => g.tabs);
 
   return (
     <Modal title="Settings" onClose={onClose} wide>
@@ -1564,16 +1579,39 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           )}
         </div>
 
-        {/* Tab Bar */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${T.bd}`, paddingBottom: 10, flexWrap: 'wrap' }}>
-          {tabs.map(t => {
-            const dimmed = matchedTabs && !matchedTabs.has(t.id);
-            return (
-              <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : dimmed ? `${ta(T.mt,'44')}` : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.1)' : 'transparent', transition: 'color .15s, opacity .15s' }}>{t.label}</div>
-            );
-          })}
-          {onLogout && <div onClick={onLogout} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err, marginLeft: 'auto' }}>Log Out</div>}
+        {/* Settings Sidebar + Content Layout */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 0, minHeight: 400 }}>
+        {/* Sidebar */}
+        <div style={{ width: 180, flexShrink: 0, borderRight: `1px solid ${T.bd}`, paddingRight: 12, marginRight: 16, overflowY: 'auto', maxHeight: 'calc(80vh - 120px)' }}>
+          {tabGroups.map(group => (
+            <div key={group.heading} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', padding: '4px 8px', marginBottom: 2 }}>{group.heading}</div>
+              {group.tabs.map(t => {
+                const dimmed = matchedTabs && !matchedTabs.has(t.id);
+                return (
+                  <div key={t.id} onClick={() => setTab(t.id)}
+                    style={{
+                      padding: '5px 8px', borderRadius: 4, fontSize: 12, fontWeight: tab === t.id ? 600 : 500,
+                      cursor: 'pointer', marginBottom: 1,
+                      color: tab === t.id ? T.ac : dimmed ? ta(T.mt, '44') : T.mt,
+                      background: tab === t.id ? ta(T.ac, '10') : 'transparent',
+                      transition: 'color .15s, background .15s',
+                    }}
+                    onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.background = 'transparent'; }}
+                  >{t.label}</div>
+                );
+              })}
+            </div>
+          ))}
+          {onLogout && (
+            <div style={{ borderTop: `1px solid ${T.bd}`, paddingTop: 8, marginTop: 4 }}>
+              <div onClick={onLogout} style={{ padding: '5px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: T.err }}>Log Out</div>
+            </div>
+          )}
         </div>
+        {/* Content */}
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', maxHeight: 'calc(80vh - 120px)' }}>
 
         {/* ── Discover ── */}
         {tab === 'discover' && (() => {
@@ -2128,8 +2166,44 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         </>)}
 
         {errMsg && <div style={{ padding: '8px 12px', background: 'rgba(255,71,87,0.08)', borderRadius: 8, color: T.err, fontSize: 13, textAlign: 'center', marginTop: 8 }}>{errMsg}</div>}
-        {saved && <div style={{ padding: '8px 12px', background: 'rgba(0,212,170,0.08)', borderRadius: 8, color: T.ac, fontSize: 13, textAlign: 'center', marginTop: 8 }}>Settings saved!</div>}
+        {saved && <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '8px 16px', background: T.ac, color: '#000', borderRadius: 8, fontSize: 12, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.3)', zIndex: 10001, animation: 'fadeIn 0.2s ease' }}>✓ Saved</div>}
+        </div>{/* end content */}
+        </div>{/* end sidebar+content flex */}
       </>)}
     </Modal>
+  );
+}
+
+// ─── Collapsible Advanced Section ────────────────────────────────────────
+
+/**
+ * AdvancedSection — Collapsible section at the bottom of a settings tab.
+ *
+ * State stored per-section in localStorage (d_adv_{sectionId}).
+ * Chevron rotates 180° on expand. Smooth max-height transition 200ms.
+ */
+export function AdvancedSection({ sectionId, children }: { sectionId: string; children: React.ReactNode }) {
+  const key = `d_adv_${sectionId}`;
+  const [open, setOpen] = React.useState(() => localStorage.getItem(key) === '1');
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    localStorage.setItem(key, next ? '1' : '0');
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ height: 1, background: T.bd, opacity: 0.5, marginBottom: 12 }} />
+      <div onClick={toggle} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', padding: '4px 0' }}>
+        <span style={{ fontSize: 10, color: T.mt, transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', display: 'inline-block' }}>▼</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Advanced</span>
+      </div>
+      <div style={{ maxHeight: open ? 2000 : 0, overflow: 'hidden', transition: 'max-height 0.2s ease' }}>
+        <div style={{ paddingTop: 10 }}>
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }

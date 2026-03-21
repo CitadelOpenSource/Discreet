@@ -126,6 +126,35 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [phraseConfirmed, setPhraseConfirmed] = useState(false);
   const [loginWithPhrase, setLoginWithPhrase] = useState(false);
   const [phraseInput, setPhraseInput]         = useState('');
+  const [fingerprintHash, setFingerprintHash] = useState('');
+  const [turnstileToken, setTurnstileToken]   = useState('');
+  const [authLang, setAuthLang] = useState(() => localStorage.getItem('d_locale') || navigator.language?.split('-')[0] || 'en');
+
+  // Collect device fingerprint when anonymous mode is activated.
+  useEffect(() => {
+    if (!anonMode) return;
+    (async () => {
+      try {
+        const fp = { screenWidth: screen.width, screenHeight: screen.height, colorDepth: screen.colorDepth, timezoneOffset: new Date().getTimezoneOffset(), platform: navigator.platform };
+        const data = new TextEncoder().encode(JSON.stringify(fp));
+        const hashBuf = await crypto.subtle.digest('SHA-256', data);
+        const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        setFingerprintHash(hex);
+      } catch { /* crypto.subtle unavailable in insecure contexts */ }
+    })();
+  }, [anonMode]);
+
+  // Load Turnstile script when anonymous mode is activated.
+  useEffect(() => {
+    if (!anonMode) return;
+    const siteKey = (import.meta as any).env?.VITE_TURNSTILE_SITE_KEY;
+    if (!siteKey) return;
+    if (document.querySelector('script[src*="turnstile"]')) return;
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    script.async = true;
+    document.head.appendChild(script);
+  }, [anonMode]);
 
   // OAuth providers + SAML SSO
   const [oauthProviders, setOauthProviders] = useState<{ provider: string; client_id: string }[]>([]);
@@ -220,7 +249,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     setError('');
     setLoading(true);
     try {
-      const res = await api.registerAnonymous(username.trim());
+      const res = await api.registerAnonymous(username.trim(), fingerprintHash || undefined, turnstileToken || undefined);
       if (res.ok && res.data?.recovery_phrase) {
         setRecoveryPhrase(res.data.recovery_phrase);
       } else {
@@ -284,7 +313,22 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
+    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative' }}>
+      {/* Language selector — top right */}
+      <div style={{ position: 'absolute', top: 16, right: 16 }}>
+        <select value={authLang} onChange={e => {
+          const lang = e.target.value;
+          setAuthLang(lang);
+          localStorage.setItem('d_locale', lang);
+          import('../i18n/i18n').then(m => m.setLanguage(lang)).catch(() => {});
+        }} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer', outline: 'none' }} aria-label="Language">
+          <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
+          <option value="de">Deutsch</option><option value="pt">Português</option><option value="ru">Русский</option>
+          <option value="uk">Українська</option><option value="ar">العربية</option><option value="fa">فارسی</option>
+          <option value="he">עברית</option><option value="ku">کوردی</option><option value="ps">پښتو</option>
+          <option value="my">မြန်မာ</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="zh">中文</option>
+        </select>
+      </div>
       <div style={{ width: '100%', maxWidth: 420, padding: 'clamp(24px, 5vw, 40px)', background: T.sf, borderRadius: 16, border: `1px solid ${T.bd}`, boxShadow: '0 8px 40px rgba(0,0,0,0.4)' }}>
 
         {/* Logo */}
@@ -654,13 +698,31 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           )}
           {mode === 'register' && anonMode && !recoveryPhrase && (
             <div style={{ marginTop: 10, padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.tx, marginBottom: 8 }}>Anonymous Registration</div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <button type="button" onClick={() => setAnonMode(false)} style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'transparent', color: T.mt }}>With Email</button>
+                <button type="button" style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600, background: T.sf, color: T.ac, boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>Anonymous</button>
+              </div>
               <div style={{ fontSize: 11, color: T.mt, marginBottom: 10, lineHeight: 1.5 }}>No email, no phone number. You'll receive a 12-word recovery phrase instead of a password.</div>
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Choose a username" style={{ ...getInp(), marginBottom: 8 }} />
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Choose a username" style={{ ...getInp(), marginBottom: 8 }} aria-label="Username" />
+              {/* Cloudflare Turnstile widget (invisible mode) */}
+              {(import.meta as any).env?.VITE_TURNSTILE_SITE_KEY && (
+                <div className="cf-turnstile" data-sitekey={(import.meta as any).env.VITE_TURNSTILE_SITE_KEY} data-callback="onTurnstileSuccess" data-theme="dark" style={{ marginBottom: 8 }}
+                  ref={(el: HTMLDivElement | null) => {
+                    if (el && (window as any).turnstile && !el.dataset.rendered) {
+                      el.dataset.rendered = '1';
+                      (window as any).turnstile.render(el, {
+                        sitekey: (import.meta as any).env.VITE_TURNSTILE_SITE_KEY,
+                        theme: 'dark',
+                        callback: (token: string) => setTurnstileToken(token),
+                      });
+                    }
+                  }}
+                />
+              )}
               {error && <div style={{ fontSize: 11, color: '#ff4757', marginBottom: 8 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => setAnonMode(false)} style={{ ...btn(true), background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, flex: 1 }}>Cancel</button>
-                <button type="button" onClick={submitAnonymous} disabled={loading || !username.trim()} style={{ ...btn(!loading && !!username.trim()), flex: 1 }}>{loading ? 'Creating...' : 'Create Account'}</button>
+                <button type="button" onClick={submitAnonymous} disabled={loading || !username.trim()} style={{ ...btn(!loading && !!username.trim()), flex: 1 }}>{loading ? 'Creating...' : 'Create Anonymous Account'}</button>
               </div>
             </div>
           )}
@@ -688,51 +750,73 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
         </div>
       </div>
 
-      {/* Recovery phrase modal (anonymous registration success) */}
-      {recoveryPhrase && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 16 }}>
-          <div style={{ width: '100%', maxWidth: 480, background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 'clamp(24px, 5vw, 36px)', boxShadow: '0 12px 48px rgba(0,0,0,0.5)' }}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🔐</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: T.tx }}>Your Recovery Phrase</div>
-              <div style={{ fontSize: 12, color: T.mt, marginTop: 4 }}>This is the <strong>only</strong> way to access your account.</div>
-            </div>
+      {/* Recovery phrase modal (anonymous registration success) — cannot be dismissed */}
+      {recoveryPhrase && (() => {
+        const words = recoveryPhrase.split(' ');
+        const [copied, setCopied] = React.useState(false);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001, padding: 16 }}>
+            <div style={{ width: '100%', maxWidth: 520, background: T.sf, borderRadius: 14, border: `1px solid ${T.bd}`, padding: 'clamp(20px, 4vw, 32px)', boxShadow: '0 16px 64px rgba(0,0,0,0.6)', maxHeight: '95vh', overflowY: 'auto' }}>
 
-            <div style={{ padding: '16px 20px', background: T.bg, borderRadius: 10, border: `1px solid ${T.bd}`, fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 600, color: T.ac, lineHeight: 2, textAlign: 'center', marginBottom: 16, wordSpacing: '0.5em' }}>
-              {recoveryPhrase}
-            </div>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <div style={{ fontSize: 36, marginBottom: 6 }}>🔐</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: T.tx }}>Your Recovery Phrase</div>
+              </div>
 
-            <div style={{ padding: '10px 14px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#ff4757', lineHeight: 1.6 }}>
-              <strong>This is the ONLY way to recover your account.</strong> We cannot help you if you lose these words. Write them down and store them safely.
-            </div>
+              {/* Warning box */}
+              <div style={{ padding: '12px 14px', background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.3)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#ff4757', lineHeight: 1.7 }}>
+                <strong>WARNING:</strong> This is the ONLY time your recovery phrase will be displayed. It is your password and the only way to access your account. Discreet support CANNOT retrieve this. Treat it with the same care as a cryptocurrency wallet seed phrase. If you lose it, your account is gone forever.
+              </div>
 
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <button type="button" onClick={() => navigator.clipboard?.writeText(recoveryPhrase)}
-                style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                Copy to clipboard
+              {/* 3x4 numbered word grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+                {words.map((word, i) => (
+                  <div key={i} style={{
+                    padding: '10px 12px', background: T.bg, borderRadius: 8,
+                    border: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.mt, minWidth: 16, textAlign: 'right' }}>{i + 1}.</span>
+                    <span style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: T.ac }}>{word}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <button type="button" onClick={() => { navigator.clipboard?.writeText(recoveryPhrase); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: copied ? T.ac : T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {copied ? '✓ Copied!' : 'Copy to Clipboard'}
+                </button>
+                <button type="button" onClick={() => {
+                  const content = `DISCREET RECOVERY PHRASE\n${'='.repeat(40)}\n\nWARNING: This file contains your account recovery phrase.\nAnyone with these words can access your account.\nStore securely and delete this file after writing the words down.\n\nUsername: ${username}\nDate: ${new Date().toISOString().slice(0, 10)}\n\nRecovery Phrase:\n${words.map((w, i) => `${(i + 1).toString().padStart(2)}. ${w}`).join('\n')}\n`;
+                  const blob = new Blob([content], { type: 'text/plain' });
+                  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'discreet-recovery-phrase.txt'; a.click(); URL.revokeObjectURL(a.href);
+                }}
+                  style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  Download as File
+                </button>
+              </div>
+
+              {/* Screenshot warning */}
+              <div style={{ fontSize: 10, color: T.mt, textAlign: 'center', marginBottom: 16, fontStyle: 'italic' }}>
+                We recommend writing this down on paper rather than taking a screenshot.
+              </div>
+
+              {/* Confirmation checkbox */}
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16, padding: '10px 12px', background: ta(T.ac, '06'), borderRadius: 8, border: `1px solid ${ta(T.ac, '20')}` }}>
+                <input type="checkbox" checked={phraseConfirmed} onChange={e => setPhraseConfirmed(e.target.checked)}
+                  style={{ accentColor: T.ac, width: 18, height: 18, flexShrink: 0, marginTop: 1, cursor: 'pointer' }} />
+                <span style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, fontWeight: 600 }}>I have securely saved my recovery phrase and understand it cannot be recovered.</span>
+              </label>
+
+              <button type="button" disabled={!phraseConfirmed} onClick={() => { setRecoveryPhrase(''); onAuth(); }}
+                style={{ ...btn(phraseConfirmed), width: '100%', fontSize: 15, padding: '12px' }}>
+                {phraseConfirmed ? 'Continue to Discreet' : 'Save your phrase first'}
               </button>
-              <button type="button" onClick={() => {
-                const blob = new Blob([`Discreet Recovery Phrase\n\nUsername: ${username}\nPhrase: ${recoveryPhrase}\n\nStore this file securely. Delete after writing down the words.`], { type: 'text/plain' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'discreet-recovery.txt'; a.click(); URL.revokeObjectURL(a.href);
-              }}
-                style={{ flex: 1, padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.bd}`, background: T.sf2, color: T.tx, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                Download as file
-              </button>
             </div>
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
-              <input type="checkbox" checked={phraseConfirmed} onChange={e => setPhraseConfirmed(e.target.checked)}
-                style={{ accentColor: T.ac, width: 16, height: 16, flexShrink: 0, marginTop: 1 }} />
-              <span style={{ fontSize: 12, color: T.tx, lineHeight: 1.5 }}>I have saved my recovery phrase and understand it cannot be retrieved later.</span>
-            </label>
-
-            <button type="button" disabled={!phraseConfirmed} onClick={() => { setRecoveryPhrase(''); onAuth(); }}
-              style={{ ...btn(phraseConfirmed), width: '100%' }}>
-              {phraseConfirmed ? 'Continue to Discreet' : 'Save your phrase first'}
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Recovery key modal */}
       {recoveryKey && (

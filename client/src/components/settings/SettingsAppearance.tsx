@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { T, ta, PRESETS, getThemeName, setTheme, getTheme, exportTheme, validateCustomTheme, applyCustomTheme, loadCustomTheme, previewTheme, revertPreview, type ThemeRaw } from '../../theme';
-import { useTimezone, detectedTimezone } from '../../hooks/TimezoneContext';
+import { useTimezone, detectedTimezone, type TimestampFormat } from '../../hooks/TimezoneContext';
 import { api } from '../../api/CitadelAPI';
 import { loadConfig as loadNightConfig, saveConfig as saveNightConfig, activateNow, overrideSession, clearSessionOverride, hasSessionOverride, shouldActivate, type NighttimeConfig } from '../../hooks/useNighttimeMode';
 
@@ -333,6 +333,37 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
       </div>
     </div>
     </div>
+    {/* Timestamps */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Timestamps</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 8 }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Show message timestamps</div>
+        <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Display timestamps next to messages. Date separators always show.</div>
+      </div>
+      <div onClick={() => { const next = !(s.show_timestamps !== false); save('show_timestamps', next); localStorage.setItem('d_show_timestamps', String(next)); }}
+        style={{ width: 36, height: 20, borderRadius: 10, background: s.show_timestamps !== false ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+        <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.show_timestamps !== false ? 18 : 2, transition: 'left 0.2s' }} />
+      </div>
+    </div>
+    {s.show_timestamps !== false && (
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {([
+          { id: 'relative' as TimestampFormat, label: 'Relative', example: '2 min ago' },
+          { id: '12h' as TimestampFormat, label: '12-hour', example: '3:42 PM' },
+          { id: '24h' as TimestampFormat, label: '24-hour', example: '15:42' },
+        ]).map(fmt => {
+          const active = (s.timestamp_format as string || 'relative') === fmt.id;
+          return (
+            <div key={fmt.id} onClick={() => { save('timestamp_format', fmt.id); localStorage.setItem('d_timestamp_format', fmt.id); tzCtx.setTimestampFormat(fmt.id); }}
+              style={{ flex: 1, padding: '10px 8px', borderRadius: 8, cursor: 'pointer', textAlign: 'center', border: `2px solid ${active ? T.ac : T.bd}`, background: active ? 'rgba(0,212,170,0.06)' : 'transparent' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: active ? T.ac : T.tx }}>{fmt.label}</div>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 2, fontFamily: 'monospace' }}>{fmt.example}</div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
     <div style={{ display: sectionVisible('display-options') ? undefined : 'none' }}>
     <div data-section="display-options" style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Display Options</div>
     {[
