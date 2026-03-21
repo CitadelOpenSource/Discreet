@@ -91,6 +91,23 @@ pub async fn search_or_spawn(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AgentSearchRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Platform-level AI kill switch.
+    let platform = crate::discreet_platform_settings::get_platform_settings(&state).await?;
+    if !platform.ai_bots_enabled || platform.ai_emergency_stop {
+        return Err(AppError::ServiceUnavailable("AI services are temporarily disabled by the platform administrator.".into()));
+    }
+    // Per-server AI disable.
+    let server_ai_off = sqlx::query_scalar!(
+        "SELECT ai_disabled FROM servers WHERE id = $1",
+        req.server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if server_ai_off {
+        return Err(AppError::Forbidden("AI agents are disabled on this server.".into()));
+    }
+
     // Require permission to use AI agents within this server.
     require_permission(&state, req.server_id, auth.user_id, PERM_USE_AGENTS).await?;
 

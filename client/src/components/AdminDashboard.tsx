@@ -729,6 +729,24 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
         {tab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 900 }}>
 
+            {/* AI Kill Switch Banner */}
+            {settings && (settings.ai_emergency_stop || !settings.ai_bots_enabled) && (
+              <div style={{
+                padding: '12px 16px', background: 'rgba(255,71,87,0.1)',
+                border: '1px solid rgba(255,71,87,0.3)', borderRadius: 10,
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <span style={{ fontSize: 20 }}>🚨</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.err }}>AI services are disabled platform-wide</div>
+                  <div style={{ fontSize: 11, color: T.mt, marginTop: 2 }}>
+                    {settings.ai_emergency_stop ? 'Emergency stop is active.' : 'AI bots toggle is off.'}{' '}
+                    All AI agent endpoints return 503. Re-enable in Kill Switches below.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Stats grid ── */}
             <div>
               <SectionHeader label="Platform Stats" loading={statsLoading} onRefresh={loadStats} />

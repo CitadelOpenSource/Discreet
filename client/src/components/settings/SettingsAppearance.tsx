@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { T, ta, PRESETS, getThemeName, setTheme, getTheme, exportTheme, validateCustomTheme, applyCustomTheme, loadCustomTheme, previewTheme, revertPreview, type ThemeRaw } from '../../theme';
 import { useTimezone, detectedTimezone } from '../../hooks/TimezoneContext';
 import { api } from '../../api/CitadelAPI';
+import { loadConfig as loadNightConfig, saveConfig as saveNightConfig, activateNow, overrideSession, clearSessionOverride, hasSessionOverride, shouldActivate, type NighttimeConfig } from '../../hooks/useNighttimeMode';
 
 interface UserSettings { [key: string]: unknown; }
 
@@ -317,6 +318,10 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
           <option value="ko">Korean</option>
           <option value="ar">Arabic</option>
           <option value="fa">Farsi</option>
+          <option value="he">Hebrew</option>
+          <option value="ku">Kurdish (Sorani)</option>
+          <option value="my">Burmese</option>
+          <option value="ps">Pashto</option>
           <option value="tr">Turkish</option>
         </select>
       </div>
@@ -358,5 +363,161 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
       );
     })}
     </div>
+
+    {/* ── Nighttime Mode ── */}
+    <NighttimeModeSection s={s} save={save} />
   </>);
+}
+
+// ─── Nighttime Mode Section ──────────────────────────────────────────────
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function NighttimeModeSection({ s, save }: { s: Record<string, unknown>; save: (k: string, v: unknown) => void }) {
+  const [cfg, setCfg] = useState<NighttimeConfig>(loadNightConfig);
+  const [sessionOff, setSessionOff] = useState(hasSessionOverride);
+  const active = shouldActivate(cfg);
+
+  const update = (patch: Partial<NighttimeConfig>) => {
+    const next = { ...cfg, ...patch };
+    setCfg(next);
+    saveNightConfig(next);
+    save('nighttime_mode', next);
+  };
+
+  const toggleDay = (i: number) => {
+    const days = [...cfg.days];
+    days[i] = !days[i];
+    update({ days });
+  };
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
+        🌙 Nighttime Mode
+      </div>
+
+      {/* Master toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Enable Nighttime Mode</div>
+          <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>Automatically switch to dark theme, mute notifications, and reduce blue light on a schedule.</div>
+        </div>
+        <div onClick={() => update({ enabled: !cfg.enabled })}
+          style={{ width: 36, height: 20, borderRadius: 10, background: cfg.enabled ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+          <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: cfg.enabled ? 18 : 2, transition: 'left 0.2s' }} />
+        </div>
+      </div>
+
+      {/* Status + quick actions */}
+      {cfg.enabled && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          {active && !sessionOff && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(155,89,182,0.1)', border: '1px solid rgba(155,89,182,0.25)', borderRadius: 6, fontSize: 11, color: '#9b59b6', fontWeight: 600 }}>
+              🌙 Active now
+            </div>
+          )}
+          {!active && (
+            <button onClick={() => { activateNow(cfg); setCfg({ ...cfg }); }}
+              style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.ac, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+              Turn on now
+            </button>
+          )}
+          {active && !sessionOff && (
+            <button onClick={() => { overrideSession(); setSessionOff(true); }}
+              style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.mt, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+              Stay in day mode this session
+            </button>
+          )}
+          {sessionOff && (
+            <button onClick={() => { clearSessionOverride(); setSessionOff(false); }}
+              style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.bg, color: T.ac, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+              Resume nighttime mode
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Configuration panel — only when master toggle is ON */}
+      {cfg.enabled && (
+        <div style={{ padding: 14, background: T.sf2, borderRadius: 10, border: `1px solid ${T.bd}` }}>
+          {/* Schedule */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Schedule</div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: T.mt, marginBottom: 4 }}>Bedtime</label>
+              <input type="time" value={cfg.bedtime} onChange={e => update({ bedtime: e.target.value })}
+                style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                aria-label="Bedtime" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: T.mt, marginBottom: 4 }}>Wake up</label>
+              <input type="time" value={cfg.wakeup} onChange={e => update({ wakeup: e.target.value })}
+                style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 8, color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                aria-label="Wake up time" />
+            </div>
+          </div>
+
+          {/* Days */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+            {DAY_LABELS.map((d, i) => (
+              <div key={d} onClick={() => toggleDay(i)}
+                style={{
+                  flex: 1, textAlign: 'center', padding: '6px 0', borderRadius: 6, cursor: 'pointer',
+                  fontSize: 11, fontWeight: 600,
+                  background: cfg.days[i] ? ta(T.ac, '18') : T.bg,
+                  color: cfg.days[i] ? T.ac : T.mt,
+                  border: `1px solid ${cfg.days[i] ? ta(T.ac, '44') : T.bd}`,
+                }}
+                aria-label={d} aria-pressed={cfg.days[i]}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Notification behavior */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Notification Behavior</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+            {([
+              { id: 'normal' as const, label: 'Normal', desc: 'No change to notifications' },
+              { id: 'muted' as const, label: 'Muted', desc: 'Suppress sounds and toasts — badge counts still update' },
+              { id: 'priority_only' as const, label: 'Priority Only', desc: 'Only starred/favorited contacts trigger notifications' },
+            ]).map(opt => (
+              <div key={opt.id} onClick={() => update({ notifBehavior: opt.id })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                  background: cfg.notifBehavior === opt.id ? ta(T.ac, '08') : T.bg,
+                  border: `1px solid ${cfg.notifBehavior === opt.id ? ta(T.ac, '33') : T.bd}`,
+                  borderRadius: 8, cursor: 'pointer',
+                }}>
+                <div style={{
+                  width: 16, height: 16, borderRadius: 8,
+                  border: `2px solid ${cfg.notifBehavior === opt.id ? T.ac : T.bd}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  {cfg.notifBehavior === opt.id && <div style={{ width: 8, height: 8, borderRadius: 4, background: T.ac }} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: cfg.notifBehavior === opt.id ? T.tx : T.mt }}>{opt.label}</div>
+                  <div style={{ fontSize: 10, color: T.mt }}>{opt.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Blue Light Reduction */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Blue Light Reduction</div>
+              <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Apply a warm amber filter to reduce eye strain at night</div>
+            </div>
+            <div onClick={() => update({ blueLightReduction: !cfg.blueLightReduction })}
+              style={{ width: 36, height: 20, borderRadius: 10, background: cfg.blueLightReduction ? T.ac : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: cfg.blueLightReduction ? 18 : 2, transition: 'left 0.2s' }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

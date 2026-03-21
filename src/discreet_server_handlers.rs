@@ -1459,6 +1459,22 @@ pub async fn create_bot(
 ) -> Result<impl IntoResponse, AppError> {
     require_owner(&state, server_id, auth.user_id).await?;
 
+    // Check platform and server AI disable flags.
+    let platform = crate::discreet_platform_settings::get_platform_settings(&state).await?;
+    if !platform.ai_bots_enabled || platform.ai_emergency_stop {
+        return Err(AppError::ServiceUnavailable("AI services are currently disabled by the platform administrator.".into()));
+    }
+    let server_ai_off = sqlx::query_scalar!(
+        "SELECT ai_disabled FROM servers WHERE id = $1",
+        server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if server_ai_off {
+        return Err(AppError::Forbidden("AI agents are disabled on this server.".into()));
+    }
+
     let username = req.username.trim().to_lowercase().replace(' ', "-");
     if username.is_empty() || username.len() > 64 {
         return Err(AppError::BadRequest("Bot username must be 1-64 characters".into()));

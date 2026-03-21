@@ -1919,6 +1919,31 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           </div>
         </div>
 
+        {/* AI Agents Toggle — owner or manage_bots permission */}
+        <div style={{ marginTop: 16, padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Disable AI Agents</div>
+              <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>When enabled, all AI agent endpoints are rejected. Existing configs are preserved but deactivated. The server becomes AI-free.</div>
+            </div>
+            <div onClick={async () => {
+              const next = !(server as any).ai_disabled;
+              try {
+                await api.updateServer(server.id, { ai_disabled: next } as any);
+                if (onUpdate) onUpdate();
+              } catch {}
+            }}
+              style={{ width: 36, height: 20, borderRadius: 10, background: (server as any).ai_disabled ? '#ff4757' : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: (server as any).ai_disabled ? 18 : 2, transition: 'left 0.2s' }} />
+            </div>
+          </div>
+          {(server as any).ai_disabled && (
+            <div style={{ marginTop: 8, padding: '6px 10px', background: T.bg, borderRadius: 6, fontSize: 11, color: '#ff4757' }}>
+              AI agents are disabled on this server. All AI-related API requests will be rejected.
+            </div>
+          )}
+        </div>
+
         {/* Transfer Ownership — owner only */}
         {server.owner_id === api.userId && (
           <TransferOwnership serverId={server.id} serverName={server.name} members={mgmtMembers} getName={getName} showConfirm={showConfirm} onUpdate={onUpdate} />

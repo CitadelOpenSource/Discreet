@@ -1,118 +1,76 @@
-<h1 align="center">Discreet</h1>
-
-<p align="center">
-  <strong>Communication Without Compromise</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/CitadelOpenSource/Discreet/actions"><img src="https://img.shields.io/github/actions/workflow/status/CitadelOpenSource/Discreet/ci.yml?branch=main&label=CI&logo=github" alt="CI" /></a>
-  <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0" /></a>
-  <img src="https://img.shields.io/badge/Release-Alpha-orange.svg" alt="Alpha" />
-</p>
-
-<p align="center">
-  <a href="https://discreetai.net">Website</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/SELF_HOSTING.md">Self-Host</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="CONTRIBUTING.md">Contribute</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="SECURITY.md">Security</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/BAA_TEMPLATE.md">BAA Template</a>
-</p>
+Discreet — End-to-end encrypted messaging with the community features you actually want.
 
 ---
 
-Discreet is an open-source, end-to-end encrypted messenger that combines Discord-quality community features with Signal-grade cryptography. Every message is encrypted on the sender's device before it leaves — the server stores and relays ciphertext it cannot decrypt. No phone number required. No tracking. No analytics. Fully self-hostable on a single server with Docker Compose.
+***Discord's servers and channels without the data harvesting. Signal's encryption without the bare-bones UX. Slack's organization without the enterprise tax. Discreet is what happens when you refuse to choose between privacy and usability — you build both from scratch, in Rust, and open source it.***
 
-## Features
+***Built by one developer. No VC funding, no growth metrics, no "freemium" dark patterns. Sign up with an email and a password — no phone number, no ID verification, no address book upload. Pay with Bitcoin if you want premium. Post-quantum key exchange is already behind a feature flag. Sixteen languages including Pashto, Kurdish, Burmese, and Ukrainian because the people who need encrypted communication the most shouldn't have to read it in English. AI agents run inside E2EE channels with kill switches and rate limits.***
 
-| Feature | Details |
-|---------|---------|
-| E2EE messaging | MLS (RFC 9420) group encryption via OpenMLS, HKDF-SHA256 + AES-256-GCM with key commitment tags |
-| Encrypted voice and video | Peer-to-peer WebRTC with SFrame (RFC 9605) media encryption |
-| AI agents | Multi-provider support (Anthropic, OpenAI, Google Gemini, Ollama, custom endpoints) with per-agent encryption keys |
-| Authentication | Passkeys (FIDO2 WebAuthn), OAuth 2.0 (Google, GitHub, Discord, Apple), TOTP 2FA, SAML SSO |
-| Post-quantum cryptography | ML-KEM and ML-DSA behind feature flags for forward-secure key exchange |
-| Themes and layouts | 4 built-in themes (Midnight, Dawn, Terminal, Obsidian) with 3 layout density modes and a custom theme editor |
-| Disappearing messages | Per-channel TTL with automatic server-side cleanup and enterprise data retention policies |
-| Sticker packs and translation | Custom sticker uploads with multi-language message translation via AI agents |
-| Servers and channels | Roles, permissions, categories, threads, polls, events, bookmarks, and pinned messages |
-| Admin dashboard | Platform-wide analytics, audit logs with hash-chain integrity, CSV/PDF export, remote session wipe |
-| Direct messages | X3DH + Double Ratchet with zero-knowledge architecture |
-| Self-hostable | Single binary + Docker Compose, runs on a $5 VPS with automatic TLS via Caddy |
+[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/CitadelOpenSource/Discreet/actions)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![version](https://img.shields.io/badge/version-v1.0.0--alpha-orange)](https://github.com/CitadelOpenSource/Discreet/releases)
+[![languages](https://img.shields.io/badge/languages-16-blueviolet)](#)
+[![rust](https://img.shields.io/badge/made%20with-Rust-dea584?logo=rust)](https://www.rust-lang.org/)
 
-## How Discreet Compares
+---
 
-| Feature | Signal | Discord | Element | Wire | Discreet |
-|---------|--------|---------|---------|------|----------|
-| E2EE by default | Yes | No | Yes | Yes | Yes |
-| Servers and channels | No | Yes | Yes (Spaces) | No | Yes |
-| AI agents | No | Bots (unencrypted) | No | No | Yes (E2EE) |
-| OAuth login | No | Yes | No | No | Yes |
-| Passkeys (FIDO2) | No | No | No | No | Yes |
-| No phone number required | No | Yes | Yes | No | Yes |
-| Self-hostable | No | No | Yes | No | Yes |
-| Post-quantum ready | No | No | No | No | Yes (ML-KEM-768 + ML-DSA-65) |
-| Open source | Yes | No | Yes | Partial | Yes |
+## What's inside
 
-## Quick Start
+[See the complete feature list](docs/FEATURES.md) — 150+ features across backend, frontend, crypto, and infrastructure.
+
+The short version:
+
+- **Encrypted voice & video** — peer-to-peer WebRTC with SFrame (RFC 9605), audio never touches the server
+- **Friends-only mode** — only decrypt messages from people you trust, everyone else sees a placeholder
+- **Import your history** — bring conversations from Signal, WhatsApp, iMessage, and Android SMS
+- **16 languages** — English, Arabic, Farsi, Hebrew, Kurdish, Pashto, Burmese, Ukrainian, Russian, and 7 more
+- **AI agents with a kill switch** — multi-provider LLM support inside encrypted channels, platform admin can shut it all down instantly
+- **Self-hostable** — three commands, runs on a $5 VPS, your data stays on your hardware
+
+## Security model
+
+- **Messages**: MLS (RFC 9420) group encryption via OpenMLS 0.8.1 — forward secrecy, AES-256-GCM with key commitment tags
+- **Voice & video**: SFrame (RFC 9605) encrypts every audio and video frame before it leaves your device
+- **Symmetric crypto**: AES-256-GCM everywhere, HKDF-SHA256 for key derivation, Argon2id for passwords
+- **Post-quantum**: ML-KEM-768 (FIPS 203) and ML-DSA-65 (FIPS 204) available behind the `pq` feature flag
+
+Full threat model, wire format spec, and OWASP compliance: **[SECURITY.md](SECURITY.md)**
+
+## Run your own
 
 ```bash
 git clone https://github.com/CitadelOpenSource/Discreet.git
 cd Discreet
-cp .env.example .env
+cp .env.example .env   # then fill in your secrets
 docker compose up -d
 ```
 
-Open [localhost:5173](http://localhost:5173) in your browser. The default Docker Compose starts PostgreSQL, Redis, the Rust backend, and the Vite dev server.
+Open `localhost:5173`. That's PostgreSQL, Redis, the Rust backend, and the Vite frontend — all running.
 
-## Developer Setup
+Full production deployment guide (Caddy, systemd, TLS, backups): **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**
 
-### Dev Container (Recommended)
+## Compare
 
-If you use VS Code, open the project and select **Reopen in Container** when prompted. The dev container includes Rust, Node 18, `sqlx-cli`, `wasm-pack`, PostgreSQL 16, and Redis 7 — fully pre-configured.
+| | Discreet | Discord | Signal | Element |
+|---|:---:|:---:|:---:|:---:|
+| E2EE messages | ✅ | ❌ | ✅ | ✅ |
+| E2EE voice/video | ✅ | ❌ | ✅ | ❌ |
+| Self-hostable | ✅ | ❌ | ❌ | ✅ |
+| No phone required | ✅ | ✅ | ❌ | ✅ |
+| AI integration | ✅ | ❌ | ❌ | ❌ |
+| Open source | ✅ | ❌ | ✅ | ✅ |
+| Post-quantum | ✅ | ❌ | ❌ | ❌ |
 
-### Docker Compose Dev Environment
+## Contribute
 
-```bash
-docker compose -f docker-compose.dev.yml up
-```
+Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the branch workflow and code standards. Building a bot? **[docs/BOT_SDK.md](docs/BOT_SDK.md)** has the REST API, WebSocket events, and a working Python example.
 
-This starts a Rust development container with PostgreSQL and Redis. The API is available on port 3001 and the Vite dev server on port 5173.
+## Business
 
-### Run Tests
+Enterprise licensing, self-hosted support, and partnership inquiries: **[dev@discreetai.net](mailto:dev@discreetai.net)**
 
-```bash
-cargo test --lib              # Unit tests
-cargo clippy -- -D warnings   # Zero warnings policy
-cd client && npm run build    # Frontend must compile clean
-```
+---
 
-## Architecture
+AGPL-3.0-or-later. Every line is open for audit. If you modify and deploy, you share your changes.
 
-```
- Client (React 18 / Vite 5)       Server (Rust / Axum 0.7)        Storage
-┌──────────────────────────┐    ┌──────────────────────────┐    ┌──────────────┐
-│  MLS (RFC 9420) via WASM │───▷│  Axum + Tower middleware │───▷│  PostgreSQL   │
-│  HKDF-SHA256 + AES-256-GCM│   │  JWT + Passkey auth      │    │  (ciphertext  │
-│  key commitment tags     │    │  Redis rate limiting     │    │   only)       │
-│  SFrame (RFC 9605)       │    │  Input validation        │    ├──────────────┤
-│  voice/video encryption  │    │  Security headers        │───▷│  Redis        │
-│                          │    │  Audit logging           │    │  (rate limits │
-│  Tauri desktop           │    │  WebSocket relay         │    │   + sessions) │
-│  React Native mobile     │    │  AI agent orchestration  │    │              │
-└──────────────────────────┘    └──────────────────────────┘    └──────────────┘
-         │                               │
-         │       WebRTC (peer-to-peer)   │
-         └───────────────────────────────┘
-              Voice/Video — never touches server
-```
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [SECURITY.md](SECURITY.md) | Cryptographic specification, wire format, OWASP compliance, dependency audit |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch workflow, code standards, commit conventions |
-| [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) | Production deployment guide with Caddy, systemd, and backup procedures |
-| [docs/BAA_TEMPLATE.md](docs/BAA_TEMPLATE.md) | Business Associate Agreement template for healthcare deployments |
-
-## License
-
-**AGPL-3.0-or-later** — You can read, audit, and verify every line of code that handles your data. If you modify and deploy Discreet, you must share your changes under the same license.
-
-Patent Pending. Copyright (C) 2026 Citadel Open Source LLC.
+Patent pending. Copyright © 2024–2026 Discreet contributors.

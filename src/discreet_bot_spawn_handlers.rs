@@ -745,6 +745,54 @@ pub async fn prompt_bot(
         }
     }
 
+    // ── Per-server AI disable check ──────────────────────────────────────────
+    let server_ai_disabled = sqlx::query_scalar!(
+        "SELECT ai_disabled FROM servers WHERE id = $1",
+        server_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if server_ai_disabled {
+        return Err(AppError::Forbidden("AI agents are disabled on this server.".into()));
+    }
+
+    // ── Per-channel AI rate limit (10/min) ──────────────────────────────────
+    let channel_id_for_rl = req.channel_id.unwrap_or(Uuid::nil());
+    {
+        let ch_key = format!("ai_ch_rl:{}:{}", server_id, channel_id_for_rl);
+        let mut rc = state.redis.clone();
+        let ch_count: i64 = crate::discreet_error::redis_or_503(
+            redis::cmd("INCR").arg(&ch_key).query_async(&mut rc).await,
+        )?;
+        if ch_count == 1 {
+            let _: Result<(), _> = redis::cmd("EXPIRE").arg(&ch_key).arg(60u64).query_async(&mut rc).await;
+        }
+        if ch_count > 10 {
+            return Err(AppError::RateLimited(
+                "Channel AI rate limit exceeded (10/min). Please wait.".into(),
+            ));
+        }
+    }
+
+    // ── Per-user AI rate limit (50/hour) ──────────────────────────────────
+    {
+        let user_key = format!("ai_user_rl:{}", auth.user_id);
+        let mut rc = state.redis.clone();
+        let user_count: i64 = crate::discreet_error::redis_or_503(
+            redis::cmd("INCR").arg(&user_key).query_async(&mut rc).await,
+        )?;
+        if user_count == 1 {
+            let _: Result<(), _> = redis::cmd("EXPIRE").arg(&user_key).arg(3600u64).query_async(&mut rc).await;
+        }
+        if user_count > 50 {
+            return Err(AppError::RateLimited(
+                "User AI rate limit exceeded (50/hour across all channels). Please wait.".into(),
+            ));
+        }
+    }
+
     // Verify the requester is a member of this server.
     let is_member = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2)",

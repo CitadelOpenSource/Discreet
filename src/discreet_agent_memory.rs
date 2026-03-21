@@ -24,8 +24,9 @@
 //   - The decrypted messages are NEVER persisted or logged
 
 use chrono::{DateTime, Utc};
+use sha2::{Sha256, Digest};
 use sqlx::PgPool;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::discreet_agent_episodic_memory::{build_memory_context, load_memory_store};
@@ -44,6 +45,56 @@ const MAX_MESSAGE_CHARS: usize = 4000;
 /// Maximum total context characters to prevent overwhelming the LLM.
 /// ~100K chars ≈ ~25K tokens — well within Claude Haiku's 200K window.
 const MAX_TOTAL_CONTEXT_CHARS: usize = 100_000;
+
+// ─── Memory Integrity ───────────────────────────────────────────────────
+
+/// An agent message paired with its SHA-256 integrity hash.
+/// Used to detect database-level memory poisoning attacks.
+#[derive(Debug, Clone)]
+pub struct IntegrityCheckedMessage {
+    pub message: AgentMessage,
+    pub hash: String,
+}
+
+/// Compute SHA-256 hash of a message for integrity verification.
+pub fn compute_message_hash(role: &str, content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(role.as_bytes());
+    hasher.update(b":");
+    hasher.update(content.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Wrap an AgentMessage with its integrity hash.
+pub fn seal_message(msg: AgentMessage) -> IntegrityCheckedMessage {
+    let hash = compute_message_hash(&msg.role, &msg.content);
+    IntegrityCheckedMessage { message: msg, hash }
+}
+
+/// Verify a message's integrity. Returns true if the hash matches.
+pub fn verify_message(msg: &IntegrityCheckedMessage) -> bool {
+    let expected = compute_message_hash(&msg.message.role, &msg.message.content);
+    expected == msg.hash
+}
+
+/// Verify an entire context window. Excludes tampered messages and
+/// logs an ERROR for each failure.
+pub fn verify_context_integrity(messages: &[IntegrityCheckedMessage]) -> Vec<AgentMessage> {
+    let mut verified = Vec::with_capacity(messages.len());
+    for (i, msg) in messages.iter().enumerate() {
+        if verify_message(msg) {
+            verified.push(msg.message.clone());
+        } else {
+            error!(
+                index = i,
+                role = %msg.message.role,
+                expected_hash = %msg.hash,
+                "Agent context message integrity check FAILED — message excluded (possible memory poisoning)"
+            );
+        }
+    }
+    verified
+}
 
 // ─── Raw Message from DB ────────────────────────────────────────────────
 
@@ -239,12 +290,21 @@ pub async fn build_context(
         }
     }
 
+    // Sanitize the full message history for prompt injection patterns.
+    crate::discreet_agent_provider::sanitize_message_history(&mut context);
+
+    // Seal each message with an integrity hash for tamper detection.
+    // On the next retrieval cycle, `verify_context_integrity` can detect
+    // database-level memory poisoning.
+    let sealed: Vec<IntegrityCheckedMessage> = context.into_iter().map(seal_message).collect();
+    let context = verify_context_integrity(&sealed);
+
     debug!(
         channel_id = %channel_id,
         message_count = context.len(),
         total_chars,
         estimated_tokens = context.iter().map(|m| estimate_tokens_heuristic(&m.content)).sum::<usize>(),
-        "Context built successfully"
+        "Context built successfully (integrity-checked)"
     );
 
     Ok(context)

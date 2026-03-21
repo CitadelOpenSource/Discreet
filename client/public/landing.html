@@ -199,7 +199,7 @@
     /* ── Features ── */
     #features {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 1.25rem;
       max-width: 900px;
       margin: 0 auto;
@@ -322,7 +322,7 @@
       margin: 0 auto;
       padding: 3rem 2rem 2rem;
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
       gap: 2rem;
     }
     footer .foot-brand .logo {
@@ -364,7 +364,8 @@
       #hero { padding: 3.5rem 1.25rem 2rem; }
       nav { padding: 1rem 1.25rem; }
       nav .links a:not(.nav-cta) { display: none; }
-      #features { grid-template-columns: 1fr; }
+      #features { grid-template-columns: 1fr 1fr; }
+      #privacy-first > div { grid-template-columns: 1fr !important; }
       #comparison { overflow-x: auto; }
       #comparison table { min-width: 520px; }
       footer { grid-template-columns: 1fr; }
@@ -384,11 +385,11 @@
   <main>
     <!-- ── Hero ── -->
     <section id="hero">
-      <h1>Communication<br><span class="accent">Without Compromise</span></h1>
-      <p>End-to-end encrypted messaging with servers, channels, and AI agents. No phone number. No tracking. Your messages are encrypted before they leave your device. Not even we can read them.</p>
+      <h1>Your conversations.<br>Your rules.<br><span class="accent">Your server.</span></h1>
+      <p>End-to-end encrypted messaging with the features you love from Discord and the privacy you deserve from Signal. No phone number. No tracking. No compromise.</p>
       <div class="buttons">
-        <a href="/app" class="btn btn-primary">Open App</a>
-        <a href="#waitlist" class="btn btn-secondary">Join Waitlist</a>
+        <a href="/app" class="btn btn-primary">Get Started</a>
+        <a href="https://github.com/CitadelOpenSource/Discreet" class="btn btn-secondary">Self-Host &rarr;</a>
       </div>
     </section>
 
@@ -411,33 +412,56 @@
     <section id="features">
       <div class="card animate-on-scroll">
         <span class="card-icon" role="img" aria-label="Lock icon">&#128274;</span>
-        <h3>End-to-End Encrypted</h3>
-        <p>MLS (RFC 9420) group encryption with forward secrecy. AES-256-GCM with key commitment tags. The server stores only ciphertext.</p>
+        <h3>Encrypted Messaging</h3>
+        <p>Every message is encrypted on your device before it leaves. MLS (RFC 9420) with AES-256-GCM ensures only the intended recipients can read your conversations.</p>
       </div>
       <div class="card animate-on-scroll">
-        <span class="card-icon" role="img" aria-label="User icon">&#128100;</span>
-        <h3>No Phone Number Required</h3>
-        <p>Sign up with a username and password. Or use passkeys, OAuth, or SSO. True anonymity by default.</p>
+        <span class="card-icon" role="img" aria-label="Phone icon">&#128222;</span>
+        <h3>Voice &amp; Video Calls</h3>
+        <p>Peer-to-peer WebRTC with SFrame encryption. Your voice and video never touch the server — audio goes directly between participants, encrypted end-to-end.</p>
       </div>
       <div class="card animate-on-scroll">
-        <span class="card-icon" role="img" aria-label="Microphone icon">&#127908;</span>
-        <h3>E2EE Voice and Video</h3>
-        <p>SFrame (RFC 9605) encrypted WebRTC. Voice, video, and screen share never leave your device unencrypted.</p>
+        <span class="card-icon" role="img" aria-label="Download icon">&#128229;</span>
+        <h3>Import Your History</h3>
+        <p>Bring your conversations from Signal, WhatsApp, iMessage, and Android SMS. Switch without losing your message history.</p>
       </div>
       <div class="card animate-on-scroll">
-        <span class="card-icon" role="img" aria-label="Robot icon">&#129302;</span>
-        <h3>AI Agents</h3>
-        <p>Add AI assistants to encrypted channels. Multi-provider: Anthropic, OpenAI, Ollama local. Agents hold their own keys.</p>
-      </div>
-      <div class="card animate-on-scroll">
-        <span class="card-icon" role="img" aria-label="Key icon">&#128273;</span>
-        <h3>Passkeys and OAuth</h3>
-        <p>FIDO2 WebAuthn with YubiKey and Touch ID. OAuth 2.0 with Google, GitHub, Discord, Apple. TOTP 2FA.</p>
+        <span class="card-icon" role="img" aria-label="Brain icon">&#129504;</span>
+        <h3>AI Integration <span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(0,212,170,0.15);color:#00D4AA;font-weight:700;vertical-align:middle;margin-left:4px">COMING SOON</span></h3>
+        <p>Add AI assistants to encrypted channels. Multi-provider support for Anthropic, OpenAI, and local models via Ollama. Agents hold their own encryption keys.</p>
       </div>
       <div class="card animate-on-scroll">
         <span class="card-icon" role="img" aria-label="Server icon">&#127760;</span>
         <h3>Self-Hostable</h3>
-        <p>Three commands to deploy. Docker Compose with automatic TLS via Caddy. Runs on a $5 VPS.</p>
+        <p>Three commands to deploy on your own hardware. Docker Compose with automatic TLS. Runs on a $5 VPS — your data stays on your server.</p>
+      </div>
+      <div class="card animate-on-scroll">
+        <span class="card-icon" role="img" aria-label="Code icon">&#128187;</span>
+        <h3>Open Source</h3>
+        <p>Every line of code is public under AGPL-3.0. Audit the crypto yourself. No black boxes, no trust-us promises — verify everything.</p>
+      </div>
+    </section>
+
+    <!-- ── Privacy First ── -->
+    <section id="privacy-first" class="animate-on-scroll" style="max-width:900px;margin:0 auto;padding:0 2rem 4rem">
+      <h2 style="text-align:center;font-size:2rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:2rem">Privacy First</h2>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1rem">
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:rgba(226,232,240,0.03);border:1px solid rgba(226,232,240,0.07);border-radius:10px">
+          <span style="font-size:1.25rem;flex-shrink:0">&#128100;</span>
+          <div><strong style="font-size:0.95rem">No phone number required</strong><br><span style="font-size:0.85rem;color:#94a3b8">Sign up with just a username and email</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:rgba(226,232,240,0.03);border:1px solid rgba(226,232,240,0.07);border-radius:10px">
+          <span style="font-size:1.25rem;flex-shrink:0">&#128683;</span>
+          <div><strong style="font-size:0.95rem">No tracking</strong><br><span style="font-size:0.85rem;color:#94a3b8">Zero analytics, zero tracking pixels, zero telemetry</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:rgba(226,232,240,0.03);border:1px solid rgba(226,232,240,0.07);border-radius:10px">
+          <span style="font-size:1.25rem;flex-shrink:0">&#128176;</span>
+          <div><strong style="font-size:0.95rem">No data sales</strong><br><span style="font-size:0.85rem;color:#94a3b8">We cannot read your messages — there is nothing to sell</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:rgba(226,232,240,0.03);border:1px solid rgba(226,232,240,0.07);border-radius:10px">
+          <span style="font-size:1.25rem;flex-shrink:0">&#128179;</span>
+          <div><strong style="font-size:0.95rem">Crypto payments accepted</strong><br><span style="font-size:0.85rem;color:#94a3b8">Pay for premium with Bitcoin — no credit card needed</span></div>
+        </div>
       </div>
     </section>
 
@@ -456,13 +480,16 @@
         </thead>
         <tbody>
           <tr><td>E2EE messages</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
-          <tr><td>E2EE voice/video</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>E2EE voice &amp; video</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
           <tr><td>Servers and channels</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
-          <tr><td>AI agents</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>AI agents (encrypted)</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
           <tr><td>No phone required</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
-          <tr><td>Passkey login</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Passkeys (FIDO2)</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>OAuth &amp; SAML SSO</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
           <tr><td>Self-hostable</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
           <tr><td>Post-quantum ready</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Import from other apps</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="n">&#10007;</td><td class="y">&#10003;</td></tr>
+          <tr><td>Open source</td><td class="y">&#10003;</td><td class="n">&#10007;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
         </tbody>
       </table>
     </section>
@@ -503,18 +530,22 @@
     </div>
     <div class="foot-col">
       <h4>Resources</h4>
+      <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/docs/BOT_SDK.md">Documentation</a>
       <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/CONTRIBUTING.md">Contributing</a>
       <a href="https://github.com/CitadelOpenSource/Discreet/blob/main/docs/SELF_HOSTING.md">Self-Hosting</a>
-      <a href="mailto:security@discreetai.net">security@discreetai.net</a>
     </div>
     <div class="foot-col">
       <h4>Legal</h4>
       <a href="/app/terms">Terms of Service</a>
       <a href="/app/privacy">Privacy Policy</a>
+    </div>
+    <div class="foot-col">
+      <h4>Business</h4>
       <a href="mailto:dev@discreetai.net">dev@discreetai.net</a>
+      <span>Enterprise &amp; self-hosted support</span>
     </div>
   </footer>
-  <div class="copyright">Copyright &copy; 2026 Citadel Open Source LLC. Patent Pending.</div>
+  <div class="copyright">Copyright &copy; 2024&ndash;2026 Discreet contributors. Patent Pending. AGPL-3.0-or-later.</div>
 
   <script>
     // ── IntersectionObserver for scroll animations ──

@@ -32,8 +32,10 @@ import { PipVideoWindow } from './components/voice/PipVideoWindow';
 import { AddPeopleModal } from './components/voice/AddPeopleModal';
 import { type VoiceConfirmType, isConfirmEnabled } from './hooks/useVoiceConfirmation';
 import { installHotkeyListener } from './hooks/useHotkeys';
+import { loadConfig as loadNightConfig, shouldActivate as shouldNightActivate } from './hooks/useNighttimeMode';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
+import { DownloadPage } from './components/DownloadPage';
 import { LinkPreview } from './components/LinkPreview';
 import { Markdown } from './components/Markdown';
 import { InvitePreview } from './components/InvitePreview';
@@ -209,6 +211,10 @@ function GlobalStyles() {
       .bubbles-on .msg-bubble-self { background: var(--bubble-self-bg, rgba(0,212,170,0.12)); margin-left: auto; border-bottom-right-radius: 4px; }
       .bubbles-on .msg-bubble-other { background: var(--bubble-other-bg, rgba(255,255,255,0.04)); border-bottom-left-radius: 4px; }
       .bubbles-on.bubbles-aligned .msg-bubble-self { margin-left: 0; }
+
+      /* ── Nighttime mode ─────────────────────────────── */
+      .nighttime-active { transition: background 0.5s ease, color 0.5s ease; }
+      .nighttime-active .notif-badge { background: #6b7280 !important; }
 
       /* ── Reduced motion ─────────────────────────────── */
       .reduce-motion, .reduce-motion * {
@@ -644,6 +650,7 @@ export default function App() {
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [privacyPrefs, setPrivacyPrefs] = useState({ show_read_receipts: false, show_typing_indicator: false, show_link_previews: false });
   const [friendsOnlyMode, setFriendsOnlyMode] = useState(() => localStorage.getItem('d_friends_only') === 'true');
+  const [aiDisabled, setAiDisabled] = useState(() => localStorage.getItem('d_ai_disabled') === 'true');
   const [friendsOnlyExceptions, setFriendsOnlyExceptions] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem('d_friends_only_exceptions') || '[]')); } catch { return new Set(); } });
   const [friendIdSet, setFriendIdSet] = useState<Set<string>>(new Set());
   const [dndSchedule, setDndSchedule] = useState({ enabled: false, start: '22:00', end: '08:00', days: '0,1,2,3,4,5,6' });
@@ -1007,6 +1014,7 @@ export default function App() {
       if (s) {
         setPrivacyPrefs({ show_read_receipts: !!s.show_read_receipts, show_typing_indicator: !!s.show_typing_indicator, show_link_previews: !!s.show_link_previews });
         if (s.friends_only_mode !== undefined) { setFriendsOnlyMode(!!s.friends_only_mode); localStorage.setItem('d_friends_only', String(!!s.friends_only_mode)); }
+        if (s.ai_disabled !== undefined) { setAiDisabled(!!s.ai_disabled); localStorage.setItem('d_ai_disabled', String(!!s.ai_disabled)); }
         setDndSchedule({ enabled: !!s.dnd_enabled, start: s.dnd_start || '22:00', end: s.dnd_end || '08:00', days: s.dnd_days || '0,1,2,3,4,5,6' });
         // Sync sound preferences to localStorage for the sound utility
         if (s.sound_dm) localStorage.setItem('d_sound_dm', s.sound_dm);
@@ -2017,12 +2025,35 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
 
+  // Nighttime mode — check every 60 seconds.
+  const [nightActive, setNightActive] = useState(() => shouldNightActivate(loadNightConfig()));
+  useEffect(() => {
+    const check = () => {
+      const cfg = loadNightConfig();
+      const active = shouldNightActivate(cfg);
+      setNightActive(prev => {
+        if (prev === active) return prev; // no-op guard
+        if (active && cfg.blueLightReduction) {
+          document.documentElement.style.filter = 'sepia(20%) saturate(80%)';
+          document.documentElement.style.transition = 'filter 0.5s ease';
+        } else {
+          document.documentElement.style.filter = '';
+        }
+        return active;
+      });
+    };
+    check();
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
+  }, []);
+
   if (maintenanceMsg) return <MaintenancePage message={maintenanceMsg} />;
 
   // Legal pages — accessible without authentication.
   const pathname = window.location.pathname;
   if (pathname === '/app/terms' || pathname === '/terms') return <TermsOfService />;
   if (pathname === '/app/privacy' || pathname === '/privacy') return <PrivacyPolicy />;
+  if (pathname === '/download' || pathname === '/app/download') return <DownloadPage />;
 
   if (authLoading) return <><div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1a1a2e',color:'#e0e0e0',fontFamily:'Inter,sans-serif'}}>Restoring session…</div><BugReportButton /></>;
   if (!authed) return <><AuthScreen onAuth={() => setAuthed(true)} /><BugReportButton /></>;
@@ -2126,7 +2157,7 @@ export default function App() {
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className={`chat-root density-${msgDensity}${chatBubbles ? ' bubbles-on' : ''}${chatBubbles && bubblePosition === 'aligned' ? ' bubbles-aligned' : ''}${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0, paddingBottom: voiceChannel ? 48 : 0 }}>
+    <div className={`chat-root density-${msgDensity}${chatBubbles ? ' bubbles-on' : ''}${chatBubbles && bubblePosition === 'aligned' ? ' bubbles-aligned' : ''}${nightActive ? ' nighttime-active' : ''}${a11yReduceMotion ? ' reduce-motion' : ''}${a11yHighContrast ? ' high-contrast' : ''}${a11yFocusRings ? ' focus-visible' : ''}`} style={{ color: T.tx, fontFamily: "'DM Sans',sans-serif", background: a11yHighContrast ? '#000' : T.bg, paddingTop: isMobile && showAppBanner ? 40 : 0, paddingBottom: voiceChannel ? 48 : 0 }}>
       <GlobalStyles />
       {/* Mobile app download banner */}
       {isMobile && showAppBanner && (
@@ -2545,6 +2576,8 @@ export default function App() {
         )}
         {/* Header */}
         <div className="chat-header" style={{ padding: '10px 16px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 10, minHeight: 48 }}>
+          {/* Nighttime indicator */}
+          {nightActive && <span title="Nighttime mode active" style={{ fontSize: 14, opacity: 0.6 }}>🌙</span>}
           {/* Hamburger — mobile only */}
           <button
             className={`hamburger${mobileMenuOpen ? ' hamburger--open' : ''}`}

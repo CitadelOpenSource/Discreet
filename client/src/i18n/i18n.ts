@@ -5,7 +5,8 @@
  * lazy-loaded on demand so the initial JS bundle stays lean.
  *
  * RTL support:
- *   Arabic (ar) and Farsi (fa) set document.dir = "rtl" when active.
+ *   Arabic (ar), Farsi (fa), Hebrew (he), Kurdish (ku), and Pashto (ps)
+ *   set document.dir = "rtl" when active.
  *   All other languages use the default LTR direction.
  */
 
@@ -14,11 +15,11 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
 
 // Languages that read right-to-left.
-const RTL_LANGS = new Set(['ar', 'fa']);
+const RTL_LANGS = new Set(['ar', 'fa', 'he', 'ku', 'ps']);
 
 // Detect the user's preferred language from browser settings,
 // falling back to English if unsupported.
-const SUPPORTED = ['en', 'es', 'ar', 'zh', 'ru', 'ja', 'fa', 'uk', 'pt', 'fr', 'ko', 'tr'];
+const SUPPORTED = ['en', 'es', 'ar', 'zh', 'ru', 'ja', 'fa', 'uk', 'pt', 'fr', 'ko', 'tr', 'de', 'he', 'ku', 'my', 'ps'];
 const detected =
   navigator.language?.split('-')[0] ??
   (navigator.languages?.[0]?.split('-')[0]) ??

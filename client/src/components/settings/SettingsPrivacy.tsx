@@ -108,6 +108,30 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
       <I.Shield /> Discreet respects your privacy. Shared server info is never publicly exposed.
     </div>
     </div>
+
+    {/* AI Agents */}
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>AI Agents</div>
+    <div style={{ padding: '12px 14px', background: T.sf2, borderRadius: 8, border: `1px solid ${T.bd}`, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ flex: 1, paddingRight: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Disable all AI interactions</div>
+          <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 4 }}>Hide AI agent messages in all channels. AI-related buttons and configuration panels will be removed from the interface. The app becomes a pure messaging platform.</div>
+        </div>
+        <div onClick={() => {
+          const next = !(s.ai_disabled === true);
+          save('ai_disabled', next);
+          localStorage.setItem('d_ai_disabled', String(next));
+        }} style={{ width: 36, height: 20, borderRadius: 10, background: s.ai_disabled === true ? '#ff4757' : '#555', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+          <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 2, left: s.ai_disabled === true ? 18 : 2, transition: 'left 0.2s' }} />
+        </div>
+      </div>
+      {s.ai_disabled === true && (
+        <div style={{ marginTop: 8, padding: '8px 10px', background: T.bg, borderRadius: 6, fontSize: 11, color: '#ff4757', lineHeight: 1.5 }}>
+          AI features are disabled. Bot messages are hidden, AI configuration panels are inaccessible, and no AI API requests will be made from your client.
+        </div>
+      )}
+    </div>
+
     <OfflineContacts />
   </>);
 }
