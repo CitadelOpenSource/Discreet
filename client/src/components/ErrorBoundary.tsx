@@ -117,7 +117,7 @@ function ErrorPage({
 
         {/* Technical details (collapsed) */}
         {details && (
-          <details style={{ marginBottom: 20, textAlign: 'left' }}>
+          <details style={{ marginBottom: 20, textAlign: 'start' }}>
             <summary style={{
               cursor: 'pointer', fontSize: 12, color: MT,
               padding: '8px 0', userSelect: 'none',
@@ -346,7 +346,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               </button>
             </div>
             {showDetails && (
-              <div style={{ textAlign: 'left', marginTop: 8 }}>
+              <div style={{ textAlign: 'start', marginTop: 8 }}>
                 <pre style={{
                   padding: 12, background: '#1a1a1a', borderRadius: 8,
                   border: `1px solid ${BD}`, fontSize: 11, color: MT,

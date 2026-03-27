@@ -7,7 +7,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { T, ta } from '../theme';
-import { setLanguage } from '../i18n/i18n';
+import { setLanguage, SUPPORTED_LANGUAGES } from '../i18n/i18n';
 import { api } from '../api/CitadelAPI';
 
 const TOTAL_STEPS = 6;
@@ -179,28 +179,9 @@ export function OnboardingModal({ onComplete, onThemeChange, onLayoutChange, use
 
 // ─── Step 0: Welcome ────────────────────────────────────────────────────
 
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'es', label: 'Español' },
-  { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' },
-  { code: 'ja', label: '日本語' },
-  { code: 'ko', label: '한국어' },
-  { code: 'zh', label: '中文' },
-  { code: 'ar', label: 'العربية' },
-  { code: 'fa', label: 'فارسی' },
-  { code: 'he', label: 'עברית' },
-  { code: 'ku', label: 'کوردی' },
-  { code: 'my', label: 'မြန်မာ' },
-  { code: 'ps', label: 'پښتو' },
-  { code: 'uk', label: 'Українська' },
-  { code: 'ru', label: 'Русский' },
-  { code: 'pt', label: 'Português' },
-] as const;
-
 function detectLang(): string {
   const nav = navigator.language?.split('-')[0] || 'en';
-  return LANGUAGES.some(l => l.code === nav) ? nav : 'en';
+  return SUPPORTED_LANGUAGES.some(l => l.code === nav) ? nav : 'en';
 }
 
 function StepWelcome({ onNext }: { onNext: () => void }) {
@@ -230,8 +211,8 @@ function StepWelcome({ onNext }: { onNext: () => void }) {
           }}
           aria-label="Language"
         >
-          {LANGUAGES.map(l => (
-            <option key={l.code} value={l.code}>{l.label}</option>
+          {SUPPORTED_LANGUAGES.map(l => (
+            <option key={l.code} value={l.code}>{l.label}{l.beta ? ' (Beta)' : ''}</option>
           ))}
         </select>
       </div>

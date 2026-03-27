@@ -160,8 +160,8 @@ export function DownloadPage() {
         <div style={S.footer}>
           <p>Copyright &copy; 2024-2026 Discreet contributors. AGPL-3.0-or-later.</p>
           <p style={{ marginTop: 8 }}>
-            <a href="/app/terms" style={{ color: S.ac, marginRight: 16 }}>Terms of Service</a>
-            <a href="/app/privacy" style={{ color: S.ac, marginRight: 16 }}>Privacy Policy</a>
+            <a href="/app/terms" style={{ color: S.ac, marginInlineEnd: 16 }}>Terms of Service</a>
+            <a href="/app/privacy" style={{ color: S.ac, marginInlineEnd: 16 }}>Privacy Policy</a>
             <a href="/app" style={{ color: S.mt }}>Back to Discreet</a>
           </p>
         </div>

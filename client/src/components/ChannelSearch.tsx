@@ -145,7 +145,7 @@ export function ChannelSearch({ messages, getName, onClose, onLoadOlder, channel
               >
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: T.tx }}>{m.authorName || getName(m.author_id)}</span>
-                  <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 10, color: T.mt, marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>
                     {new Date(m.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>

@@ -216,7 +216,7 @@ function MetricCard({ label, value, icon, status, latency, sub, loading }: Metri
       {/* left accent bar */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: loading ? T.bd : dot, borderRadius: '10px 0 0 10px', transition: 'background .3s' }} />
 
-      <div style={{ paddingLeft: 8 }}>
+      <div style={{ paddingInlineStart: 8 }}>
         {/* header row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           {/* status dot */}

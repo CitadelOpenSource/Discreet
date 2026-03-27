@@ -9,7 +9,7 @@
  */
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { setLanguage } from '../i18n/i18n';
+import { setLanguage, SUPPORTED_LANGUAGES } from '../i18n/i18n';
 import { T, ta, getInp, btn, setTheme as applyTheme } from '../theme';
 import { api, storageBlocked, _storage } from '../api/CitadelAPI';
 import { I } from '../icons';
@@ -157,24 +157,11 @@ const fieldErr = (msg: string) => msg ? (
   <div style={{ fontSize: 12, color: T.err, marginTop: 4, marginBottom: 8 }}>{msg}</div>
 ) : null;
 
-// ─── Supported locales ───────────────────────────────────────────────────────
-
-const SUPPORTED_LOCALES: { code: string; name: string }[] = [
-  { code: 'en', name: 'English' },    { code: 'es', name: 'Español' },
-  { code: 'fr', name: 'Français' },   { code: 'de', name: 'Deutsch' },
-  { code: 'pt', name: 'Português' },  { code: 'ru', name: 'Русский' },
-  { code: 'uk', name: 'Українська' }, { code: 'ar', name: 'العربية' },
-  { code: 'fa', name: 'فارسی' },      { code: 'he', name: 'עברית' },
-  { code: 'ku', name: 'کوردی' },      { code: 'ps', name: 'پښتو' },
-  { code: 'my', name: 'မြန်မာ' },     { code: 'ja', name: '日本語' },
-  { code: 'ko', name: '한국어' },      { code: 'zh', name: '中文' },
-];
-
 function detectLocale(): string {
   const stored = localStorage.getItem('discreet_locale');
-  if (stored && SUPPORTED_LOCALES.some(l => l.code === stored)) return stored;
+  if (stored && SUPPORTED_LANGUAGES.some(l => l.code === stored)) return stored;
   const nav = (navigator.language || '').split('-')[0].toLowerCase();
-  if (SUPPORTED_LOCALES.some(l => l.code === nav)) return nav;
+  if (SUPPORTED_LANGUAGES.some(l => l.code === nav)) return nav;
   return 'en';
 }
 
@@ -524,7 +511,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     setLoading(false);
   };
 
-  const currentLocaleName = SUPPORTED_LOCALES.find(l => l.code === authLang)?.name || 'English';
+  const currentLocaleName = SUPPORTED_LANGUAGES.find(l => l.code === authLang)?.label || 'English';
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -549,9 +536,9 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           const lang = e.target.value;
           setAuthLang(lang);
           setLanguage(lang);
-        }} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer', outline: 'none', appearance: 'none', paddingRight: 20, backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }} aria-label={t('settings.language')}>
-          {SUPPORTED_LOCALES.map(l => (
-            <option key={l.code} value={l.code}>{l.name}</option>
+        }} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${T.bd}`, background: T.sf2, color: T.mt, fontSize: 11, cursor: 'pointer', outline: 'none', appearance: 'none', paddingInlineEnd: 20, backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }} aria-label={t('settings.language')}>
+          {SUPPORTED_LANGUAGES.map(l => (
+            <option key={l.code} value={l.code}>{l.label}{l.beta ? ' (Beta)' : ''}</option>
           ))}
         </select>
       </div>
@@ -624,10 +611,10 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
               {!loginWithPhrase && (<>
                 <label style={labelStyle()}>{t('auth.password')}</label>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input style={{ ...getInp(), paddingRight: 40 }} type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                  <input style={{ ...getInp(), paddingInlineEnd: 40 }} type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••" autoComplete="current-password" name="password" aria-label={t('auth.password')} />
                   <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1} aria-label={showPw ? 'Hide password' : 'Show password'}
-                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
+                    style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
                     onMouseEnter={e => (e.currentTarget.style.color = T.tx)} onMouseLeave={e => (e.currentTarget.style.color = T.mt)}>
                     {showPw ? <I.EyeOff s={16} /> : <I.Eye s={16} />}
                   </button>
@@ -787,11 +774,11 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
               <label style={labelStyle()}>Password</label>
               <div style={{ position: 'relative', marginBottom: 8 }}>
                 <input
-                  style={{ ...getInp(), paddingRight: 40, borderColor: password.length > 0 && !allReqsMet ? T.err : undefined }}
+                  style={{ ...getInp(), paddingInlineEnd: 40, borderColor: password.length > 0 && !allReqsMet ? T.err : undefined }}
                   type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="Minimum 12 characters" autoComplete="new-password" name="password" aria-label="Password" />
                 <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1} aria-label={showPw ? 'Hide password' : 'Show password'}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
+                  style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
                   onMouseEnter={e => (e.currentTarget.style.color = T.tx)} onMouseLeave={e => (e.currentTarget.style.color = T.mt)}>
                   {showPw ? <I.EyeOff s={16} /> : <I.Eye s={16} />}
                 </button>
@@ -837,11 +824,11 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
                   <label style={labelStyle()}>Confirm Password</label>
                   <div style={{ position: 'relative', marginBottom: 4 }}>
                     <input
-                      style={{ ...getInp(), paddingRight: 40, borderColor: confirmPw.length > 0 && password !== confirmPw ? T.err : undefined }}
+                      style={{ ...getInp(), paddingInlineEnd: 40, borderColor: confirmPw.length > 0 && password !== confirmPw ? T.err : undefined }}
                       type={showConfirmPw ? 'text' : 'password'} value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
                       placeholder="Re-enter your password" autoComplete="new-password" name="confirm-password" aria-label="Confirm password" />
                     <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} aria-label={showConfirmPw ? 'Hide password' : 'Show password'}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
+                      style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.mt, padding: 2, display: 'flex' }}
                       onMouseEnter={e => (e.currentTarget.style.color = T.tx)} onMouseLeave={e => (e.currentTarget.style.color = T.mt)}>
                       {showConfirmPw ? <I.EyeOff s={16} /> : <I.Eye s={16} />}
                     </button>
@@ -1386,7 +1373,7 @@ export function VerifyEmailBanner({ onVerify, onDismiss, topOffset = 0 }: { onVe
         style={{ background: 'none', border: 'none', color: cooldown > 0 ? T.mt : T.ac, cursor: cooldown > 0 ? 'default' : 'pointer', fontSize: 12, padding: 0, fontWeight: 500 }}>
         {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
       </button>
-      <button onClick={onDismiss} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0, lineHeight: 1 }} aria-label="Dismiss">{'\u2715'}</button>
+      <button onClick={onDismiss} style={{ marginInlineStart: 'auto', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0, lineHeight: 1 }} aria-label="Dismiss">{'\u2715'}</button>
     </div>
   );
 }

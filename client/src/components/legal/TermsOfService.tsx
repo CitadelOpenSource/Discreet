@@ -14,7 +14,7 @@ function useS() {
     updated: { fontSize: 13, color: C.mt, marginBottom: 40 } as React.CSSProperties,
     h2: { fontSize: 20, fontWeight: 700, marginTop: 36, marginBottom: 12, color: C.ac } as React.CSSProperties,
     p: { fontSize: 14, color: C.mt, marginBottom: 12 } as React.CSSProperties,
-    ul: { fontSize: 14, color: C.mt, marginBottom: 12, paddingLeft: 24 } as React.CSSProperties,
+    ul: { fontSize: 14, color: C.mt, marginBottom: 12, paddingInlineStart: 24 } as React.CSSProperties,
     li: { marginBottom: 6 } as React.CSSProperties,
     strong: { color: C.tx, fontWeight: 600 } as React.CSSProperties,
     back: { display: 'inline-block', marginBottom: 32, color: C.ac, textDecoration: 'none', fontSize: 14, fontWeight: 600 } as React.CSSProperties,
@@ -185,7 +185,7 @@ export function TermsOfService() {
         <div style={S.footer}>
           <p>Copyright &copy; 2024-2026 Discreet contributors. Patent Pending.</p>
           <p style={{ marginTop: 8 }}>
-            <a href="/privacy" style={{ color: S.ac, marginRight: 16 }}>Privacy Policy</a>
+            <a href="/privacy" style={{ color: S.ac, marginInlineEnd: 16 }}>Privacy Policy</a>
             <a href="/" style={{ color: S.mt }}>Back to Discreet</a>
           </p>
         </div>

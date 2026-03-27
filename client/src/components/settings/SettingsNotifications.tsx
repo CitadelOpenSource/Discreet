@@ -77,7 +77,7 @@ export default function SettingsNotifications({
             <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{opt.label}</div>
             <div style={{ fontSize: 11, color: T.mt }}>{opt.sub}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginInlineStart: 12}}>
             <button onClick={() => notifSound.play(opt.test)} title="Preview sound"
               style={{ background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 5, color: T.mt, cursor: 'pointer', fontSize: 10, padding: '3px 8px' }}>
               &#9654; Test
@@ -202,7 +202,7 @@ export default function SettingsNotifications({
         <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Suppress @everyone and @here</div>
         <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>The text still shows, but you won't get pinged or notified. Applies to all servers.</div>
       </div>
-      <div onClick={() => save('suppress_all_everyone', !(s.suppress_all_everyone === true))} role="switch" aria-checked={s.suppress_all_everyone === true} style={{ width: 36, height: 20, borderRadius: 10, background: s.suppress_all_everyone === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+      <div onClick={() => save('suppress_all_everyone', !(s.suppress_all_everyone === true))} role="switch" aria-checked={s.suppress_all_everyone === true} style={{ width: 36, height: 20, borderRadius: 10, background: s.suppress_all_everyone === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
         <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: s.suppress_all_everyone === true ? 18 : 2, transition: 'left 0.2s' }} />
       </div>
     </div>

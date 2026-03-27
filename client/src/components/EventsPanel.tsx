@@ -273,7 +273,7 @@ function EventCard({ event, onRsvp, onDelete, isOwner }: {
           {isOwner && (
             <button
               onClick={() => onDelete(event.id)}
-              style={{ marginLeft: 'auto', padding: '5px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer', background: 'rgba(237,66,69,0.08)', color: '#ed4245', border: '1px solid rgba(237,66,69,0.25)' }}
+              style={{ marginInlineStart: 'auto', padding: '5px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer', background: 'rgba(237,66,69,0.08)', color: '#ed4245', border: '1px solid rgba(237,66,69,0.25)' }}
             >
               Delete
             </button>

@@ -281,7 +281,7 @@ export function PipVideoWindow({
         style={{
           position: 'fixed',
           bottom: 72, right: EDGE_MARGIN,
-          height: 44, paddingLeft: 12, paddingRight: 12,
+          height: 44, paddingInlineStart: 12, paddingInlineEnd: 12,
           borderRadius: 22,
           background: 'rgba(0,0,0,0.85)',
           border: `1px solid ${T.bd}`,

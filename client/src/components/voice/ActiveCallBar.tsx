@@ -53,7 +53,7 @@ export function ActiveCallBar({
         height: 48,
         background: T.bg,
         borderTop: `1px solid ${T.bd}`,
-        borderLeft: `3px solid ${borderColor}`,
+        borderInlineStart: `3px solid ${borderColor}`,
         display: 'flex',
         alignItems: 'center',
         gap: 8,

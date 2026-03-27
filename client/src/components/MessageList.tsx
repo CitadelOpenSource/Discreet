@@ -207,7 +207,7 @@ export function MessageList(props: MessageListProps) {
 
       {/* Agent disclosure banner */}
       {agentDisclosure && (
-        <div style={{ background: T.sf2, borderLeft: `3px solid ${T.warn}`, borderRadius: 'var(--border-radius)', padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ background: T.sf2, borderInlineStart: `3px solid ${T.warn}`, borderRadius: 'var(--border-radius)', padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <span style={{ flexShrink: 0, color: T.warn, display: 'flex' }}><I.Shield s={16} /></span>
           <span style={{ flex: 1, fontSize: 13, color: T.tx, lineHeight: 1.5 }}>{agentDisclosure}</span>
           <span onClick={onDismissDisclosure} title="Dismiss" style={{ cursor: 'pointer', color: T.mt, flexShrink: 0, display: 'flex' }}><I.X s={16} /></span>
@@ -290,7 +290,7 @@ export function MessageList(props: MessageListProps) {
                 position: 'relative',
                 background: m.priority === 'urgent' ? 'rgba(255,107,53,0.08)' : m.priority === 'important' ? 'rgba(250,166,26,0.06)' : highlightedMsg === m.id ? 'rgba(0,212,170,0.12)' : (m.mentioned_user_ids?.includes(currentUserId) ? 'rgba(0,212,170,0.06)' : 'transparent'),
                 transition: 'background .15s ease',
-                borderLeft: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === currentUserId ? `2px solid ${ta(T.ac,'44')}` : '2px solid transparent',
+                borderInlineStart: m.priority === 'urgent' ? '3px solid #ff6b35' : m.priority === 'important' ? '3px solid #faa61a' : m.author_id === currentUserId ? `2px solid ${ta(T.ac,'44')}` : '2px solid transparent',
               }}
               onMouseEnter={e => {
                 if (highlightedMsg !== m.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
@@ -320,7 +320,7 @@ export function MessageList(props: MessageListProps) {
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Reply indicator */}
-                {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingLeft: 12, borderLeft: `2px solid ${T.bd}` }}>{'\u21A9'} replying to a message</div>}
+                {m.reply_to_id && <div style={{ fontSize: 11, color: T.mt, marginBottom: 2, paddingInlineStart: 12, borderInlineStart: `2px solid ${T.bd}` }}>{'\u21A9'} replying to a message</div>}
 
                 {/* Name + badges + timestamp — hidden for grouped messages */}
                 {!isGrouped && (
@@ -350,7 +350,7 @@ export function MessageList(props: MessageListProps) {
                   </div>
                 ) : /* Translation message */
                 m.is_translation ? (
-                  <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: `2px solid ${T.ac}`, marginLeft: 2 }}>
+                  <div style={{ marginTop: 4, paddingInlineStart: 10, borderInlineStart: `2px solid ${T.ac}`, marginInlineStart: 2 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                       <I.Globe s={14} />
                       <span style={{ fontSize: 10, color: T.mt, fontWeight: 600 }}>{m.translation_language || 'Translation'}</span>

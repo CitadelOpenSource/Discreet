@@ -310,7 +310,7 @@ function EventCard({ event, rsvpMap, now, onRsvp, onDelete, onJoinMeeting, onCop
   return (
     <div style={{
       background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 'var(--radius-md)',
-      padding: '10px 12px', marginBottom: 8, borderLeft: `3px solid ${accent}`,
+      padding: '10px 12px', marginBottom: 8, borderInlineStart: `3px solid ${accent}`,
     }}>
       {/* Title + delete */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
@@ -767,7 +767,7 @@ export function CalendarView({ serverId, onJoinMeeting }: CalendarViewProps) {
 
       {/* ── Day panel ── */}
       {selectedDay && (
-        <div style={{ width: 300, borderLeft: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ width: 300, borderInlineStart: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ padding: '14px 14px 12px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: 13 }}>

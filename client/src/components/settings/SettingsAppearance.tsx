@@ -6,6 +6,7 @@ import { LAYOUT_MODES } from '../../hooks/useLayoutMode';
 import { api } from '../../api/CitadelAPI';
 import * as I from '../../icons';
 import { loadConfig as loadNightConfig, saveConfig as saveNightConfig, activateNow, overrideSession, clearSessionOverride, hasSessionOverride, shouldActivate, type NighttimeConfig } from '../../hooks/useNighttimeMode';
+import { SUPPORTED_LANGUAGES } from '../../i18n/i18n';
 
 interface UserSettings { [key: string]: unknown; }
 
@@ -72,7 +73,7 @@ function ThemeCard({ p, save, isSkin }: { p: ThemePreset; save: (k: string, v: u
       )}
       {/* Mini UI mockup */}
       <div style={{ display: 'flex', height: 72, background: c.bg }}>
-        <div style={{ width: 40, background: c.sf, borderRight: `1px solid ${c.bd}`, padding: '6px 4px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ width: 40, background: c.sf, borderInlineEnd: `1px solid ${c.bd}`, padding: '6px 4px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ width: 20, height: 20, borderRadius: r(6), background: c.sf2, margin: '0 auto' }} />
           <div style={{ width: 20, height: 20, borderRadius: r(6), background: c.ac, margin: '0 auto', opacity: 0.3 }} />
           <div style={{ width: 20, height: 20, borderRadius: r(6), background: c.sf2, margin: '0 auto' }} />
@@ -100,7 +101,7 @@ function ThemeCard({ p, save, isSkin }: { p: ThemePreset; save: (k: string, v: u
             <div key={si} style={{ width: 14, height: 14, borderRadius: r(4), background: hex, border: '1px solid rgba(128,128,128,0.3)' }} />
           ))}
           {font && (
-            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: c.sf2, color: c.mt, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: c.sf2, color: c.mt, marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>
               {font}
             </span>
           )}
@@ -227,7 +228,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
           <div style={{ fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 6 }}>Live Preview</div>
           <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', border: `1px solid ${draft.bd}`, marginBottom: 12 }}>
             <div style={{ display: 'flex', height: 80, background: draft.bg }}>
-              <div style={{ width: 44, background: draft.sf, borderRight: `1px solid ${draft.bd}`, padding: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+              <div style={{ width: 44, background: draft.sf, borderInlineEnd: `1px solid ${draft.bd}`, padding: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: draft.sf2 }} />
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: draft.ac, opacity: 0.3 }} />
               </div>
@@ -314,7 +315,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
             <div style={{ fontSize: 10, color: T.mt, marginTop: 2, lineHeight: 1.4 }}>Show messages in rounded bubbles — your messages colored, others neutral</div>
           </div>
           <div onClick={() => { const next = !(s.chat_bubbles === true); save('chat_bubbles', next); localStorage.setItem('d_chat_bubbles', String(next)); }}
-            style={{ width: 36, height: 20, borderRadius: 10, background: s.chat_bubbles === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+            style={{ width: 36, height: 20, borderRadius: 10, background: s.chat_bubbles === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
             <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: s.chat_bubbles === true ? 18 : 2, transition: 'left 0.2s' }} />
           </div>
         </div>
@@ -348,13 +349,13 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
                 {/* Wireframe preview */}
                 <div style={{ height: 56, display: 'flex', background: T.bg, borderBottom: `1px solid ${T.bd}` }}>
                   {lm.id !== 'simple' && (
-                    <div style={{ width: 10, background: T.sf2, borderRight: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px 0', gap: 2 }}>
+                    <div style={{ width: 10, background: T.sf2, borderInlineEnd: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px 0', gap: 2 }}>
                       <div style={{ width: 6, height: 6, borderRadius: 'var(--radius-full, 3px)', background: active ? T.ac : T.mt, opacity: 0.4 }} />
                       <div style={{ width: 6, height: 6, borderRadius: 'var(--radius-full, 3px)', background: T.sf, opacity: 0.3 }} />
                     </div>
                   )}
                   {lm.id !== 'simple' && (
-                    <div style={{ width: 28, background: T.sf, borderRight: `1px solid ${T.bd}`, padding: '4px 2px' }}>
+                    <div style={{ width: 28, background: T.sf, borderInlineEnd: `1px solid ${T.bd}`, padding: '4px 2px' }}>
                       <div style={{ height: 4, width: '80%', background: T.mt, borderRadius: 1, opacity: 0.3, marginBottom: 3 }} />
                       <div style={{ height: 3, width: '60%', background: T.mt, borderRadius: 1, opacity: 0.2, marginBottom: 2 }} />
                       <div style={{ height: 3, width: '70%', background: active ? T.ac : T.mt, borderRadius: 1, opacity: 0.4, marginBottom: 2 }} />
@@ -367,7 +368,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
                     <div style={{ height: 6, background: T.sf2, borderRadius: 2, border: `1px solid ${T.bd}` }} />
                   </div>
                   {lm.id === 'power' && (
-                    <div style={{ width: 22, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: '4px 2px' }}>
+                    <div style={{ width: 22, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, padding: '4px 2px' }}>
                       <div style={{ height: 3, width: '70%', background: T.mt, borderRadius: 1, opacity: 0.2, marginBottom: 2 }} />
                       <div style={{ height: 3, width: '50%', background: T.mt, borderRadius: 1, opacity: 0.2 }} />
                     </div>
@@ -423,23 +424,11 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
       </div>
       <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Language</label>
         <select style={sel} value={(s.locale as string) || 'en'} onChange={e => save('locale', e.target.value)}>
-          <option value="en">English</option>
-          <option value="es">Espanol</option>
-          <option value="fr">Francais</option>
-          <option value="pt">Portugues</option>
-          <option value="ru">Russian</option>
-          <option value="uk">Ukrainian</option>
-          <option value="zh">Chinese</option>
-          <option value="ja">Japanese</option>
-          <option value="ko">Korean</option>
-          <option value="ar">Arabic</option>
-          <option value="fa">Farsi</option>
-          <option value="he">Hebrew</option>
-          <option value="ku">Kurdish (Sorani)</option>
-          <option value="my">Burmese</option>
-          <option value="ps">Pashto</option>
-          <option value="tr">Turkish</option>
+          {SUPPORTED_LANGUAGES.map(l => (
+            <option key={l.code} value={l.code}>{l.label}{l.beta ? ' (Beta)' : ''}</option>
+          ))}
         </select>
+        <div style={{ fontSize: 10, color: T.mt, marginTop: 4, opacity: 0.7 }}>English is the official language. Other translations are community previews.</div>
       </div>
       <div><label style={{ fontSize: 12, color: T.mt, marginBottom: 4, display: 'block' }}>Timezone</label>
         <select style={sel} value={tzCtx.timezone} onChange={e => { const tz = e.target.value; tzCtx.setTimezone(tz); api.saveTimezone(tz).catch(() => {}); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
@@ -457,7 +446,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
         <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Display timestamps next to messages. Date separators always show.</div>
       </div>
       <div onClick={() => { const next = !(s.show_timestamps !== false); save('show_timestamps', next); localStorage.setItem('d_show_timestamps', String(next)); }}
-        style={{ width: 36, height: 20, borderRadius: 10, background: s.show_timestamps !== false ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+        style={{ width: 36, height: 20, borderRadius: 10, background: s.show_timestamps !== false ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
         <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: s.show_timestamps !== false ? 18 : 2, transition: 'left 0.2s' }} />
       </div>
     </div>
@@ -503,7 +492,7 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
         <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 'var(--radius-md)', marginBottom: 4 }}>
           <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
           <div onClick={() => { if ((opt as any).local) { localStorage.setItem(opt.key, val ? 'false' : 'true'); } else { save(opt.key, !val); } }}
-            style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+            style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
             <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
           </div>
         </div>
@@ -541,7 +530,7 @@ function NighttimeModeSection({ s, save }: { s: Record<string, unknown>; save: (
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
-        <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 4 }}><I.Moon s={12} /></span> Nighttime Mode
+        <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: 4 }}><I.Moon s={12} /></span> Nighttime Mode
       </div>
 
       {/* Master toggle */}
@@ -551,7 +540,7 @@ function NighttimeModeSection({ s, save }: { s: Record<string, unknown>; save: (
           <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>Automatically switch to dark theme, mute notifications, and reduce blue light on a schedule.</div>
         </div>
         <div onClick={() => update({ enabled: !cfg.enabled })}
-          style={{ width: 36, height: 20, borderRadius: 10, background: cfg.enabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+          style={{ width: 36, height: 20, borderRadius: 10, background: cfg.enabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
           <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: cfg.enabled ? 18 : 2, transition: 'left 0.2s' }} />
         </div>
       </div>
@@ -561,7 +550,7 @@ function NighttimeModeSection({ s, save }: { s: Record<string, unknown>; save: (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {active && !sessionOff && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(155,89,182,0.1)', border: '1px solid rgba(155,89,182,0.25)', borderRadius: 6, fontSize: 11, color: '#9b59b6', fontWeight: 600 }}>
-              <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 3 }}><I.Moon s={11} /></span> Active now
+              <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: 3 }}><I.Moon s={11} /></span> Active now
             </div>
           )}
           {!active && (
@@ -659,7 +648,7 @@ function NighttimeModeSection({ s, save }: { s: Record<string, unknown>; save: (
               <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Apply a warm amber filter to reduce eye strain at night</div>
             </div>
             <div onClick={() => update({ blueLightReduction: !cfg.blueLightReduction })}
-              style={{ width: 36, height: 20, borderRadius: 10, background: cfg.blueLightReduction ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              style={{ width: 36, height: 20, borderRadius: 10, background: cfg.blueLightReduction ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
               <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: cfg.blueLightReduction ? 18 : 2, transition: 'left 0.2s' }} />
             </div>
           </div>

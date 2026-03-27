@@ -161,7 +161,7 @@ export function TierComparisonPage({ onBack, onCreateAccount, isGuest }: TierCom
             <thead>
               <tr>
                 <th style={{
-                  textAlign: 'left', padding: '12px 16px', borderBottom: `2px solid ${T.bd}`,
+                  textAlign: 'start', padding: '12px 16px', borderBottom: `2px solid ${T.bd}`,
                   color: T.mt, fontWeight: 600, fontSize: 11, textTransform: 'uppercase',
                   position: 'sticky', left: 0, background: T.bg, zIndex: 1,
                 }}>Feature</th>

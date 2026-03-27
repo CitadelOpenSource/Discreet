@@ -42,7 +42,7 @@ export default function SettingsAdvanced({ sel, curServer, DevTools }: SettingsA
       return (
         <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.sf2, borderRadius: 'var(--radius-md)', marginBottom: 3 }}>
           <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt }}>{opt.desc}</div></div>
-          <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+          <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
             <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
           </div>
         </div>

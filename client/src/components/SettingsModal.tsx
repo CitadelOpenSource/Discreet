@@ -479,7 +479,7 @@ function ClearLocalCache() {
             Clear locally cached messages without affecting your encryption keys. Messages will be re-fetched from the server on next load.
           </div>
         </div>
-        <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,165,0,0.12)', color: '#ffa500', border: '1px solid rgba(255,165,0,0.3)', padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 12 }}>
+        <button onClick={() => setShowModal(true)} className="pill-btn" style={{ background: 'rgba(255,165,0,0.12)', color: '#ffa500', border: '1px solid rgba(255,165,0,0.3)', padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', marginInlineStart: 12 }}>
           Clear Cache
         </button>
       </div>
@@ -658,7 +658,7 @@ function Toggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void;
 function NRow({ label, sub, on, onToggle, disabled }: { label: string; sub: string; on: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, marginBottom: 6 }}>
-      <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+      <div style={{ flex: 1, minWidth: 0, marginInlineEnd: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: disabled ? T.mt : T.tx }}>{label}</div>
         <div style={{ fontSize: 11, color: T.mt }}>{sub}</div>
       </div>
@@ -1527,7 +1527,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
     } catch (e: any) { setErrMsg('Failed to save: ' + (e?.message || 'Network error')); }
   };
 
-  const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
+  const sel: React.CSSProperties = { ...getInp(), cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingInlineEnd: 32, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6080' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
   const isStaff = platformUser?.platform_role === 'admin' || platformUser?.platform_role === 'dev';
   const tabGroups = [
     { heading: t('settings.myAccount'), tabs: [
@@ -1565,8 +1565,8 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
           <div style={{ position: 'relative' }}>
             <input ref={searchRef} value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)} placeholder={t('settings.searchPlaceholder')}
               style={{ width: '100%', padding: '8px 12px 8px 32px', background: T.bg, border: `1px solid ${settingsSearch.trim() ? T.ac : T.bd}`, borderRadius: 'var(--radius-md)', color: T.tx, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-primary)', transition: 'border-color .15s' }} />
-            <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, pointerEvents: 'none', display: 'flex' }}><I.Search s={13} /></span>
-            {settingsSearch.trim() && <span onClick={() => setSettingsSearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, cursor: 'pointer', display: 'flex' }}><I.X s={14} /></span>}
+            <span style={{ position: 'absolute', insetInlineStart: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, pointerEvents: 'none', display: 'flex' }}><I.Search s={13} /></span>
+            {settingsSearch.trim() && <span onClick={() => setSettingsSearch('')} style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', color: T.mt, cursor: 'pointer', display: 'flex' }}><I.X s={14} /></span>}
           </div>
           {searchMatches && searchMatches.length > 0 && (
             <div style={{ marginTop: 6, background: T.bg, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, padding: 4, maxHeight: 220, overflowY: 'auto' }}>
@@ -1594,7 +1594,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         {/* Settings Sidebar + Content Layout */}
         <div style={{ display: 'flex', gap: 0, marginBottom: 0, minHeight: 400 }}>
         {/* Sidebar */}
-        <div style={{ width: 220, flexShrink: 0, borderRight: `1px solid ${T.bd}`, paddingRight: 12, marginRight: 16, overflowY: 'auto', maxHeight: 'calc(90vh - 120px)' }}>
+        <div style={{ width: 220, flexShrink: 0, borderInlineEnd: `1px solid ${T.bd}`, paddingInlineEnd: 12, marginInlineEnd: 16, overflowY: 'auto', maxHeight: 'calc(90vh - 120px)' }}>
           {tabGroups.map(group => (
             <div key={group.heading} style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', padding: '6px 10px 2px', marginBottom: 2 }}>{group.heading}</div>
@@ -1905,7 +1905,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             return (
               <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 'var(--radius-md)', marginBottom: 4 }}>
                 <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
-                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
                   <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
                 </div>
               </div>
@@ -1984,7 +1984,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             return (
               <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.sf2, borderRadius: 'var(--radius-md)', marginBottom: 4 }}>
                 <div><div style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{opt.label}</div><div style={{ fontSize: 10, color: T.mt, marginTop: 1 }}>{opt.desc}</div></div>
-                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                <div onClick={() => localStorage.setItem(opt.key, val ? 'false' : 'true')} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
                   <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
                 </div>
               </div>
@@ -2023,7 +2023,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
                     if (opt.key === 'd_focus_rings') root.classList.toggle('focus-visible', next);
                   }
                   setS(p => ({ ...p }));
-                }} role="switch" aria-checked={val} aria-label={opt.label} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+                }} role="switch" aria-checked={val} aria-label={opt.label} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
                   <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
                 </div>
               </div>
@@ -2179,7 +2179,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
               {(TIER_META as any)[platformUser?.account_tier ?? '']?.icon ?? <I.AlertTriangle s={16} />}{' '}
               <strong>{(TIER_META as any)[platformUser?.account_tier ?? '']?.label ?? platformUser?.account_tier ?? '—'}</strong>
               {platformUser?.platform_role && (
-                <span style={{ marginLeft: 8, fontSize: 11, color: '#5865F2', fontFamily: 'monospace' }}>platform_role: {platformUser.platform_role}</span>
+                <span style={{ marginInlineStart: 8, fontSize: 11, color: '#5865F2', fontFamily: 'monospace' }}>platform_role: {platformUser.platform_role}</span>
               )}
             </div>
           </div>
@@ -2203,7 +2203,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
             </select>
             {devTierOverride && (
               <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(250,166,26,0.08)', border: '1px solid rgba(250,166,26,0.3)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#faa61a' }}>
-                <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 4 }}><I.AlertTriangle s={12} /></span> UI showing <strong>{devTierOverride}</strong> tier limits. Actual server permissions are unchanged.
+                <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: 4 }}><I.AlertTriangle s={12} /></span> UI showing <strong>{devTierOverride}</strong> tier limits. Actual server permissions are unchanged.
               </div>
             )}
           </div>
@@ -2227,7 +2227,7 @@ export function SettingsModal({ onClose, onThemeChange, showConfirm, setUserMap,
         </>)}
 
         {errMsg && <div style={{ padding: '8px 12px', background: 'rgba(255,71,87,0.08)', borderRadius: 'var(--radius-md)', color: T.err, fontSize: 13, textAlign: 'center', marginTop: 8 }}>{errMsg}</div>}
-        {saved && <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '8px 16px', background: T.ac, color: '#000', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.3)', zIndex: 10001, animation: 'fadeIn 0.2s ease' }}><span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 4 }}><I.Check s={12} /></span>{t('settings.saved')}</div>}
+        {saved && <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '8px 16px', background: T.ac, color: '#000', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.3)', zIndex: 10001, animation: 'fadeIn 0.2s ease' }}><span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: 4 }}><I.Check s={12} /></span>{t('settings.saved')}</div>}
         </div>{/* end content */}
         </div>{/* end sidebar+content flex */}
       </>)}

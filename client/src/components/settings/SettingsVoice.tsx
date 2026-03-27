@@ -235,7 +235,7 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
           <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Encrypts every audio and video frame with SFrame (RFC 9605). Requires browser support for Insertable Streams.</div>
         </div>
         <div onClick={() => { const v = localStorage.getItem('d_sframe_enabled') !== 'false'; localStorage.setItem('d_sframe_enabled', String(!v)); }}
-          style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_sframe_enabled') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+          style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_sframe_enabled') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
           <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_sframe_enabled') !== 'false' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
         </div>
       </div>
@@ -254,7 +254,7 @@ export default function SettingsVoice({ DeviceSelector, TestMicrophoneButton, Te
           <div style={{ fontSize: 10, color: T.mt, marginTop: 2 }}>Show a confirmation dialog before disconnecting from voice channels or calls</div>
         </div>
         <div onClick={() => { const v = localStorage.getItem('d_voice_confirm') === 'false'; localStorage.setItem('d_voice_confirm', String(v)); }}
-          style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_voice_confirm') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+          style={{ width: 36, height: 20, borderRadius: 10, background: localStorage.getItem('d_voice_confirm') !== 'false' ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
           <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: localStorage.getItem('d_voice_confirm') !== 'false' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
         </div>
       </div>

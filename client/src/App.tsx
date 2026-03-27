@@ -1704,18 +1704,18 @@ export default function App() {
   const renderPlatformBadge = (uid: string) => {
     // Bot badge takes precedence — bots shouldn't show verified/unverified
     const member = members.find((m: any) => m.user_id === uid);
-    if (member?.is_bot) return <span title="Bot account" style={{ marginLeft: 4, fontSize: 8, fontWeight: 700, color: '#fff', background: '#5865F2', padding: '1px 5px', borderRadius: 3, verticalAlign: 'middle', letterSpacing: '0.3px' }}>BOT</span>;
+    if (member?.is_bot) return <span title="Bot account" style={{ marginInlineStart: 4, fontSize: 8, fontWeight: 700, color: '#fff', background: '#5865F2', padding: '1px 5px', borderRadius: 3, verticalAlign: 'middle', letterSpacing: '0.3px' }}>BOT</span>;
 
     const e = badgeMap[uid];
     if (!e) return null;
     const { badge_type: bt, account_tier: at, platform_role: pr } = e;
-    if (pr === 'admin' || pr === 'dev') return <span title="This user is a Discreet staff member" style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.ac, verticalAlign: 'middle', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'rgba(124,58,237,0.1)', padding: '1px 6px', borderRadius: 4 }}><I.ShieldCheck s={11} /> Staff</span>;
-    if (bt === 'crown')  return <span title="Platform Admin" style={{ marginLeft: 3, color: '#faa61a', verticalAlign: 'middle', display: 'inline-flex' }}><I.Crown s={14} /></span>;
-    if (bt === 'wrench') return <span title="Developer"      style={{ marginLeft: 3, color: '#5865F2', verticalAlign: 'middle', display: 'inline-flex' }}><I.Wrench s={14} /></span>;
-    if (bt === 'gem')    return <span title="Premium"        style={{ marginLeft: 3, color: '#a855f7', verticalAlign: 'middle', display: 'inline-flex' }}><I.Gem s={14} /></span>;
-    if (bt === 'shield') return <span title="Verified"       style={{ marginLeft: 3, color: T.ok, verticalAlign: 'middle', display: 'inline-flex' }}><I.ShieldCheck s={14} /></span>;
-    if (at === 'unverified') return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Unverified</span>;
-    if (at === 'guest')      return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Guest</span>;
+    if (pr === 'admin' || pr === 'dev') return <span title="This user is a Discreet staff member" style={{ marginInlineStart: 4, fontSize: 10, fontWeight: 700, color: T.ac, verticalAlign: 'middle', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'rgba(124,58,237,0.1)', padding: '1px 6px', borderRadius: 4 }}><I.ShieldCheck s={11} /> Staff</span>;
+    if (bt === 'crown')  return <span title="Platform Admin" style={{ marginInlineStart: 3, color: '#faa61a', verticalAlign: 'middle', display: 'inline-flex' }}><I.Crown s={14} /></span>;
+    if (bt === 'wrench') return <span title="Developer"      style={{ marginInlineStart: 3, color: '#5865F2', verticalAlign: 'middle', display: 'inline-flex' }}><I.Wrench s={14} /></span>;
+    if (bt === 'gem')    return <span title="Premium"        style={{ marginInlineStart: 3, color: '#a855f7', verticalAlign: 'middle', display: 'inline-flex' }}><I.Gem s={14} /></span>;
+    if (bt === 'shield') return <span title="Verified"       style={{ marginInlineStart: 3, color: T.ok, verticalAlign: 'middle', display: 'inline-flex' }}><I.ShieldCheck s={14} /></span>;
+    if (at === 'unverified') return <span style={{ marginInlineStart: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Unverified</span>;
+    if (at === 'guest')      return <span style={{ marginInlineStart: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Guest</span>;
     return null;
   };
 
@@ -2334,7 +2334,7 @@ export default function App() {
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
       {/* ═══ Server Rail (hidden in Simple mode + mobile — replaced by bottom tabs) ═══ */}
-      <div className="server-rail" role="navigation" aria-label="Server list" data-testid="server-list" data-component="ServerRail" style={{ width: 72, minWidth: 72, background: T.bg, display: isCompact ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderRight: `1px solid ${T.bd}`, overflowY: 'auto' }}>
+      <div className="server-rail" role="navigation" aria-label="Server list" data-testid="server-list" data-component="ServerRail" style={{ width: 72, minWidth: 72, background: T.bg, display: isCompact ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderInlineEnd: `1px solid ${T.bd}`, overflowY: 'auto' }}>
         <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" role="button" aria-label="Home" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') goHome(); }} style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
         <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, margin: '4px 0' }} />
         {/* DM button */}
@@ -2378,7 +2378,7 @@ export default function App() {
       </div>
 
       {/* ═══ Sidebar (hidden in Simple mode unless slide-over) ═══ */}
-      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 240, minWidth: 240, background: T.sf, display: (isCompact && !mobileMenuOpen) ? 'none' : 'flex', flexDirection: 'column', borderRight: `1px solid ${T.bd}` }}>
+      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 240, minWidth: 240, background: T.sf, display: (isCompact && !mobileMenuOpen) ? 'none' : 'flex', flexDirection: 'column', borderInlineEnd: `1px solid ${T.bd}` }}>
       <SectionBoundary name="sidebar">
         <div onContextMenu={e => {
           if (view === 'server' && curServer) {
@@ -2719,7 +2719,7 @@ export default function App() {
                         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <div style={{ width: 8, height: 8, borderRadius: 4, background: ok ? '#43b581' : fail ? '#ff4757' : '#faa61a', flexShrink: 0 }} />
                           <span style={{ color: T.mt, textTransform: 'capitalize' }}>{key === 'api' ? 'API Health' : key === 'ws' ? 'WebSocket' : 'DNS Resolve'}</span>
-                          <span style={{ marginLeft: 'auto', fontWeight: 600, fontSize: 10, color: ok ? '#43b581' : fail ? '#ff4757' : '#faa61a' }}>{val}</span>
+                          <span style={{ marginInlineStart: 'auto', fontWeight: 600, fontSize: 10, color: ok ? '#43b581' : fail ? '#ff4757' : '#faa61a' }}>{val}</span>
                         </div>
                       );
                     })}
@@ -2739,7 +2739,7 @@ export default function App() {
           <div style={{ padding: '10px 16px', background: 'rgba(124,58,237,0.08)', borderBottom: '1px solid rgba(124,58,237,0.2)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <I.ShieldCheck s={16} style={{ color: T.ac, flexShrink: 0 }} />
             <div style={{ flex: 1, fontSize: 13, color: T.tx, lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 700, color: T.ac, marginRight: 6 }}>Discreet</span>
+              <span style={{ fontWeight: 700, color: T.ac, marginInlineEnd: 6 }}>Discreet</span>
               {announcement.content}
             </div>
             <button onClick={() => setAnnouncement(null)} style={{ background: 'none', border: 'none', color: T.mt, fontSize: 16, cursor: 'pointer', padding: '2px 6px', lineHeight: 1 }} title="Dismiss">&times;</button>
@@ -2772,7 +2772,7 @@ export default function App() {
             </button>
           )}
           {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }} title={layoutMode.isPower ? `ch:${curChannel.id}` : undefined}>{curChannel.name}</span>
-            <div onClick={async () => { setShowPinned(p => !p); if (!showPinned && curServer && curChannel) { try { const pins = await api.getPinnedMessages(curServer.id, curChannel.id); setPinnedMsgs(Array.isArray(pins) ? pins : []); } catch { setPinnedMsgs([]); } } }} style={{ cursor: 'pointer', color: showPinned ? T.ac : T.mt, padding: '2px 6px', display: 'flex', alignItems: 'center', marginLeft: 6 }} title="Pinned Messages" aria-label="Pinned Messages">
+            <div onClick={async () => { setShowPinned(p => !p); if (!showPinned && curServer && curChannel) { try { const pins = await api.getPinnedMessages(curServer.id, curChannel.id); setPinnedMsgs(Array.isArray(pins) ? pins : []); } catch { setPinnedMsgs([]); } } }} style={{ cursor: 'pointer', color: showPinned ? T.ac : T.mt, padding: '2px 6px', display: 'flex', alignItems: 'center', marginInlineStart: 6 }} title="Pinned Messages" aria-label="Pinned Messages">
               <I.Pin s={14} />
             </div>
             <div onClick={() => { setShowScheduleModal(true); }} style={{ cursor: 'pointer', color: scheduledCount > 0 ? T.ac : T.mt, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 3 }} title={scheduledCount > 0 ? `${scheduledCount} scheduled` : 'Scheduled messages'} aria-label="Scheduled messages">
@@ -2784,7 +2784,7 @@ export default function App() {
           </>)}
           {view === 'dm' && curDm && (<><I.Msg /><span style={{ fontWeight: 700, fontSize: 15 }}>{curDm.other_username}</span>
             {disappearingEnabled && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 8 }}>
                 <select value={curDm.ttl_seconds ?? ''} onChange={async e => {
                   const v = e.target.value === '' ? null : Number(e.target.value);
                   try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: any) { setToast(err?.message || 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
@@ -2805,12 +2805,12 @@ export default function App() {
           {view === 'home' && (<>
             <I.Home /><span style={{ fontWeight: 700, fontSize: 15 }}>{homeTab === 'friends' ? 'Friends' : homeTab === 'bookmarks' ? 'Saved Messages' : 'Home'}</span>
             {homeTab === 'home' && (<>
-              <div className="touch-target" onClick={() => setHomeTab('friends')} style={{ cursor: 'pointer', color: T.mt, padding: 4, marginLeft: 4 }} title="Friends"><I.Users s={16} /></div>
+              <div className="touch-target" onClick={() => setHomeTab('friends')} style={{ cursor: 'pointer', color: T.mt, padding: 4, marginInlineStart: 4 }} title="Friends"><I.Users s={16} /></div>
               <div className="touch-target" onClick={() => setShowMeeting(true)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Start Meeting"><I.Video s={16} /></div>
               <div className="touch-target" onClick={() => setShowCalendar(true)} style={{ cursor: 'pointer', color: T.mt, padding: 4 }} title="Calendar"><I.Calendar s={16} /></div>
             </>)}
           </>)}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
             {React.createElement(function EncryptionBadge() {
               const [showInfo, setShowInfo] = useState(false);
               const mlsActive = isMlsAvailable();
@@ -3227,7 +3227,7 @@ export default function App() {
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <I.Bookmark s={18} />
               <span style={{ fontWeight: 700, fontSize: 16, color: T.tx }}>Saved Messages</span>
-              <span style={{ fontSize: 11, color: T.mt, marginLeft: 4 }}>{bookmarks.length}</span>
+              <span style={{ fontSize: 11, color: T.mt, marginInlineStart: 4 }}>{bookmarks.length}</span>
             </div>
             {bookmarks.length === 0 ? (
               <div style={{ padding: '60px 20px', textAlign: 'center' }}>
@@ -3254,10 +3254,10 @@ export default function App() {
                         onMouseLeave={e => e.currentTarget.style.color = T.mt}><I.Trash s={12} /></span>
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.4, wordBreak: 'break-word', paddingLeft: 26, opacity: bm.message_content ? 1 : 0.5 }}>
+                  <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.4, wordBreak: 'break-word', paddingInlineStart: 26, opacity: bm.message_content ? 1 : 0.5 }}>
                     {bm.message_content || '(message deleted)'}
                   </div>
-                  {bm.note && <div style={{ fontSize: 11, color: T.ac, marginTop: 4, paddingLeft: 26, fontStyle: 'italic' }}>{bm.note}</div>}
+                  {bm.note && <div style={{ fontSize: 11, color: T.ac, marginTop: 4, paddingInlineStart: 26, fontStyle: 'italic' }}>{bm.note}</div>}
                 </div>
               );
             })}
@@ -3361,7 +3361,7 @@ export default function App() {
                 style={{
                   padding: '4px 14px', borderRadius: 6, border: 'none',
                   background: T.err, color: '#fff', fontSize: 11,
-                  fontWeight: 700, cursor: 'pointer', marginLeft: 8,
+                  fontWeight: 700, cursor: 'pointer', marginInlineStart: 8,
                 }}
               >
                 Stop Sharing
@@ -3584,7 +3584,7 @@ export default function App() {
         }} />
       )}
       {view === 'server' && !openThread && panel === 'members' && (showMembersSkeleton && members.length === 0 ? (
-        <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: 16 }}>
+        <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, padding: 16 }}>
           <SkeletonBar w="45%" h={9} mb={14} />
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, animation: `fadeIn 0.3s ${i * 0.06}s both` }}>
@@ -3620,7 +3620,7 @@ export default function App() {
         const groups = Array.from(roleMap.values()).filter(g => g.members.length > 0).sort((a, b) => a.position - b.position);
 
         return (
-          <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderLeft: `1px solid ${T.bd}`, overflowY: 'auto', padding: 12 }}>
+          <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, overflowY: 'auto', padding: 12 }}>
             {groups.map(group => (
               <div key={group.name}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: group.color, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 0 4px', display: 'flex', justifyContent: 'space-between' }}>
@@ -3633,7 +3633,7 @@ export default function App() {
                   // Badge shows if: user forced 'always', OR (server allows AND per-bot allows)
                   const showBotBadge = _gbp === 'always' || (_srv !== 'false' && _pbp !== 'false');
                   return (
-                  <div key={m.user_id} onClick={e => { if (m.is_bot) { setSelectedBot({ ...m, bot_user_id: m.user_id }); setModal('bot-config'); } else { setProfileCard({ userId: m.user_id, pos: { x: e.clientX, y: e.clientY } }); } }} onContextMenu={e => openMemberCtx(e, m.user_id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 5, marginBottom: 1, cursor: 'pointer', borderLeft: m.is_bot && !showBotBadge ? `1px solid ${group.color}` : undefined }}
+                  <div key={m.user_id} onClick={e => { if (m.is_bot) { setSelectedBot({ ...m, bot_user_id: m.user_id }); setModal('bot-config'); } else { setProfileCard({ userId: m.user_id, pos: { x: e.clientX, y: e.clientY } }); } }} onContextMenu={e => openMemberCtx(e, m.user_id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 5, marginBottom: 1, cursor: 'pointer', borderInlineStart: m.is_bot && !showBotBadge ? `1px solid ${group.color}` : undefined }}
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <div style={{ position: 'relative' }}>
@@ -3646,8 +3646,8 @@ export default function App() {
                       {renderPlatformBadge(m.user_id)}
                       {m.user_id === api.userId && <span style={{ color: T.ac, fontSize: 10 }}> (you)</span>}
                       {m.is_bot && <>
-                        {showBotBadge && <span style={{ background: '#5865F2', color: '#fff', fontSize: 8, padding: '1px 4px', borderRadius: 3, marginLeft: 4, verticalAlign: 'middle' }}>BOT</span>}
-                        <span onClick={e => { e.stopPropagation(); setSelectedBot({ ...m, bot_user_id: m.user_id }); setModal('bot-config'); }} title="Configure bot" style={{ marginLeft: 4, cursor: 'pointer', color: T.mt, fontSize: 15, verticalAlign: 'middle', lineHeight: 1 }}
+                        {showBotBadge && <span style={{ background: '#5865F2', color: '#fff', fontSize: 8, padding: '1px 4px', borderRadius: 3, marginInlineStart: 4, verticalAlign: 'middle' }}>BOT</span>}
+                        <span onClick={e => { e.stopPropagation(); setSelectedBot({ ...m, bot_user_id: m.user_id }); setModal('bot-config'); }} title="Configure bot" style={{ marginInlineStart: 4, cursor: 'pointer', color: T.mt, fontSize: 15, verticalAlign: 'middle', lineHeight: 1 }}
                           onMouseEnter={e => (e.currentTarget.style.color = T.ac)}
                           onMouseLeave={e => (e.currentTarget.style.color = T.mt)}>⚙</span>
                       </>}
@@ -4135,7 +4135,7 @@ export default function App() {
                 onMouseLeave={e => e.currentTarget.style.background = userStatus === s.key ? 'rgba(124,58,237,0.08)' : 'transparent'}>
                 <div style={{ width: 12, height: 12, borderRadius: 6, background: s.color }} />
                 <div><div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{s.label}</div><div style={{ fontSize: 11, color: T.mt }}>{s.desc}</div></div>
-                {userStatus === s.key && <span style={{ marginLeft: 'auto', color: T.ac }}>✓</span>}
+                {userStatus === s.key && <span style={{ marginInlineStart: 'auto', color: T.ac }}>✓</span>}
               </div>
             ))}
           </div>
@@ -4145,7 +4145,7 @@ export default function App() {
         <Modal title={`Channel Settings — #${editChannel.name}`} onClose={() => { setModal(null); setEditChannel(null); }} wide>
           <div style={{ display: 'flex', minHeight: 400 }}>
             {/* Sidebar tabs */}
-            <div style={{ width: 160, background: T.bg, padding: '12px 8px', borderRight: `1px solid ${T.bd}` }}>
+            <div style={{ width: 160, background: T.bg, padding: '12px 8px', borderInlineEnd: `1px solid ${T.bd}` }}>
               {['Overview', 'Permissions', 'Invites', 'Danger Zone'].map(tab => (
                 <div key={tab} onClick={() => setChSettingsTab(tab.toLowerCase().replace(' ', '-'))} style={{ padding: '8px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: chSettingsTab === tab.toLowerCase().replace(' ', '-') ? 600 : 400, color: chSettingsTab === tab.toLowerCase().replace(' ', '-') ? T.ac : T.mt, background: chSettingsTab === tab.toLowerCase().replace(' ', '-') ? 'rgba(124,58,237,0.08)' : 'transparent', marginBottom: 2 }}>{tab}</div>
               ))}
@@ -4219,7 +4219,7 @@ export default function App() {
                           <div style={{ width: 12, height: 12, borderRadius: 3, background: r.color || T.mt, flexShrink: 0 }} />
                           <span style={{ fontWeight: 700, fontSize: 13 }}>{r.name}</span>
                           {count > 0 && (
-                            <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, background: 'rgba(124,58,237,0.15)', color: T.ac, padding: '2px 8px', borderRadius: 10 }}>
+                            <span style={{ marginInlineStart: 'auto', fontSize: 10, fontWeight: 700, background: 'rgba(124,58,237,0.15)', color: T.ac, padding: '2px 8px', borderRadius: 10 }}>
                               {count} override{count !== 1 ? 's' : ''}
                             </span>
                           )}
@@ -4258,7 +4258,7 @@ export default function App() {
                                       style={{
                                         padding: '5px 12px',
                                         border: 'none',
-                                        borderLeft: oi > 0 ? `1px solid ${T.bd}` : 'none',
+                                        borderInlineStart: oi > 0 ? `1px solid ${T.bd}` : 'none',
                                         cursor: 'pointer',
                                         fontSize: 13,
                                         fontWeight: 700,
@@ -4288,7 +4288,7 @@ export default function App() {
                       onClick={() => setChPermOverrides({})}
                       style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${T.bd}`, borderRadius: 'var(--border-radius)', color: T.mt, cursor: 'pointer', fontSize: 13 }}
                     >Reset All Roles</button>
-                    <span style={{ marginLeft: 'auto', fontSize: 11, color: T.mt }}>
+                    <span style={{ marginInlineStart: 'auto', fontSize: 11, color: T.mt }}>
                       {Object.values(chPermOverrides).reduce((n, rp) => n + Object.values(rp).filter(v => v !== 'neutral').length, 0)} active override(s)
                     </span>
                   </div>
@@ -4577,7 +4577,7 @@ export default function App() {
 
       {/* Thread Panel */}
       {panel === 'thread' && threadParent && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, background: T.sf, borderLeft: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.bd}` }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: T.tx }}>Thread</div>
             <button onClick={() => { setPanel('members'); setThreadParent(null); setThreadReplies([]); }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 18, padding: 4, lineHeight: 1 }}>✕</button>
@@ -4598,7 +4598,7 @@ export default function App() {
               <div style={{ padding: 24, textAlign: 'center', color: T.mt, fontSize: 13 }}>No replies yet</div>
             )}
             {threadReplies.map(r => (
-              <div key={r.id} style={{ padding: '6px 16px 6px 28px', display: 'flex', gap: 8, borderLeft: `2px solid ${T.bd}`, marginLeft: 16 }}>
+              <div key={r.id} style={{ padding: '6px 16px 6px 28px', display: 'flex', gap: 8, borderInlineStart: `2px solid ${T.bd}`, marginInlineStart: 16 }}>
                 <Av name={getName(r.author_id)} size={20} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -4626,7 +4626,7 @@ export default function App() {
         const total = pinnedMsgs.length;
 
         return (
-          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 350, background: T.sf, borderLeft: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 350, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, zIndex: 9999, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.bd}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: T.tx }}>
                 <I.Pin s={16} /> Pinned Messages
@@ -4659,7 +4659,7 @@ export default function App() {
                           </div>
                           <button onClick={async () => { if (curServer && curChannel) { await api.unpinMessage(curServer.id, curChannel.id, m.id); setPinnedMsgs(p => p.filter(x => x.id !== m.id)); } }} style={{ background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Unpin" onMouseEnter={e => { e.currentTarget.style.color = T.err; }} onMouseLeave={e => { e.currentTarget.style.color = T.mt; }}>Unpin</button>
                         </div>
-                        <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingLeft: 28 }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
+                        <div style={{ fontSize: 13, color: T.tx, lineHeight: 1.5, wordBreak: 'break-word', paddingInlineStart: 28 }}><Markdown text={m.text || m.content || m.content_ciphertext} /></div>
                       </div>
                     ))}
                   </div>
@@ -4855,7 +4855,7 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <span style={{ fontSize: 18 }}>🔴</span>
               <span style={{ fontSize: 16, fontWeight: 700, color: T.tx }}>You're Live — Stream Setup</span>
-              <div onClick={() => setStreamSetupModal(null)} style={{ marginLeft: 'auto', cursor: 'pointer', color: T.mt, fontSize: 20, lineHeight: 1 }}>×</div>
+              <div onClick={() => setStreamSetupModal(null)} style={{ marginInlineStart: 'auto', cursor: 'pointer', color: T.mt, fontSize: 20, lineHeight: 1 }}>×</div>
             </div>
             <p style={{ fontSize: 12, color: T.mt, marginBottom: 18, lineHeight: 1.6 }}>
               In your streaming software (Settings → Stream), set <strong style={{ color: T.tx }}>Service</strong> to "Custom…" then paste the values below.
@@ -4896,7 +4896,7 @@ export default function App() {
               {(streamStatus[watchModal.channelId]?.viewerCount ?? 0) > 0 && (
                 <span style={{ fontSize: 12, color: T.mt }}>· {streamStatus[watchModal.channelId].viewerCount} watching</span>
               )}
-              <div onClick={() => setWatchModal(null)} style={{ marginLeft: 'auto', cursor: 'pointer', color: T.mt, fontSize: 22, lineHeight: 1 }}>×</div>
+              <div onClick={() => setWatchModal(null)} style={{ marginInlineStart: 'auto', cursor: 'pointer', color: T.mt, fontSize: 22, lineHeight: 1 }}>×</div>
             </div>
             {/* Video player */}
             <div style={{ background: '#000', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -5057,11 +5057,11 @@ function DeleteServerModal({ serverId, serverName, onTransferInstead, onDeleted,
             Would you like to transfer ownership to another member before deleting <strong style={{ color: T.tx }}>{serverName}</strong>?
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button onClick={onTransferInstead} style={{ padding: '10px 18px', borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, background: T.sf2, color: T.ac, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+            <button onClick={onTransferInstead} style={{ padding: '10px 18px', borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, background: T.sf2, color: T.ac, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'start' }}>
               Transfer Ownership First
               <div style={{ fontSize: 11, color: T.mt, fontWeight: 400, marginTop: 2 }}>Give the server to a trusted member before deleting</div>
             </button>
-            <button onClick={() => setStep('confirm')} style={{ padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,71,87,0.4)', background: 'rgba(255,71,87,0.06)', color: T.err, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+            <button onClick={() => setStep('confirm')} style={{ padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,71,87,0.4)', background: 'rgba(255,71,87,0.06)', color: T.err, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'start' }}>
               Continue with Deletion
               <div style={{ fontSize: 11, color: T.mt, fontWeight: 400, marginTop: 2 }}>Permanently delete the server and all data</div>
             </button>

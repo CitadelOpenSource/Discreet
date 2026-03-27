@@ -141,7 +141,7 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
   }
   if (displayed.length === 0) return null;
   return (
-    <div style={{ paddingLeft: 28, paddingBottom: 4 }}>
+    <div style={{ paddingInlineStart: 28, paddingBottom: 4 }}>
       {displayed.map(p => (
         <div
           key={p.id}
@@ -180,21 +180,21 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
             <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#5865f222', color: '#7984f5', fontWeight: 700, flexShrink: 0, letterSpacing: '0.3px' }}>BOT</span>
           )}
           {videoStreams[p.id] && (
-            <span style={{ color: T.ac, display: 'flex', marginLeft: p.isBot ? 4 : 'auto', flexShrink: 0 }}>
+            <span style={{ color: T.ac, display: 'flex', marginInlineStart: p.isBot ? 4 : 'auto', flexShrink: 0 }}>
               <I.Camera s={10} />
             </span>
           )}
           {videoStreams[p.id + ':screen'] && (
-            <span title="Screen sharing" style={{ color: '#9b59b6', display: 'flex', flexShrink: 0, marginLeft: 2 }}>
+            <span title="Screen sharing" style={{ color: '#9b59b6', display: 'flex', flexShrink: 0, marginInlineStart: 2 }}>
               <I.Monitor s={10} />
             </span>
           )}
           {sframeActive ? (
-            <span title="End-to-end encrypted" style={{ color: T.ok, display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+            <span title="End-to-end encrypted" style={{ color: T.ok, display: 'flex', flexShrink: 0, marginInlineStart: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
               <I.ShieldCheck s={10} />
             </span>
           ) : !sframeSupported ? (
-            <span title="Transport encrypted only (browser does not support E2EE)" style={{ color: T.warn, display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+            <span title="Transport encrypted only (browser does not support E2EE)" style={{ color: T.warn, display: 'flex', flexShrink: 0, marginInlineStart: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
               <I.ShieldAlert s={10} />
             </span>
           ) : null}
@@ -331,12 +331,12 @@ function ChannelRow({
         {ch.suggest_friends_only && <span title="Friends-only recommended" style={{ color: T.ac, display: 'flex', flexShrink: 0 }}><I.ShieldCheck s={10} /></span>}
         {ch.locked && <I.Lock s={10} />}
         {(ch.message_ttl_seconds ?? 0) > 0 && <I.Clock />}
-        {isMuted && <span style={{ color: T.mt, marginLeft: 2 }} title="Muted"><I.BellOff /></span>}
+        {isMuted && <span style={{ color: T.mt, marginInlineStart: 2 }} title="Muted"><I.BellOff /></span>}
 
         {/* Mention badge */}
         {mentions > 0 && !isActive && (
           <span style={{
-            marginLeft: 'auto', background: '#ff4757',
+            marginInlineStart: 'auto', background: '#ff4757',
             color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 'var(--radius-md)',
             minWidth: 16, height: 16, display: 'flex', alignItems: 'center',
             justifyContent: 'center', padding: '0 4px',
@@ -347,7 +347,7 @@ function ChannelRow({
         {/* Unread badge */}
         {unread > 0 && !isActive && mentions === 0 && (
           <span style={{
-            marginLeft: 'auto', background: isMuted ? T.mt : T.ac,
+            marginInlineStart: 'auto', background: isMuted ? T.mt : T.ac,
             color: '#000', fontSize: 10, fontWeight: 700, borderRadius: 'var(--radius-md)',
             minWidth: 16, height: 16, display: 'flex', alignItems: 'center',
             justifyContent: 'center', padding: '0 4px',
@@ -358,20 +358,20 @@ function ChannelRow({
 
         {/* Voice participant count */}
         {ch.channel_type === 'voice' && (voicePresence[ch.id]?.length ?? 0) > 0 && !isInVoice && (
-          <span style={{ marginLeft: mentions > 0 || unread > 0 ? '4px' : 'auto', fontSize: 10, color: T.mt, fontWeight: 600 }}>
+          <span style={{ marginInlineStart: mentions > 0 || unread > 0 ? '4px' : 'auto', fontSize: 10, color: T.mt, fontWeight: 600 }}>
             {voicePresence[ch.id].length}
           </span>
         )}
 
         {/* Active voice indicator dot */}
         {isInVoice && (
-          <span style={{ fontSize: 10, color: T.ac, marginLeft: unread > 0 ? '4px' : 'auto' }}>● {(voicePresence[ch.id]?.length ?? 0) > 0 ? voicePresence[ch.id].length : ''}</span>
+          <span style={{ fontSize: 10, color: T.ac, marginInlineStart: unread > 0 ? '4px' : 'auto' }}>● {(voicePresence[ch.id]?.length ?? 0) > 0 ? voicePresence[ch.id].length : ''}</span>
         )}
 
         {/* LIVE badge — shown when a stream is active on this voice channel */}
         {isLive && (
           <span style={{
-            marginLeft: (unread > 0 || isInVoice) ? '4px' : 'auto',
+            marginInlineStart: (unread > 0 || isInVoice) ? '4px' : 'auto',
             background: '#ff4757', color: '#fff',
             fontSize: 9, fontWeight: 700, borderRadius: 4,
             padding: '1px 5px', letterSpacing: '0.5px', flexShrink: 0,
@@ -386,7 +386,7 @@ function ChannelRow({
           <span
             onClick={e => { e.stopPropagation(); e.preventDefault(); onWatchStream(ch); }}
             title="Watch stream"
-            style={{ marginLeft: 4, fontSize: 11, cursor: 'pointer', flexShrink: 0, color: T.ac }}
+            style={{ marginInlineStart: 4, fontSize: 11, cursor: 'pointer', flexShrink: 0, color: T.ac }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
             onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >👁</span>
@@ -398,7 +398,7 @@ function ChannelRow({
             onClick={e => { e.stopPropagation(); e.preventDefault(); onChannelSettings(ch); }}
             title="Channel settings"
             style={{
-              marginLeft: (unread > 0 || isInVoice || isLive) ? '4px' : 'auto',
+              marginInlineStart: (unread > 0 || isInVoice || isLive) ? '4px' : 'auto',
               color: T.mt, fontSize: 15, cursor: 'pointer', flexShrink: 0,
               padding: '0 2px',
             }}
@@ -554,7 +554,7 @@ export function ChannelSidebar({
               >
                 {catCollapsed ? <I.ChevR /> : <I.ChevD />}
                 <span style={{ fontSize: 11 }}>📁</span> {uc.name}
-                <span style={{ fontSize: 9, color: T.mt, fontWeight: 500, marginLeft: 'auto' }}>{ucChannels.length}</span>
+                <span style={{ fontSize: 9, color: T.mt, fontWeight: 500, marginInlineStart: 'auto' }}>{ucChannels.length}</span>
               </div>
               {!catCollapsed && ucChannels.map(ch => (
                 <ChannelRow key={ch.id} {...rowProps(ch)} indent={true} />

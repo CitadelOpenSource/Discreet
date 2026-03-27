@@ -206,12 +206,12 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
   ];
 
   return (
-    <div style={{ width: 320, minWidth: 320, borderLeft: `1px solid ${T.bd}`, background: T.sf, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ width: 320, minWidth: 320, borderInlineStart: `1px solid ${T.bd}`, background: T.sf, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 8 }}>
         <I.Search />
         <span style={{ fontWeight: 700, fontSize: 14 }}>Search</span>
-        <div onClick={onClose} style={{ marginLeft: 'auto', cursor: 'pointer', color: T.mt, padding: 2 }}><I.X /></div>
+        <div onClick={onClose} style={{ marginInlineStart: 'auto', cursor: 'pointer', color: T.mt, padding: 2 }}><I.X /></div>
       </div>
 
       {/* Search input */}
@@ -296,7 +296,7 @@ export function SearchPanel({ messages, dmMsgs, members, channels, curServer, cu
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Av name={getName(m.author_id)} size={20} />
                   <span style={{ fontSize: 12, fontWeight: 600 }}>{getName(m.author_id)}</span>
-                  {ch && <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>#{ch.name}</span>}
+                  {ch && <span style={{ fontSize: 10, color: T.mt, marginInlineStart: 'auto' }}>#{ch.name}</span>}
                   <span style={{ fontSize: 10, color: T.mt }}>{new Date(m.created_at).toLocaleDateString()}</span>
                 </div>
                 <div style={{ fontSize: 12, color: T.mt, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -164,7 +164,7 @@ export function ThreadView({ parentMessage, channelId, onClose, getName }: Threa
     <div style={{
       width: 320, minWidth: 320,
       background: T.sf,
-      borderLeft: `1px solid ${T.bd}`,
+      borderInlineStart: `1px solid ${T.bd}`,
       display: 'flex', flexDirection: 'column',
       fontFamily: 'var(--font-primary)',
       overflow: 'hidden',
@@ -340,7 +340,7 @@ export function ThreadView({ parentMessage, channelId, onClose, getName }: Threa
             ↑
           </button>
         </div>
-        <div style={{ fontSize: 10, color: T.mt, marginTop: 5, paddingLeft: 2 }}>
+        <div style={{ fontSize: 10, color: T.mt, marginTop: 5, paddingInlineStart: 2 }}>
           Enter to send · Shift+Enter for new line
         </div>
       </div>

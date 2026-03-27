@@ -43,7 +43,7 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
         <div style={{ fontSize: 13, fontWeight: 600 }}>Show Shared Servers</div>
         <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>Let others see which servers you both share when they search for you.</div>
       </div>
-      <div onClick={() => save('show_shared_servers', !(s.show_shared_servers === true))} style={{ width: 36, height: 20, borderRadius: 10, background: s.show_shared_servers === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+      <div onClick={() => save('show_shared_servers', !(s.show_shared_servers === true))} style={{ width: 36, height: 20, borderRadius: 10, background: s.show_shared_servers === true ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
         <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: s.show_shared_servers === true ? 18 : 2, transition: 'left 0.2s' }} />
       </div>
     </div>
@@ -51,7 +51,7 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>Encryption Mode</div>
     <div style={{ padding: '12px 14px', background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ flex: 1, paddingRight: 12 }}>
+        <div style={{ flex: 1, paddingInlineEnd: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><I.Shield /> Friends-Only Mode</div>
           <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 4 }}>In server channels, only show decrypted messages from your friends. Messages from non-friends appear as encrypted placeholders. This is purely client-side — the server cannot tell whether you use this mode.</div>
         </div>
@@ -81,7 +81,7 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
       return (
         <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, marginBottom: 6 }}>
           <div><div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div><div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>{opt.desc}</div></div>
-          <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+          <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
             <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left 0.2s' }} />
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
       return (
         <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, marginBottom: 6 }}>
           <div><div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div><div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>{opt.desc}</div></div>
-          <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+          <div onClick={() => save(opt.key, !val)} style={{ width: 36, height: 20, borderRadius: 10, background: val ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
             <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: val ? 18 : 2, transition: 'left 0.2s' }} />
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function SettingsPrivacy({ s, save, sel, sectionVisible }: Settin
     <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, marginTop: 16 }}>AI Agents</div>
     <div style={{ padding: '12px 14px', background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}`, marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ flex: 1, paddingRight: 12 }}>
+        <div style={{ flex: 1, paddingInlineEnd: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Disable all AI interactions</div>
           <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.5, marginTop: 4 }}>Hide AI agent messages in all channels. AI-related buttons and configuration panels will be removed from the interface. The app becomes a pure messaging platform.</div>
         </div>

@@ -352,7 +352,7 @@ export function MediaViewer({ items, initialIndex = 0, onClose }: MediaViewerPro
             {textContent && (
               <pre style={{
                 marginTop: 16, padding: 16, background: T.bg, borderRadius: 'var(--radius-md)',
-                border: `1px solid ${T.bd}`, textAlign: 'left', fontSize: 12,
+                border: `1px solid ${T.bd}`, textAlign: 'start', fontSize: 12,
                 color: T.tx, maxHeight: 400, overflow: 'auto', whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word', fontFamily: 'var(--font-mono)',
               }}>

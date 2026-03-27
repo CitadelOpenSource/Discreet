@@ -107,7 +107,7 @@ export default function SettingsAccountSecurity({
 
     {/* Device Verification */}
     <div style={ROW} data-section="sec-device-verify">
-      <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+      <div style={{ flex: 1, minWidth: 0, marginInlineEnd: 12 }}>
         <div style={LABEL}>Device Verification</div>
         <div style={STATUS}>Verify new devices with emoji comparison</div>
       </div>

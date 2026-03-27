@@ -363,7 +363,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                       />
                       <button
                         onClick={() => setShowPassword(p => !p)}
-                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13 }}
+                        style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13 }}
                       >
                         {showPassword ? '🙈' : '👁'}
                       </button>
@@ -432,7 +432,7 @@ export function MeetingRoom({ onClose, initialCode }: MeetingRoomProps) {
                       />
                       <button
                         onClick={() => setShowPassword(p => !p)}
-                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13 }}
+                        style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.mt, cursor: 'pointer', fontSize: 13 }}
                       >
                         {showPassword ? '🙈' : '👁'}
                       </button>

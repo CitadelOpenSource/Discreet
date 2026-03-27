@@ -16,7 +16,7 @@ function S() {
     p: { fontSize: 15, color: C.tx, marginBottom: 16, lineHeight: 1.8 } as React.CSSProperties,
     canary: { padding: '24px 28px', background: 'rgba(0,212,170,0.04)', border: '1px solid rgba(0,212,170,0.15)', borderRadius: 'var(--border-radius)', marginBottom: 32 } as React.CSSProperties,
     statement: { fontSize: 15, color: C.tx, lineHeight: 1.8, marginBottom: 12 } as React.CSSProperties,
-    check: { color: '#2ecc71', fontWeight: 700, marginRight: 8 } as React.CSSProperties,
+    check: { color: '#2ecc71', fontWeight: 700, marginInlineEnd: 8 } as React.CSSProperties,
     notice: { fontSize: 13, color: C.mt, lineHeight: 1.7, marginTop: 24, padding: '16px 20px', background: 'rgba(250,166,26,0.06)', border: '1px solid rgba(250,166,26,0.15)', borderRadius: 'var(--radius-md)' } as React.CSSProperties,
     footer: { marginTop: 48, paddingTop: 24, borderTop: `1px solid ${C.bd}`, fontSize: 12, color: C.mt } as React.CSSProperties,
   };
@@ -79,8 +79,8 @@ export function WarrantCanary() {
         <div style={s.footer}>
           <p>Copyright &copy; 2024-2026 Discreet contributors. AGPL-3.0-or-later.</p>
           <p style={{ marginTop: 8 }}>
-            <a href="/app/terms" style={{ color: s.back.color, marginRight: 16 }}>Terms of Service</a>
-            <a href="/app/privacy" style={{ color: s.back.color, marginRight: 16 }}>Privacy Policy</a>
+            <a href="/app/terms" style={{ color: s.back.color, marginInlineEnd: 16 }}>Terms of Service</a>
+            <a href="/app/privacy" style={{ color: s.back.color, marginInlineEnd: 16 }}>Privacy Policy</a>
             <a href="/app" style={{ color: s.footer.color }}>Back to Discreet</a>
           </p>
         </div>

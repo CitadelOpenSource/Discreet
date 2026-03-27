@@ -362,7 +362,7 @@ function NotifRow({ n, onAction, onMarkRead }: {
       style={{
         display: 'flex', gap: 10, padding: '10px 16px', cursor: 'pointer',
         background: n.read ? 'transparent' : `${ta(T.ac,'08')}`,
-        borderLeft: n.read ? '3px solid transparent' : `3px solid ${T.ac}`,
+        borderInlineStart: n.read ? '3px solid transparent' : `3px solid ${T.ac}`,
         transition: 'background 0.15s',
       }}
       onMouseEnter={e => (e.currentTarget.style.background = T.sf2)}

@@ -105,7 +105,7 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest, isMobile, onStar
       <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 16 }}>
         <I.Users />
         <span style={{ fontWeight: 700, fontSize: 15 }}>Friends</span>
-        <div style={{ display: 'flex', gap: 6, marginLeft: 12 }}>
+        <div style={{ display: 'flex', gap: 6, marginInlineStart: 12 }}>
           {tabs.map(t => (
             <div key={t.id} onClick={() => setTab(t.id)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: tab === t.id ? T.ac : T.mt, background: tab === t.id ? 'rgba(0,212,170,0.12)' : 'transparent', transition: 'all .15s' }}>{t.label}</div>
           ))}
@@ -183,7 +183,7 @@ export function FriendsView({ setCtxMenu, showConfirm, isGuest, isMobile, onStar
               <div key={r.id} className="friend-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-md)', marginBottom: 4 }}>
                 <Av name={r.recipient_username || r.username || '?'} />
                 <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{r.recipient_username || r.username || '?'}</div>
-                <div style={{ fontSize: 12, color: T.mt, marginRight: 8 }}>Pending</div>
+                <div style={{ fontSize: 12, color: T.mt, marginInlineEnd: 8 }}>Pending</div>
                 <div onClick={() => { api.removeFriend(r.id); load(); }} className="pill-btn" style={{ background: T.sf2, color: T.mt }}>Cancel</div>
               </div>
             ))}

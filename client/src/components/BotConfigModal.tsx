@@ -773,7 +773,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: T.sf2, borderBottom: `1px solid ${T.bd}` }}>
                   <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.mt }}>{fmtTs(l.ts)}</span>
                   {l.channel && <span style={{ fontSize: 10, color: T.ac, background: `${ta(T.ac,'15')}`, padding: '1px 6px', borderRadius: 4 }}>#{l.channel}</span>}
-                  {l.responseTime != null && <span style={{ fontSize: 10, color: '#faa61a', marginLeft: 'auto' }}>{l.responseTime}ms</span>}
+                  {l.responseTime != null && <span style={{ fontSize: 10, color: '#faa61a', marginInlineStart: 'auto' }}>{l.responseTime}ms</span>}
                 </div>
                 {/* User message */}
                 <div style={{ padding: '8px 12px', borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
@@ -932,10 +932,10 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <>
               <label style={lbl}>
                 API Endpoint
-                {llmProvider === 'ollama' && <span style={{ color: T.ac, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
-                {llmProvider === 'openjarvis' && <span style={{ color: '#06b6d4', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— local, private, no API key needed</span>}
-                {llmProvider === 'vllm' && <span style={{ color: '#f59e0b', fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
-                {llmProvider === 'custom' && <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— must be OpenAI-compatible</span>}
+                {llmProvider === 'ollama' && <span style={{ color: T.ac, fontWeight: 400, marginInlineStart: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
+                {llmProvider === 'openjarvis' && <span style={{ color: '#06b6d4', fontWeight: 400, marginInlineStart: 6, textTransform: 'none', letterSpacing: 0 }}>— local, private, no API key needed</span>}
+                {llmProvider === 'vllm' && <span style={{ color: '#f59e0b', fontWeight: 400, marginInlineStart: 6, textTransform: 'none', letterSpacing: 0 }}>— must be running locally</span>}
+                {llmProvider === 'custom' && <span style={{ color: T.mt, fontWeight: 400, marginInlineStart: 6, textTransform: 'none', letterSpacing: 0 }}>— must be OpenAI-compatible</span>}
               </label>
               <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                 <input
@@ -961,7 +961,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <>
               <label style={lbl}>
                 API Key
-                <span style={{ color: T.mt, fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>— encrypted and stored on server</span>
+                <span style={{ color: T.mt, fontWeight: 400, marginInlineStart: 6, textTransform: 'none', letterSpacing: 0 }}>— encrypted and stored on server</span>
               </label>
               {llmHasApiKey && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#22c55e', marginBottom: 6 }}>
@@ -1052,7 +1052,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
             <span style={{ fontSize: 14 }}>💰</span>
             <div style={{ flex: 1, fontSize: 11, color: T.mt }}>
               <span style={{ color: T.ac, fontWeight: 700 }}>{estimateCost(llmModel, llmProvider)}</span>
-              <span style={{ marginLeft: 6 }}>· ~1500 input + {cfg.max_tokens} output tokens</span>
+              <span style={{ marginInlineStart: 6 }}>· ~1500 input + {cfg.max_tokens} output tokens</span>
             </div>
             <button
               onClick={runQuickTest}
@@ -1253,7 +1253,7 @@ export function BotConfigModal({ bot, serverId, channelId, onClose, onSave, show
 
         {row('Context Memory', 'Bot remembers previous messages in conversation', cfg.context_memory, 'context_memory')}
         {cfg.context_memory && (
-          <div style={{ paddingLeft: 12, marginBottom: 8 }}>
+          <div style={{ paddingInlineStart: 12, marginBottom: 8 }}>
             <label style={{ fontSize: 10, fontWeight: 600, color: T.mt }}>Context Window (messages to remember)</label>
             <select value={cfg.context_window} onChange={e => set('context_window', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 12, marginTop: 4 }}>
               <option value="5">Short (5 messages)</option>

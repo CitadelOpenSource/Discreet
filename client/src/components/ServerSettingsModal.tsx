@@ -302,7 +302,7 @@ function ChannelManagerRow({ ch, index, total, categories, onRefresh, onMove, sh
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: ch.is_archived ? T.mt : T.tx }}>
             {ch.name}
-            {ch.is_archived && <span style={{ marginLeft: 6, fontSize: 10, color: T.mt, fontWeight: 400 }}>[archived]</span>}
+            {ch.is_archived && <span style={{ marginInlineStart: 6, fontSize: 10, color: T.mt, fontWeight: 400 }}>[archived]</span>}
           </div>
           {ch.topic && <div style={{ fontSize: 11, color: T.mt, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ch.topic}</div>}
         </div>
@@ -800,7 +800,7 @@ function RoleEditorCard({ r, index, total, memberCount, onDelete, onUpdate, onMo
   };
 
   return (
-    <div style={{ marginBottom: 10, borderRadius: 10, border: `1px solid ${dirty ? color + '88' : T.bd}`, background: T.bg, overflow: 'hidden', borderLeft: `4px solid ${color}`, transition: 'border-color .2s' }}>
+    <div style={{ marginBottom: 10, borderRadius: 10, border: `1px solid ${dirty ? color + '88' : T.bd}`, background: T.bg, overflow: 'hidden', borderInlineStart: `4px solid ${color}`, transition: 'border-color .2s' }}>
       {/* ── header row ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
         {/* position controls */}
@@ -1189,7 +1189,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
           {searchResults.map(m => (
             <div key={m.id} style={{ padding: '6px 10px', borderBottom: `1px solid ${T.bd}`, fontSize: 12 }}>
               <span style={{ color: T.ac, fontWeight: 600 }}>{getName(m.author_id)}</span>
-              <span style={{ color: T.mt, marginLeft: 6, fontSize: 10 }}>{new Date(m.created_at).toLocaleString()}</span>
+              <span style={{ color: T.mt, marginInlineStart: 6, fontSize: 10 }}>{new Date(m.created_at).toLocaleString()}</span>
               <div style={{ color: T.tx, marginTop: 2, wordBreak: 'break-word' }}>{m.text?.length > 120 ? m.text.slice(0, 120) + '...' : m.text}</div>
             </div>
           ))}
@@ -1273,7 +1273,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <I.Hash s={14} />
             <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>{ch.name}</span>
-            <span style={{ fontSize: 11, color: T.mt, marginLeft: 'auto' }}>
+            <span style={{ fontSize: 11, color: T.mt, marginInlineStart: 'auto' }}>
               {ch.locked ? '🔒 Locked' : (ch.min_role_position ?? 0) > 0 ? '🔐 Restricted' : '🌐 Public'}
             </span>
           </div>
@@ -1294,7 +1294,7 @@ function ModerationPanel({ serverId, getName, decrypt }: ModerationPanelProps) {
             </>) : null}
             {(ch.slowmode_seconds ?? 0) > 0 && <span>· Slowmode: {ch.slowmode_seconds}s</span>}
             {ch.nsfw && <span>· NSFW</span>}
-            <span style={{ marginLeft: 'auto' }}><ExportChannelButton channelId={ch.id} channelName={ch.name} /></span>
+            <span style={{ marginInlineStart: 'auto' }}><ExportChannelButton channelId={ch.id} channelName={ch.name} /></span>
           </div>
         </div>
       ))}
@@ -1763,7 +1763,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
     <Modal title={server?.name || 'Server Settings'} onClose={onClose} wide>
       <div style={{ display: 'flex', gap: 0, minHeight: 400 }}>
       {/* ── Sidebar ── */}
-      <div style={{ width: 180, flexShrink: 0, borderRight: `1px solid ${T.bd}`, paddingRight: 12, marginRight: 16, overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
+      <div style={{ width: 180, flexShrink: 0, borderInlineEnd: `1px solid ${T.bd}`, paddingInlineEnd: 12, marginInlineEnd: 16, overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
         {tabGroups.map(group => (
           <div key={group.heading} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.6px', padding: '4px 8px', marginBottom: 2 }}>{group.heading}</div>
@@ -1856,7 +1856,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               await api.updateServer(server.id, { slash_commands_enabled: next } as any);
               setSaved('Saved!'); setTimeout(() => setSaved(''), 1500);
               if (onUpdate) onUpdate();
-            }} style={{ width: 40, height: 22, borderRadius: 11, background: slashCmdsEnabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginLeft: 12 }}>
+            }} style={{ width: 40, height: 22, borderRadius: 11, background: slashCmdsEnabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
               <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: slashCmdsEnabled ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
             </div>
           </div>
@@ -1968,7 +1968,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
         <div style={{ marginTop: 16, padding: 12, background: T.sf2, borderRadius: 'var(--radius-md)', border: `1px solid ${T.bd}` }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', marginBottom: 8 }}>Bot Appearance</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ flex: 1, paddingRight: 16 }}>
+            <div style={{ flex: 1, paddingInlineEnd: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Show BOT tags by default</div>
               <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.4, marginTop: 2 }}>When disabled, bots in this server won't show the BOT badge. Members can override this in their personal settings. Bot identity is always visible to admins.</div>
             </div>
@@ -2041,7 +2041,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                 if (onUpdate) onUpdate();
               } catch {}
             }}
-              style={{ width: 36, height: 20, borderRadius: 10, background: (server as any).ai_disabled ? T.err : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginLeft: 12 }}>
+              style={{ width: 36, height: 20, borderRadius: 10, background: (server as any).ai_disabled ? T.err : T.bd, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginInlineStart: 12}}>
               <div style={{ width: 16, height: 16, borderRadius: 'var(--radius-md)', background: '#fff', position: 'absolute', top: 2, left: (server as any).ai_disabled ? 18 : 2, transition: 'left 0.2s' }} />
             </div>
           </div>
@@ -2401,7 +2401,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           {(() => {
             const p = PRESETS.find(x => x.id === spawnPersona);
             return p ? (
-              <div style={{ marginTop: 10, padding: '8px 10px', background: T.bg, borderRadius: 7, borderLeft: `3px solid ${p.color}` }}>
+              <div style={{ marginTop: 10, padding: '8px 10px', background: T.bg, borderRadius: 7, borderInlineStart: `3px solid ${p.color}` }}>
                 <div style={{ fontSize: 11, color: p.color, fontWeight: 700, marginBottom: 3 }}>{p.icon} {p.name}</div>
                 <div style={{ fontSize: 11, color: T.mt, lineHeight: 1.45 }}>{p.cfg.system_prompt.slice(0, 120)}…</div>
                 <div style={{ fontSize: 10, color: T.mt, marginTop: 4 }}>Temp: {p.cfg.temperature} · Style: {p.cfg.voice_style}</div>
@@ -2538,7 +2538,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${T.bd}` }}>
                     {['Code', 'Creator', 'Uses', 'Expires', 'Status', ''].map(h => (
-                      <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '6px 10px', textAlign: 'start', fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3006,7 +3006,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
               <span style={{ fontSize: 11, color: T.mt, whiteSpace: 'nowrap' }}>{new Date(e.created_at).toLocaleDateString()}</span>
             </div>
             {e.chain_hash && (
-              <div style={{ marginTop: 4, paddingLeft: 34, fontSize: 10, fontFamily: 'monospace', color: T.mt, opacity: 0.6 }}>
+              <div style={{ marginTop: 4, paddingInlineStart: 34, fontSize: 10, fontFamily: 'monospace', color: T.mt, opacity: 0.6 }}>
                 #{e.sequence_num} — {e.chain_hash?.slice(0, 16)}...
               </div>
             )}

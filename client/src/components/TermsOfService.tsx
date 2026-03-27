@@ -11,7 +11,7 @@ const S: Record<string, React.CSSProperties> = {
   updated: { fontSize: 13, color: T.mt, marginBottom: 40 },
   h2: { fontSize: 20, fontWeight: 700, marginTop: 36, marginBottom: 12, color: T.ac },
   p: { fontSize: 14, color: T.mt, marginBottom: 12 },
-  ul: { fontSize: 14, color: T.mt, marginBottom: 12, paddingLeft: 24 },
+  ul: { fontSize: 14, color: T.mt, marginBottom: 12, paddingInlineStart: 24 },
   li: { marginBottom: 6 },
   back: { display: 'inline-block', marginBottom: 32, color: T.ac, textDecoration: 'none', fontSize: 14, fontWeight: 600 },
   footer: { marginTop: 48, paddingTop: 24, borderTop: `1px solid ${T.bd}`, fontSize: 12, color: T.mt },

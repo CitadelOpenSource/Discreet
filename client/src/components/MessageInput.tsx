@@ -497,7 +497,7 @@ export function MessageInput(props: MessageInputProps) {
             <span style={{ fontSize: 13 }}>{'\uD83D\uDCE6'}</span>
             <span style={{ fontSize: 12, color: '#ffa500', fontWeight: 600 }}>This server is archived and read-only.</span>
             {archivedDeletionDate && (
-              <span style={{ fontSize: 11, color: T.err, marginLeft: 4 }}>
+              <span style={{ fontSize: 11, color: T.err, marginInlineStart: 4 }}>
                 Scheduled for deletion on {archivedDeletionDate}.
               </span>
             )}

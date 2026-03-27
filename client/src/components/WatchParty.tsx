@@ -327,7 +327,7 @@ export function WatchParty({ channelId, serverId, onClose }: WatchPartyProps) {
           {session ? session.title : 'Watch Party'}
         </span>
         {session && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 8 }}>
             <span style={{ fontSize: 10, color: T.mt }}>👥</span>
             <span style={{ fontSize: 12, color: T.mt }}>{viewerCount} viewer{viewerCount !== 1 ? 's' : ''}</span>
             {isHost && (
@@ -341,7 +341,7 @@ export function WatchParty({ channelId, serverId, onClose }: WatchPartyProps) {
             )}
           </div>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           {session && isHost && (
             <button
               onClick={() => endSession(true)}
@@ -481,7 +481,7 @@ export function WatchParty({ channelId, serverId, onClose }: WatchPartyProps) {
         {/* ── Side panel ── */}
         <div style={{
           width: 220, flexShrink: 0,
-          background: T.sf, borderLeft: `1px solid ${T.bd}`,
+          background: T.sf, borderInlineStart: `1px solid ${T.bd}`,
           display: 'flex', flexDirection: 'column', padding: 12, gap: 8,
         }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>

@@ -156,7 +156,7 @@ export function Markdown({ text, onMention, mentionStyle }: MarkdownProps) {
         }
         key++;
         elements.push(
-          <div key={key} style={{ borderLeft: `3px solid ${T.mt}`, paddingLeft: 10, margin: '4px 0', color: T.mt }}>
+          <div key={key} style={{ borderInlineStart: `3px solid ${T.mt}`, paddingInlineStart: 10, margin: '4px 0', color: T.mt }}>
             {parseInline(quoteLines.join('\n'), ctx, key * 1000)}
           </div>
         );

@@ -609,7 +609,7 @@ function ImportMessages() {
                 {/* Instructions */}
                 <div style={{ margin: '12px 0', padding: '10px 12px', background: T.bg, borderRadius: 6 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>How to export from {src.label}</div>
-                  <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: T.tx, lineHeight: 1.8 }}>
+                  <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: 12, color: T.tx, lineHeight: 1.8 }}>
                     {src.instructions.map((step, i) => <li key={i}>{step}</li>)}
                   </ol>
                 </div>

@@ -234,7 +234,7 @@ function Toggle({ on, label, desc, onToggle, disabled, readOnly }: {
         onClick={blocked ? undefined : onToggle}
         style={{
           width: 40, height: 22, borderRadius: 11, cursor: blocked ? 'not-allowed' : 'pointer',
-          background: on ? T.ac : T.bd, transition: 'background 0.2s', position: 'relative', flexShrink: 0, marginLeft: 12,
+          background: on ? T.ac : T.bd, transition: 'background 0.2s', position: 'relative', flexShrink: 0, marginInlineStart: 12,
         }}
       >
         <div style={{
@@ -247,7 +247,7 @@ function Toggle({ on, label, desc, onToggle, disabled, readOnly }: {
 }
 
 function StatusDot({ ok }: { ok: boolean }) {
-  return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: ok ? '#10b981' : '#ff4757', marginRight: 6 }} />;
+  return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: ok ? '#10b981' : '#ff4757', marginInlineEnd: 6 }} />;
 }
 
 function MiniBar({ value, max }: { value: number; max: number }) {
@@ -324,7 +324,7 @@ function EditPanel({ edit, onSave, onCancel }: {
         }}>
           <div style={{ width: '100%', fontSize: 13, fontWeight: 700, color: T.tx }}>
             Edit: <span style={{ color: T.ac }}>{edit.user.username}</span>
-            <span style={{ marginLeft: 8, fontSize: 10, color: T.mt, fontWeight: 400, fontFamily: 'monospace' }}>{edit.user.id.slice(0, 8)}…</span>
+            <span style={{ marginInlineStart: 8, fontSize: 10, color: T.mt, fontWeight: 400, fontFamily: 'monospace' }}>{edit.user.id.slice(0, 8)}…</span>
           </div>
           <div style={{ flex: '1 1 180px', minWidth: 160 }}>
             <div style={{ fontSize: 10, color: T.mt, marginBottom: 4, textTransform: 'uppercase', fontWeight: 700 }}>Platform Role</div>
@@ -816,7 +816,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
 
   const th: React.CSSProperties = {
     fontSize: 10, fontWeight: 700, color: T.mt, textTransform: 'uppercase',
-    letterSpacing: '0.4px', padding: '8px 10px', textAlign: 'left',
+    letterSpacing: '0.4px', padding: '8px 10px', textAlign: 'start',
     borderBottom: `1px solid ${T.bd}`, whiteSpace: 'nowrap', background: T.sf2,
   };
   const tdBase: React.CSSProperties = {
@@ -981,7 +981,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     onToggle={() => toggleSetting('maintenance_mode', !settings.maintenance_mode)} />
 
                   {settings.maintenance_mode && (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, paddingLeft: 14 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, paddingInlineStart: 14 }}>
                       <input
                         value={maintMsg}
                         onChange={e => setMaintMsg(e.target.value)}
@@ -1561,7 +1561,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     <label style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Sync Interval (seconds)</label>
                     <input type="number" min={60} value={(settings as any)?.ldap_sync_interval || 3600} onChange={e => toggleSetting('ldap_sync_interval' as any, Number(e.target.value))}
                       style={{ ...getInp(), fontSize: 12, width: 120 }} />
-                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 8 }}>Default: 3600 (1 hour). Minimum: 60.</span>
+                    <span style={{ fontSize: 10, color: T.mt, marginInlineStart: 8 }}>Default: 3600 (1 hour). Minimum: 60.</span>
                   </div>
                 </>)}
               </div>
@@ -1647,7 +1647,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     <th style={{ ...th, textAlign: 'center' }}>Verified</th>
                     <th style={th}>Joined</th>
                     <th style={th}>Last Active</th>
-                    <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                    <th style={{ ...th, textAlign: 'end' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1667,10 +1667,10 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                           <td style={tdBase}>
                             <span style={{ fontWeight: 600, fontSize: 12 }}>{u.username}</span>
                             {u.display_name && <span style={{ color: T.mt, fontSize: 10, marginLeft: 4 }}>({u.display_name})</span>}
-                            {u.is_bot && <span style={{ marginLeft: 5, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#a855f720', color: '#a855f7', border: '1px solid #a855f740' }}>BOT</span>}
-                            {(u as any).banned && <span style={{ marginLeft: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,71,87,0.15)', color: T.err, border: '1px solid rgba(255,71,87,0.3)' }}>BANNED</span>}
-                            {(u as any).suspended && <span style={{ marginLeft: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#f59e0b', border: '1px solid rgba(250,166,26,0.3)' }}>SUSPENDED</span>}
-                            {(u as any).high_risk && <span style={{ marginLeft: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>HIGH RISK</span>}
+                            {u.is_bot && <span style={{ marginInlineStart: 5, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#a855f720', color: '#a855f7', border: '1px solid #a855f740' }}>BOT</span>}
+                            {(u as any).banned && <span style={{ marginInlineStart: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,71,87,0.15)', color: T.err, border: '1px solid rgba(255,71,87,0.3)' }}>BANNED</span>}
+                            {(u as any).suspended && <span style={{ marginInlineStart: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#f59e0b', border: '1px solid rgba(250,166,26,0.3)' }}>SUSPENDED</span>}
+                            {(u as any).high_risk && <span style={{ marginInlineStart: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>HIGH RISK</span>}
                           </td>
                           <td style={tdBase}><TierPill tier={u.account_tier} /></td>
                           <td style={{ ...tdBase, textAlign: 'center' }}>
@@ -1678,7 +1678,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                           </td>
                           <td style={{ ...tdBase, color: T.mt, whiteSpace: 'nowrap', fontSize: 11 }}>{fmtDate(u.created_at)}</td>
                           <td style={{ ...tdBase, color: T.mt, whiteSpace: 'nowrap', fontSize: 11 }}>{u.last_active_at ? fmtDate(u.last_active_at) : '\u2014'}</td>
-                          <td style={{ ...tdBase, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ ...tdBase, textAlign: 'end', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                             {isEditing ? (
                               <button onClick={() => setEditState(null)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: T.sf2, color: T.mt, border: `1px solid ${T.bd}`, cursor: 'pointer' }}>Cancel</button>
@@ -1722,7 +1722,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                                                 {ip.is_registration && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(250,166,26,0.15)', color: '#f59e0b', fontFamily: 'sans-serif' }}>REG</span>}
                                                 <span style={{ color: T.tx }}>{ip.ip}</span>
                                                 {ip.country && <span style={{ fontSize: 9, color: T.mt }}>({ip.country})</span>}
-                                                <span style={{ marginLeft: 'auto', fontSize: 9, color: T.mt }}>{'\u00D7'}{ip.login_count}</span>
+                                                <span style={{ marginInlineStart: 'auto', fontSize: 9, color: T.mt }}>{'\u00D7'}{ip.login_count}</span>
                                               </div>
                                               <div style={{ fontSize: 9, color: T.mt, opacity: 0.7 }}>
                                                 {fmtDate(ip.last_seen)}{ip.user_agent ? ` \u2014 ${ip.user_agent.slice(0, 50)}` : ''}
@@ -1821,7 +1821,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                                             loadUserDetail(userDetail.id);
                                           } catch {}
                                         }} disabled={isReadOnly} title={isReadOnly ? RO_TOOLTIP : undefined}
-                                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: `1px solid ${T.bd}`, background: (userDetail as any)[flag.key] ? `${flag.color}18` : T.sf2, color: (userDetail as any)[flag.key] ? flag.color : T.mt, cursor: isReadOnly ? 'not-allowed' : 'pointer', textAlign: 'left' }}>
+                                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: `1px solid ${T.bd}`, background: (userDetail as any)[flag.key] ? `${flag.color}18` : T.sf2, color: (userDetail as any)[flag.key] ? flag.color : T.mt, cursor: isReadOnly ? 'not-allowed' : 'pointer', textAlign: 'start' }}>
                                           {(userDetail as any)[flag.key] ? '\u2713 ' : ''}{flag.label}
                                         </button>
                                       ))}
@@ -1869,7 +1869,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Abuse Queue</span>
-              <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+              <div style={{ display: 'flex', gap: 4, marginInlineStart: 'auto' }}>
                 {['open', 'dismissed', 'actioned'].map(s => (
                   <button key={s} onClick={() => { setReportsFilter(s); setReportsLoading(true); api.listReports(s).then(r => { setReports(Array.isArray(r) ? r : []); setReportsLoading(false); }); }}
                     style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: reportsFilter === s ? T.ac : T.sf2, color: reportsFilter === s ? '#000' : T.mt, textTransform: 'capitalize' }}>{s}</button>
@@ -1892,7 +1892,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: `${reasonColors[r.reason] || T.mt}22`, color: reasonColors[r.reason] || T.mt }}>{reasonLabels[r.reason] || r.reason}</span>
                     <span style={{ fontSize: 11, color: T.mt }}>by <strong style={{ color: T.tx }}>{r.reporter_username || '?'}</strong></span>
-                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                    <span style={{ fontSize: 10, color: T.mt, marginInlineStart: 'auto' }}>{new Date(r.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                   </div>
                   {/* Reported user metadata */}
                   <div style={{ fontSize: 11, color: T.mt, marginBottom: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -1960,7 +1960,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: T.mt, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bug Reports</span>
               <button onClick={() => { setBugsLoading(true); api.listBugReports().then(d => { setBugReports(Array.isArray(d?.reports) ? d.reports : Array.isArray(d) ? d : []); setBugsLoading(false); }).catch(() => setBugsLoading(false)); }}
-                style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: `1px solid ${T.bd}`, cursor: 'pointer', background: T.bg, color: T.mt, marginLeft: 'auto' }}>Refresh</button>
+                style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: `1px solid ${T.bd}`, cursor: 'pointer', background: T.bg, color: T.mt, marginInlineStart: 'auto' }}>Refresh</button>
             </div>
             {bugsLoading && <div style={{ color: T.mt, fontSize: 12, padding: 20, textAlign: 'center' }}>Loading...</div>}
             {!bugsLoading && bugReports.length === 0 && (
@@ -1978,7 +1978,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     <span style={{ fontSize: 14 }}>🐛</span>
                     {b.severity && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: `${sevColor}22`, color: sevColor, textTransform: 'uppercase' }}>{b.severity}</span>}
                     {b.reporter_user_id && <span style={{ fontSize: 10, color: T.mt }}>User: {b.reporter_user_id.slice(0, 8)}...</span>}
-                    <span style={{ fontSize: 10, color: T.mt, marginLeft: 'auto' }}>{new Date(b.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                    <span style={{ fontSize: 10, color: T.mt, marginInlineStart: 'auto' }}>{new Date(b.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.5, marginBottom: 6, wordBreak: 'break-word' }}>{b.description}</div>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10, color: T.mt }}>
@@ -2193,7 +2193,7 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
                     setErrSelected(new Set());
                     loadErrors(errorsPage);
                   } catch { /* ignore */ }
-                }} style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: T.ac, color: '#000', cursor: 'pointer' }}>
+                }} style={{ marginInlineStart: 'auto', padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: T.ac, color: '#000', cursor: 'pointer' }}>
                   Resolve Selected ({errSelected.size})
                 </button>
               )}
@@ -2204,11 +2204,11 @@ export function AdminDashboard({ platformUser }: AdminDashboardProps) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10, width: 28 }}></th>
-                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Time</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Source</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Component</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'left', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Message</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'start', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10, width: 28 }}></th>
+                    <th style={{ padding: '8px 6px', textAlign: 'start', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Time</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'start', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Source</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'start', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Component</th>
+                    <th style={{ padding: '8px 6px', textAlign: 'start', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Message</th>
                     <th style={{ padding: '8px 6px', textAlign: 'center', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10 }}>Severity</th>
                     <th style={{ padding: '8px 6px', textAlign: 'center', borderBottom: `2px solid ${T.bd}`, fontWeight: 700, color: T.mt, fontSize: 10, width: 60 }}>Action</th>
                   </tr>

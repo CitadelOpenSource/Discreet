@@ -211,7 +211,7 @@ export function NotificationCenter({
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: 340, zIndex: 19999,
           background: T.sf,
-          borderLeft: `1px solid ${T.bd}`,
+          borderInlineStart: `1px solid ${T.bd}`,
           boxShadow: '-8px 0 32px rgba(0,0,0,0.4)',
           display: 'flex', flexDirection: 'column',
           fontFamily: 'var(--font-primary)',
