@@ -560,7 +560,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
 
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <I.ShieldCheck s={64} style={{ color: 'var(--ac)', filter: 'drop-shadow(0 0 12px var(--ac))', strokeWidth: 1.5, marginBottom: 8 }} />
+          <I.ShieldCheck s={64} style={{ color: T.tx, filter: `drop-shadow(0 0 12px ${ta(T.ac, '44')})`, strokeWidth: 1.5, marginBottom: 8 }} />
           <h1 style={{ margin: 0, color: T.tx, fontSize: 26, fontWeight: 700 }}>Discreet</h1>
           <p style={{ margin: '6px 0 0', color: T.mt, fontSize: 13 }}>Zero-knowledge encrypted messaging</p>
         </div>

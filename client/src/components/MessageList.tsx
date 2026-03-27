@@ -207,10 +207,10 @@ export function MessageList(props: MessageListProps) {
 
       {/* Agent disclosure banner */}
       {agentDisclosure && (
-        <div style={{ background: '#1a1a2e', borderLeft: '3px solid #f0b232', borderRadius: 'var(--border-radius)', padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <span style={{ flexShrink: 0, color: '#f0b232', display: 'flex' }}><I.Shield s={16} /></span>
-          <span style={{ flex: 1, fontSize: 13, color: '#e0e0e0', lineHeight: 1.5 }}>{agentDisclosure}</span>
-          <span onClick={onDismissDisclosure} title="Dismiss" style={{ cursor: 'pointer', color: '#888', flexShrink: 0, display: 'flex' }}><I.X s={16} /></span>
+        <div style={{ background: T.sf2, borderLeft: `3px solid ${T.warn}`, borderRadius: 'var(--border-radius)', padding: 12, margin: '8px 16px 8px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <span style={{ flexShrink: 0, color: T.warn, display: 'flex' }}><I.Shield s={16} /></span>
+          <span style={{ flex: 1, fontSize: 13, color: T.tx, lineHeight: 1.5 }}>{agentDisclosure}</span>
+          <span onClick={onDismissDisclosure} title="Dismiss" style={{ cursor: 'pointer', color: T.mt, flexShrink: 0, display: 'flex' }}><I.X s={16} /></span>
         </div>
       )}
 

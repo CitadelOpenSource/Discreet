@@ -262,6 +262,11 @@ function applyVarsToRoot(raw: ThemeRaw, preset: ThemePreset) {
     document.body.classList.add(`theme-${preset.id}`);
   }
 
+  // Browser color scheme (scrollbars, form controls, autofill)
+  const isLight = preset.id === 'dawn' || preset.id === 'vapor';
+  root.style.colorScheme = isLight ? 'light' : 'dark';
+  root.setAttribute('data-theme', preset.id);
+
   // 300ms crossfade transition
   root.style.transition = 'background-color 300ms ease, color 300ms ease';
 
@@ -303,6 +308,7 @@ export function getTheme(): ThemeRaw {
 export function setTheme(name: string) {
   const preset = getPreset(name);
   localStorage.setItem('d_theme', preset.id);
+  localStorage.setItem('discreet-theme-preference', preset.id);
   Traw = { ...preset.colors };
   applyVarsToRoot(preset.colors, preset);
   syncThemeToServer(preset.id);
@@ -312,6 +318,7 @@ export function setTheme(name: string) {
 export function applyServerTheme(name: string) {
   const preset = getPreset(name);
   localStorage.setItem('d_theme', preset.id);
+  localStorage.setItem('discreet-theme-preference', preset.id);
   Traw = { ...preset.colors };
   applyVarsToRoot(preset.colors, preset);
 }

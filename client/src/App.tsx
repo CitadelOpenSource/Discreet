@@ -1713,7 +1713,7 @@ export default function App() {
     if (bt === 'crown')  return <span title="Platform Admin" style={{ marginLeft: 3, color: '#faa61a', verticalAlign: 'middle', display: 'inline-flex' }}><I.Crown s={14} /></span>;
     if (bt === 'wrench') return <span title="Developer"      style={{ marginLeft: 3, color: '#5865F2', verticalAlign: 'middle', display: 'inline-flex' }}><I.Wrench s={14} /></span>;
     if (bt === 'gem')    return <span title="Premium"        style={{ marginLeft: 3, color: '#a855f7', verticalAlign: 'middle', display: 'inline-flex' }}><I.Gem s={14} /></span>;
-    if (bt === 'shield') return <span title="Verified"       style={{ marginLeft: 3, color: '#10b981', verticalAlign: 'middle', display: 'inline-flex' }}><I.ShieldCheck s={14} /></span>;
+    if (bt === 'shield') return <span title="Verified"       style={{ marginLeft: 3, color: T.ok, verticalAlign: 'middle', display: 'inline-flex' }}><I.ShieldCheck s={14} /></span>;
     if (at === 'unverified') return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Unverified</span>;
     if (at === 'guest')      return <span style={{ marginLeft: 3, fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>Guest</span>;
     return null;
@@ -2647,9 +2647,9 @@ export default function App() {
             <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{api.username}</span>
               {me?.email_verified ? (
-                <span style={{ flexShrink: 0, color: '#43b581', display: 'flex' }}><I.ShieldCheck s={14} /></span>
+                <span style={{ flexShrink: 0, color: T.ok, display: 'flex' }}><I.ShieldCheck s={14} /></span>
               ) : (
-                <span style={{ flexShrink: 0, color: '#faa61a', display: 'flex' }}><I.ShieldAlert s={14} /></span>
+                <span style={{ flexShrink: 0, color: T.warn, display: 'flex' }}><I.ShieldAlert s={14} /></span>
               )}
               {isDev && <span title="Developer account" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(255,59,48,0.15)', color: '#ff3b30', border: '1px solid rgba(255,59,48,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>DEV</span>}
             </div>
@@ -2910,7 +2910,7 @@ export default function App() {
           <div data-testid="home-page" data-component="HomePage" style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' }}>
             {/* Welcome centerpiece */}
             <div style={{ textAlign: 'center', padding: '32px 20px 16px', marginBottom: 16 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 76, height: 76, borderRadius: 38, background: `${ta(T.ac,'12')}`, marginBottom: 16 }}><I.Shield s={38} /></div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 76, height: 76, borderRadius: 38, background: `${ta(T.ac,'12')}`, marginBottom: 16, color: T.ac }}><I.Shield s={38} /></div>
               <div style={{ fontSize: 22, fontWeight: 700, color: T.tx, marginBottom: 6 }}>Welcome to Discreet{api.username ? `, ${api.username}` : ''}</div>
               <div style={{ fontSize: 14, color: T.mt, lineHeight: 1.5, maxWidth: 400, margin: '0 auto 20px' }}>End-to-end encrypted messaging with zero-knowledge architecture.</div>
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>

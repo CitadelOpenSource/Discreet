@@ -190,11 +190,11 @@ function VoiceUserList({ ch, voiceChannel, voicePeers, voicePresence, memberMap,
             </span>
           )}
           {sframeActive ? (
-            <span title="End-to-end encrypted" style={{ color: '#43b581', display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+            <span title="End-to-end encrypted" style={{ color: T.ok, display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
               <I.ShieldCheck s={10} />
             </span>
           ) : !sframeSupported ? (
-            <span title="Transport encrypted only (browser does not support E2EE)" style={{ color: '#faa61a', display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
+            <span title="Transport encrypted only (browser does not support E2EE)" style={{ color: T.warn, display: 'flex', flexShrink: 0, marginLeft: !videoStreams[p.id] && !p.isBot ? 'auto' : 2 }}>
               <I.ShieldAlert s={10} />
             </span>
           ) : null}
@@ -328,7 +328,7 @@ function ChannelRow({
         {ch.nsfw && (
           <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#ff4757', color: '#fff', fontWeight: 700, flexShrink: 0, letterSpacing: '0.3px' }}>NSFW</span>
         )}
-        {ch.suggest_friends_only && <span title="Friends-only recommended" style={{ color: '#9b59b6', display: 'flex', flexShrink: 0 }}><I.ShieldCheck s={10} /></span>}
+        {ch.suggest_friends_only && <span title="Friends-only recommended" style={{ color: T.ac, display: 'flex', flexShrink: 0 }}><I.ShieldCheck s={10} /></span>}
         {ch.locked && <I.Lock s={10} />}
         {(ch.message_ttl_seconds ?? 0) > 0 && <I.Clock />}
         {isMuted && <span style={{ color: T.mt, marginLeft: 2 }} title="Muted"><I.BellOff /></span>}

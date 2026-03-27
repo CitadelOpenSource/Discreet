@@ -44,9 +44,9 @@ const OAuthCallback = React.lazy(() =>
 );
 
 const Spinner = (
-  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, background:'#0a0e17', color:'#e2e8f0' }}>
-    <div style={{ width:32, height:32, border:'3px solid #252d3d', borderTop:'3px solid #7C3AED', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-    <div style={{ fontSize:14, color:'#8490a4' }}>Loading Discreet...</div>
+  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, background:'inherit', color:'inherit' }}>
+    <div style={{ width:32, height:32, border:'3px solid currentColor', borderTopColor:'#7C3AED', borderRadius:'50%', animation:'spin 0.8s linear infinite', opacity: 0.3 }} />
+    <div style={{ fontSize:14, opacity: 0.5 }}>Loading Discreet...</div>
   </div>
 );
 

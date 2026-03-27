@@ -249,7 +249,7 @@ function BlockedList({ showConfirm }: BlockedListProps) {
     <div style={{ fontSize: 12, color: T.mt, marginBottom: 14 }}>Blocked users cannot message you, see your online status, or send friend requests.</div>
     {blocked.length === 0 && (
       <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: 'rgba(255,255,255,0.04)', marginBottom: 12 }}><I.Shield s={24} /></div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, background: ta(T.ac, '0a'), marginBottom: 12, color: T.ac }}><I.Shield s={24} /></div>
         <div style={{ fontSize: 14, fontWeight: 600, color: T.tx, marginBottom: 4 }}>No blocked users</div>
         <div style={{ fontSize: 12, color: T.mt }}>Users you block will appear here.</div>
       </div>
