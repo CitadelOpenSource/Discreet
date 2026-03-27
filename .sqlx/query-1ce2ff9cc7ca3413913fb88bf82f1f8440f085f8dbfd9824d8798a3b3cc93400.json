@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO platform_audit_log (admin_user_id, target_user_id, action, reason, metadata) VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ce2ff9cc7ca3413913fb88bf82f1f8440f085f8dbfd9824d8798a3b3cc93400"
+}

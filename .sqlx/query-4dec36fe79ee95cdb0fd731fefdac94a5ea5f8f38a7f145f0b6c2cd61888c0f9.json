@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO server_notification_settings (user_id, server_id) VALUES ($1, $2)\n         ON CONFLICT (user_id, server_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4dec36fe79ee95cdb0fd731fefdac94a5ea5f8f38a7f145f0b6c2cd61888c0f9"
+}

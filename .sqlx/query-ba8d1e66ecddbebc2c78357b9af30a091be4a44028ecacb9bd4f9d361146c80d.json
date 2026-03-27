@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET deleted = TRUE, content_ciphertext = '\\x00', edited_at = NOW()\n         WHERE id = ANY($1) AND channel_id = $2 AND deleted = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba8d1e66ecddbebc2c78357b9af30a091be4a44028ecacb9bd4f9d361146c80d"
+}

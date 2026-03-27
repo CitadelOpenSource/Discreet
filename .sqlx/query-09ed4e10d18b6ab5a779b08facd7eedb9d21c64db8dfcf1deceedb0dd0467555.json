@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT reltuples::bigint FROM pg_class WHERE relname = 'messages'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reltuples",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "09ed4e10d18b6ab5a779b08facd7eedb9d21c64db8dfcf1deceedb0dd0467555"
+}

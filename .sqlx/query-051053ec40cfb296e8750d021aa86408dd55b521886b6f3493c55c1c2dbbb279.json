@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE servers SET is_archived = FALSE, archived_at = NULL, scheduled_deletion_at = NULL, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "051053ec40cfb296e8750d021aa86408dd55b521886b6f3493c55c1c2dbbb279"
+}

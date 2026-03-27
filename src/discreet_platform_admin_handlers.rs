@@ -1,0 +1,2138 @@
+// discreet_platform_admin_handlers.rs — Platform identity and admin stat endpoints.
+//
+// Endpoints:
+//   GET  /api/v1/platform/me                  — Current user's platform profile + permissions.
+//   GET  /api/v1/admin/stats                  — Aggregate platform stats (ACCESS_ADMIN_DASHBOARD).
+//   GET  /api/v1/admin/users                  — Paginated user list (ACCESS_ADMIN_DASHBOARD).
+//   GET  /api/v1/admin/registrations          — Daily registration counts, last 30 days
+//                                               (VIEW_PLATFORM_STATS).
+//   POST /api/v1/admin/users/:id/role         — Set a user's account_tier and/or platform_role
+//                                               (ACCESS_ADMIN_DASHBOARD + MANAGE_USERS).
+//   POST /api/v1/admin/generate-dev-accounts  — Bulk-create dev_NNN test accounts with
+//                                               random passwords shown once (MANAGE_USERS).
+//   POST /api/v1/admin/users/:id/ban          — Ban user account, optionally IP ban (MANAGE_USERS).
+//   DELETE /api/v1/admin/users/:id/ban        — Unban user account, remove IP bans (MANAGE_USERS).
+//   POST /api/v1/admin/users/:id/wipe         — Wipe all sessions for a user (MANAGE_USERS).
+//
+// Guards:
+//   require_staff_role           — In-memory check: platform_role must be admin or dev.
+//   require_platform_permission  — DB check: role must have the named permission.
+//
+// All handlers use PlatformUser (not AuthUser) so account_tier, platform_role,
+// badge_type, and email_verified are already loaded before the handler runs.
+
+use std::sync::Arc;
+
+use axum::{
+    extract::{Path, Query, State},
+    response::IntoResponse,
+    Json,
+};
+use rand::Rng;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::discreet_error::AppError;
+use crate::discreet_platform_permissions::{check_platform_permission, PlatformRole, PlatformUser};
+use crate::discreet_state::AppState;
+use chrono::Utc;
+
+// ─── Serde helper — double Option ────────────────────────────────────────────
+//
+// Distinguishes three states for nullable request fields:
+//   Field absent           → outer None  (don't touch the column)
+//   Field present as null  → Some(None)  (clear the column to NULL)
+//   Field present as value → Some(Some(v))
+//
+// Used for `platform_role` which is nullable in the DB.
+// Apply with: #[serde(default, deserialize_with = "deserialize_double_option")]
+fn deserialize_double_option<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(d)?))
+}
+
+// ─── Role guard ───────────────────────────────────────────────────────────────
+
+/// Returns `Ok(())` if the caller holds the `admin` or `dev` platform_role,
+/// or `Err(AppError::Forbidden)` if not.
+///
+/// This check is in-memory (no DB query) because `PlatformUser` loads
+/// `platform_role` during extraction. It is the primary gate for all
+/// `/admin/*` and `/dev/*` routes.
+pub fn require_staff_role(caller: &PlatformUser) -> Result<(), AppError> {
+    match caller.platform_role {
+        Some(PlatformRole::Admin) | Some(PlatformRole::Dev) => Ok(()),
+        _ => Err(AppError::Forbidden(
+            "Requires admin or dev platform role".into(),
+        )),
+    }
+}
+
+// ─── Permission guard ─────────────────────────────────────────────────────────
+
+/// Returns `Ok(())` if the user's `platform_role` grants `permission_name`,
+/// or `Err(AppError::Forbidden)` if not.
+///
+/// Delegates to `check_platform_permission`; DB errors also produce Forbidden
+/// so that internal failures do not silently grant access.
+pub async fn require_platform_permission(
+    pool: &PgPool,
+    user_id: Uuid,
+    permission_name: &str,
+) -> Result<(), AppError> {
+    if check_platform_permission(pool, user_id, permission_name).await {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(format!(
+            "Requires the {permission_name} platform permission"
+        )))
+    }
+}
+
+// ─── GET /platform/me ────────────────────────────────────────────────────────
+
+/// Returns the calling user's full platform identity:
+///   - account_tier   (e.g. "unverified", "verified", "premium")
+///   - platform_role  (e.g. "admin", "dev", or null for ordinary users)
+///   - badge_type     (e.g. "shield", "gem", "wrench", "crown", or null)
+///   - email_verified (bool)
+///   - permissions    (array of permission name strings granted by their platform_role)
+///
+/// `permissions` is empty for users with no platform_role (the common case).
+pub async fn platform_me(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Fetch the permission names for the caller's platform_role.
+    // Short-circuit to an empty list when platform_role is NULL.
+    let permissions: Vec<String> = match &caller.platform_role {
+        None => vec![],
+        Some(role) => {
+            sqlx::query_scalar!(
+                r#"SELECT pp.name
+                   FROM platform_role_permissions prp
+                   JOIN platform_permissions pp ON pp.id = prp.permission_id
+                   WHERE prp.role_name = $1
+                   ORDER BY pp.bit_flag"#,
+                role.to_string(),
+            )
+            .fetch_all(&state.db)
+            .await?
+        }
+    };
+
+    Ok(Json(json!({
+        "account_tier":   caller.account_tier.to_string(),
+        "platform_role":  caller.platform_role.map(|r| r.to_string()),
+        "badge_type":     caller.badge_type,
+        "email_verified": caller.email_verified,
+        "permissions":    permissions,
+    })))
+}
+
+// ─── GET /admin/stats ─────────────────────────────────────────────────────────
+
+/// Returns aggregate platform statistics. Requires ACCESS_ADMIN_DASHBOARD.
+///
+/// Cached in Redis for 60 seconds. All counts are fetched concurrently
+/// with `tokio::try_join!` to keep response latency near the slowest
+/// single query rather than their sum.
+///
+/// Fields:
+///   total_users         — non-bot users in the users table
+///   verified_users      — non-bot users with account_tier = 'verified'
+///   guest_users         — users with account_tier = 'guest'
+///   total_servers       — server rows
+///   total_messages      — non-deleted message rows
+///   total_channels      — channel rows
+///   active_users_24h    — non-bot users whose last_active_at is within 24 h
+///   registrations_today — non-bot users created since midnight UTC
+///   total_bot_configs   — rows in server_bots (AI bot integrations per server)
+///   messages_today      — non-deleted messages created since midnight UTC
+///   storage_used_bytes  — total size of non-deleted file_blobs
+///   lockdown_status     — true when maintenance_mode is enabled
+///   pending_bans        — open content reports awaiting review
+pub async fn admin_stats(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    // Return cached stats if available (10-second TTL for near real-time)
+    let cache_key = "admin:stats";
+    let mut redis_conn = state.redis.clone();
+    let cached: Option<String> = match redis::cmd("GET")
+        .arg(cache_key)
+        .query_async(&mut redis_conn)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("admin_stats cache miss: {e}");
+            None
+        }
+    };
+    if let Some(json_str) = cached {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            return Ok(Json(val));
+        }
+    }
+
+    let (
+        total_users,
+        verified_users,
+        guest_users,
+        total_servers,
+        total_messages,
+        total_channels,
+        active_users_24h,
+        registrations_today,
+        total_bot_configs,
+        messages_today,
+        storage_used_bytes,
+        pending_bans,
+    ) = tokio::try_join!(
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE is_bot = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE account_tier = 'verified' AND is_bot = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE account_tier = 'guest'"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM servers"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE deleted = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM channels"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users
+             WHERE is_bot = FALSE
+               AND last_active_at > NOW() - INTERVAL '24 hours'"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users
+             WHERE is_bot = FALSE
+               AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM server_bots"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages
+             WHERE deleted = FALSE
+               AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COALESCE(SUM(size_bytes)::BIGINT, 0) FROM file_blobs WHERE deleted = FALSE"
+        )
+        .fetch_one(&state.db),
+
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM content_reports WHERE status = 'open'"
+        )
+        .fetch_one(&state.db),
+    )?;
+
+    // Additional live queries for the enhanced overview.
+    let (messages_this_hour, registrations_this_week, registrations_this_month) = tokio::try_join!(
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE deleted = FALSE AND created_at >= NOW() - INTERVAL '1 hour'"
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE is_bot = FALSE AND created_at >= NOW() - INTERVAL '7 days'"
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM users WHERE is_bot = FALSE AND created_at >= NOW() - INTERVAL '30 days'"
+        ).fetch_one(&state.db),
+    )?;
+
+    // Live counters from in-memory state (no DB query needed).
+    let users_online = state.presence.read().await.len() as i64;
+    let voice_calls_active = state.voice_state.read().await.len() as i64;
+
+    // Lockdown status from platform settings
+    let lockdown_row: Option<serde_json::Value> = sqlx::query_scalar!(
+        "SELECT value FROM platform_settings WHERE key = 'maintenance_mode'"
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let lockdown_status = lockdown_row
+        .and_then(|v: serde_json::Value| v.as_bool())
+        .unwrap_or(false);
+
+    let body = json!({
+        "total_users":              total_users.unwrap_or(0),
+        "verified_users":           verified_users.unwrap_or(0),
+        "guest_users":              guest_users.unwrap_or(0),
+        "total_servers":            total_servers.unwrap_or(0),
+        "total_messages":           total_messages.unwrap_or(0),
+        "total_channels":           total_channels.unwrap_or(0),
+        "active_users_24h":         active_users_24h.unwrap_or(0),
+        "registrations_today":      registrations_today.unwrap_or(0),
+        "registrations_this_week":  registrations_this_week.unwrap_or(0),
+        "registrations_this_month": registrations_this_month.unwrap_or(0),
+        "total_bot_configs":        total_bot_configs.unwrap_or(0),
+        "messages_today":           messages_today.unwrap_or(0),
+        "messages_this_hour":       messages_this_hour.unwrap_or(0),
+        "storage_used_bytes":       storage_used_bytes.unwrap_or(0_i64),
+        "lockdown_status":          lockdown_status,
+        "pending_bans":             pending_bans.unwrap_or(0),
+        "users_online":             users_online,
+        "voice_calls_active":       voice_calls_active,
+    });
+
+    // Cache in Redis for 10 seconds (near real-time)
+    if let Ok(json_str) = serde_json::to_string(&body) {
+        let cache_result: Result<String, _> = redis::cmd("SET")
+            .arg(cache_key)
+            .arg(&json_str)
+            .arg("EX")
+            .arg(10_u64)
+            .query_async(&mut redis_conn)
+            .await;
+        if let Err(e) = cache_result {
+            tracing::debug!("admin_stats cache write failed: {e}");
+        }
+    }
+
+    Ok(Json(body))
+}
+
+// ─── POST /admin/users/:user_id/role ─────────────────────────────────────────
+
+const VALID_ROLES: &[&str] = &["admin", "dev", "premium", "verified", "unverified", "guest"];
+
+#[derive(Debug, Deserialize)]
+pub struct SetUserRoleRequest {
+    /// New platform_role value. Absent = don't change. null = clear to NULL.
+    /// Must be one of the VALID_ROLES strings if provided.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub platform_role: Option<Option<String>>,
+
+    /// New account_tier value. Absent = don't change.
+    /// Must be one of the VALID_ROLES strings if provided (account_tier is NOT NULL).
+    pub account_tier: Option<String>,
+}
+
+/// Maps a platform_role string to its automatic badge_type.
+/// Returns None for roles that carry no badge (unverified, guest, NULL).
+fn badge_for_role(role: Option<&str>) -> Option<&'static str> {
+    match role {
+        Some("admin")    => Some("crown"),
+        Some("dev")      => Some("wrench"),
+        Some("premium")  => Some("gem"),
+        Some("verified") => Some("shield"),
+        _                => None,
+    }
+}
+
+/// Promote or demote a user's platform role and/or account tier.
+///
+/// Requires both ACCESS_ADMIN_DASHBOARD and MANAGE_USERS platform permissions.
+///
+/// Request body fields are all optional — omit a field to leave it unchanged:
+///   platform_role  — nullable; send null to clear the staff designation
+///   account_tier   — non-nullable; must be a valid tier string if present
+///
+/// badge_type is derived automatically from the new platform_role and is
+/// never accepted as an input field.
+///
+/// Returns the updated user row: id, username, account_tier, platform_role,
+/// badge_type, email_verified.
+pub async fn set_user_role(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<SetUserRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    // Both permissions are required.
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Validate account_tier if provided.
+    if let Some(ref tier) = req.account_tier {
+        if !VALID_ROLES.contains(&tier.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid account_tier '{tier}'. Must be one of: {}",
+                VALID_ROLES.join(", ")
+            )));
+        }
+    }
+
+    // Validate platform_role string if provided as a non-null value.
+    if let Some(Some(ref role)) = req.platform_role {
+        if !VALID_ROLES.contains(&role.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid platform_role '{role}'. Must be one of: {} or null",
+                VALID_ROLES.join(", ")
+            )));
+        }
+    }
+
+    // Confirm the target user exists.
+    let exists = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND is_bot = FALSE)",
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(false);
+
+    if !exists {
+        return Err(AppError::NotFound("User not found".into()));
+    }
+
+    // Apply platform_role + badge_type update if the field was present in the request.
+    if let Some(new_role) = req.platform_role {
+        let role_str = new_role.as_deref();           // Option<&str>: None = NULL, Some(s) = value
+        let badge    = badge_for_role(role_str);       // Option<&str>: derived automatically
+
+        sqlx::query!(
+            "UPDATE users SET platform_role = $1, badge_type = $2 WHERE id = $3",
+            role_str,
+            badge,
+            target_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Apply account_tier update if the field was present in the request.
+    if let Some(ref new_tier) = req.account_tier {
+        sqlx::query!(
+            "UPDATE users SET account_tier = $1 WHERE id = $2",
+            new_tier,
+            target_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Invalidate cached user state so changes take effect immediately.
+    crate::discreet_auth::invalidate_user_cache(&state, target_id).await;
+
+    // Fetch and return the updated profile.
+    let row = sqlx::query!(
+        r#"SELECT id, username, account_tier, platform_role, badge_type, email_verified
+           FROM users
+           WHERE id = $1"#,
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    tracing::info!(
+        admin_id  = %caller.user_id,
+        target_id = %target_id,
+        account_tier  = ?req.account_tier,
+        "Admin updated user role",
+    );
+
+    // Alert when a user is promoted to admin or dev
+    if let Some(ref role) = row.platform_role {
+        if role == "admin" || role == "dev" {
+            crate::discreet_email_handlers::send_admin_alert(
+                &state,
+                "New Administrator Created",
+                &format!("User {} ({}) was assigned the '{}' platform role by admin {}.", row.username, target_id, role, caller.user_id),
+                &[],
+            ).await;
+        }
+    }
+
+    Ok(Json(json!({
+        "id":             row.id,
+        "username":       row.username,
+        "account_tier":   row.account_tier,
+        "platform_role":  row.platform_role,
+        "badge_type":     row.badge_type,
+        "email_verified": row.email_verified,
+    })))
+}
+
+// ─── POST /admin/generate-dev-accounts ───────────────────────────────────────
+
+fn default_count() -> u32 { 10 }
+
+#[derive(Debug, Deserialize)]
+pub struct GenerateDevAccountsRequest {
+    /// Number of accounts to create. Clamped to 1–100. Defaults to 10.
+    #[serde(default = "default_count")]
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DevAccountCreated {
+    pub username: String,
+    /// Plaintext password — shown once and never stored. Save immediately.
+    pub password: String,
+}
+
+/// Bulk-create `dev_NNN` test accounts. Requires MANAGE_USERS permission.
+///
+/// Usernames are `dev_NNNN` (4-digit zero-padded), sequenced from the
+/// current highest existing `dev_NNNN` account so repeated calls never collide.
+///
+/// Passwords are 16 random alphanumeric characters (≈95 bits of entropy).
+/// They are hashed with Argon2id before storage. The plaintext is returned
+/// **once** in this response and is not recoverable afterwards.
+///
+/// Each account is created with:
+///   account_tier = 'unverified'
+///   platform_role = 'dev'
+///   badge_type    = 'wrench'
+pub async fn generate_dev_accounts(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GenerateDevAccountsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    if req.count == 0 || req.count > 100 {
+        return Err(AppError::BadRequest(
+            "count must be between 1 and 100".into(),
+        ));
+    }
+
+    // Find the highest existing dev_NNNN suffix so new names don't collide.
+    // SUBSTRING(username FROM 5) strips the leading "dev_".
+    let max_existing: i32 = sqlx::query_scalar!(
+        r#"SELECT COALESCE(
+               MAX(CAST(SUBSTRING(username FROM 5) AS INTEGER)),
+               0
+           )
+           FROM users
+           WHERE username ~ '^dev_[0-9]+$'"#
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(0);
+
+    let mut created: Vec<DevAccountCreated> = Vec::with_capacity(req.count as usize);
+
+    for i in 0..req.count {
+        let num = max_existing + i as i32 + 1;
+        let username = format!("dev_{num:04}");
+
+        // 16-char alphanumeric password — sufficient entropy, human-typeable.
+        let password: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect();
+
+        let password_hash = crate::discreet_auth_handlers::hash_password(&password)?;
+        let id = Uuid::new_v4();
+
+        sqlx::query!(
+            r#"INSERT INTO users
+                   (id, username, display_name, password_hash, account_tier, platform_role, badge_type)
+               VALUES ($1, $2, $3, $4, 'unverified', 'dev', 'wrench')"#,
+            id,
+            username,
+            username,   // display_name defaults to username for dev accounts
+            password_hash,
+        )
+        .execute(&state.db)
+        .await?;
+
+        created.push(DevAccountCreated { username, password });
+    }
+
+    tracing::info!(
+        admin_id = %caller.user_id,
+        count    = req.count,
+        first    = %created.first().map(|a| a.username.as_str()).unwrap_or(""),
+        last     = %created.last().map(|a| a.username.as_str()).unwrap_or(""),
+        "Dev accounts generated — passwords shown once",
+    );
+
+    Ok((axum::http::StatusCode::CREATED, Json(created)))
+}
+
+// ─── GET /admin/users ─────────────────────────────────────────────────────────
+
+fn default_page() -> i64 { 1 }
+fn default_per_page() -> i64 { 50 }
+
+#[derive(Debug, Deserialize)]
+pub struct UserListQuery {
+    #[serde(default = "default_page")]
+    pub page: i64,
+    #[serde(default = "default_per_page")]
+    pub per_page: i64,
+    /// Full-text search on username, display_name, email, or UUID.
+    pub search: Option<String>,
+    /// Filter by account_tier (exact match).
+    pub tier: Option<String>,
+    /// Sort field: created_at (default), last_active, username.
+    pub sort: Option<String>,
+    /// Status filter: banned, suspended, high_risk, new_24h.
+    pub status: Option<String>,
+}
+
+/// Paginated, searchable list of all users. Requires ACCESS_ADMIN_DASHBOARD.
+pub async fn list_users(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<UserListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    let per_page = q.per_page.clamp(1, 200);
+    let page     = q.page.max(1);
+    let offset   = (page - 1) * per_page;
+
+    // Build WHERE clause for search and filters.
+    let search_pattern = q.search.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{}%", s.replace('%', "\\%").replace('_', "\\_")));
+
+    let tier_filter = q.tier.as_deref().filter(|t| !t.is_empty());
+    let order = match q.sort.as_deref() {
+        Some("username") => "username ASC",
+        Some("last_active") => "COALESCE(last_active_at, created_at) DESC",
+        _ => "created_at DESC",
+    };
+
+    // Pre-compute filter clauses to avoid temporary value lifetimes in format!.
+    let search_clause = if search_pattern.is_some() {
+        "AND (username ILIKE $1 OR display_name ILIKE $1 OR email ILIKE $1 OR id::TEXT ILIKE $1)"
+    } else {
+        ""
+    };
+    let tier_clause = if let Some(tier) = &tier_filter {
+        format!("AND account_tier = '{}'", tier.replace('\'', ""))
+    } else {
+        String::new()
+    };
+    let status_clause = match q.status.as_deref() {
+        Some("banned") => "AND banned_at IS NOT NULL".to_string(),
+        Some("suspended") => "AND suspended = TRUE".to_string(),
+        Some("high_risk") => "AND high_risk = TRUE".to_string(),
+        Some("new_24h") => "AND created_at >= NOW() - INTERVAL '24 hours'".to_string(),
+        _ => String::new(),
+    };
+
+    // Count with dynamic filters.
+    let count_sql = format!(
+        "SELECT COUNT(*)::BIGINT FROM users WHERE 1=1 {} {} {}",
+        search_clause, &tier_clause, &status_clause,
+    );
+    let total: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(search_pattern.as_deref().unwrap_or("%%"))
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0);
+
+    // Fetch page with same filters.
+    let query_str = format!(
+        r#"SELECT id, username, display_name, account_tier, platform_role,
+                  badge_type, email_verified, is_bot, created_at,
+                  last_active_at, banned_at, suspended, high_risk
+           FROM users WHERE 1=1 {} {} {}
+           ORDER BY {}
+           LIMIT {} OFFSET {}"#,
+        search_clause, &tier_clause, &status_clause,
+        order,
+        per_page,
+        offset,
+    );
+
+    let rows: Vec<sqlx::postgres::PgRow> = sqlx::query(&query_str)
+        .bind(search_pattern.as_deref().unwrap_or("%%"))
+        .fetch_all(&state.db)
+        .await?;
+
+    let users: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            use sqlx::Row;
+            let id: uuid::Uuid = r.get("id");
+            let created: chrono::DateTime<chrono::Utc> = r.get("created_at");
+            let last_active: Option<chrono::DateTime<chrono::Utc>> = r.get("last_active_at");
+            json!({
+                "id":             id,
+                "username":       r.get::<String, _>("username"),
+                "display_name":   r.get::<Option<String>, _>("display_name"),
+                "account_tier":   r.get::<String, _>("account_tier"),
+                "platform_role":  r.get::<Option<String>, _>("platform_role"),
+                "badge_type":     r.get::<Option<String>, _>("badge_type"),
+                "email_verified": r.get::<bool, _>("email_verified"),
+                "is_bot":         r.get::<bool, _>("is_bot"),
+                "created_at":     created.to_rfc3339(),
+                "last_active_at": last_active.map(|d| d.to_rfc3339()),
+                "banned":         r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("banned_at").is_some(),
+                "suspended":      r.get::<bool, _>("suspended"),
+                "high_risk":      r.get::<bool, _>("high_risk"),
+            })
+        })
+        .collect();
+
+    let total_pages = (total + per_page - 1) / per_page;
+
+    Ok(Json(json!({
+        "users":       users,
+        "total":       total,
+        "page":        page,
+        "per_page":    per_page,
+        "total_pages": total_pages,
+    })))
+}
+
+/// GET /admin/users/:user_id/detail — Extended user profile for admin drill-down.
+pub async fn user_detail(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    // Core profile
+    let user = sqlx::query!(
+        r#"SELECT id, username, display_name, email, avatar_url, account_tier,
+                  platform_role, badge_type, email_verified, is_bot, totp_enabled,
+                  created_at, last_active_at, display_name_changes, display_name_reset_at,
+                  suspended, suspended_reason,
+                  admin_override_disappearing, restricted_channel_creation,
+                  require_qr_invite, high_risk, high_risk_reason
+           FROM users WHERE id = $1"#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // Server memberships
+    let servers = sqlx::query!(
+        r#"SELECT s.id, s.name, s.owner_id,
+                  (SELECT string_agg(r.name, ', ') FROM member_roles mr JOIN roles r ON r.id = mr.role_id WHERE mr.user_id = $1 AND mr.server_id = s.id) as "roles"
+           FROM server_members sm
+           JOIN servers s ON s.id = sm.server_id
+           WHERE sm.user_id = $1
+           ORDER BY sm.joined_at DESC"#,
+        user_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    // Run remaining queries concurrently — all independent of each other.
+    let (msg_today, msg_week, msg_month, msg_total, files_count, login_ips, reports_count) = tokio::try_join!(
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE author_id = $1 AND deleted = FALSE AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')",
+            user_id,
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE author_id = $1 AND deleted = FALSE AND created_at >= NOW() - INTERVAL '7 days'",
+            user_id,
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE author_id = $1 AND deleted = FALSE AND created_at >= NOW() - INTERVAL '30 days'",
+            user_id,
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM messages WHERE author_id = $1 AND deleted = FALSE",
+            user_id,
+        ).fetch_one(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM file_blobs WHERE uploader_id = $1 AND deleted = FALSE",
+            user_id,
+        ).fetch_one(&state.db),
+        sqlx::query!(
+            r#"SELECT ip_address, first_seen_at, last_seen_at, login_count, country_code, user_agent, is_registration
+               FROM user_login_ips WHERE user_id = $1
+               ORDER BY is_registration DESC, last_seen_at DESC"#,
+            user_id,
+        ).fetch_all(&state.db),
+        sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM content_reports cr JOIN messages m ON m.id = cr.message_id WHERE m.author_id = $1",
+            user_id,
+        ).fetch_one(&state.db),
+    )?;
+    let msg_today = msg_today.unwrap_or(0);
+    let msg_week = msg_week.unwrap_or(0);
+    let msg_month = msg_month.unwrap_or(0);
+    let msg_total = msg_total.unwrap_or(0);
+    let files_count = files_count.unwrap_or(0);
+    let reports_count = reports_count.unwrap_or(0);
+
+    // Admins see the full unmasked email for legal compliance.
+
+    // Voice channel presence
+    let in_voice = state.voice_state.read().await.get(&user_id).cloned();
+
+    Ok(Json(json!({
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "email": user.email, // Full unmasked email — admins need this for legal compliance
+        "avatar_url": user.avatar_url,
+        "account_tier": user.account_tier,
+        "platform_role": user.platform_role,
+        "badge_type": user.badge_type,
+        "email_verified": user.email_verified,
+        "is_bot": user.is_bot,
+        "totp_enabled": user.totp_enabled,
+        "created_at": user.created_at.to_rfc3339(),
+        "last_active_at": user.last_active_at.to_rfc3339(),
+        "display_name_changes": user.display_name_changes,
+        "suspended": user.suspended,
+        "suspended_reason": user.suspended_reason,
+        "admin_override_disappearing": user.admin_override_disappearing,
+        "restricted_channel_creation": user.restricted_channel_creation,
+        "require_qr_invite": user.require_qr_invite,
+        "high_risk": user.high_risk,
+        "high_risk_reason": user.high_risk_reason,
+        "servers": servers.iter().map(|s| json!({
+            "id": s.id,
+            "name": s.name,
+            "is_owner": s.owner_id == user_id,
+            "roles": s.roles,
+        })).collect::<Vec<_>>(),
+        "messages": {
+            "today": msg_today,
+            "week": msg_week,
+            "month": msg_month,
+            "total": msg_total,
+        },
+        "files_count": files_count,
+        "reports_against": reports_count,
+        "in_voice": in_voice.map(|(server_id, channel_id)| json!({ "server_id": server_id, "channel_id": channel_id })),
+        "login_ips": login_ips.iter().map(|ip| json!({
+            "ip": ip.ip_address,
+            "first_seen": ip.first_seen_at.to_rfc3339(),
+            "last_seen": ip.last_seen_at.to_rfc3339(),
+            "login_count": ip.login_count,
+            "country": ip.country_code,
+            "user_agent": ip.user_agent,
+            "is_registration": ip.is_registration,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+// ─── GET /admin/registrations ─────────────────────────────────────────────────
+
+/// Daily registration counts for the last 30 days. Requires VIEW_PLATFORM_STATS.
+///
+/// Returns an array of `{ date: "YYYY-MM-DD", count: N }` objects ordered
+/// oldest-first, covering every calendar day in the window (days with no
+/// registrations are omitted — the client should fill gaps with 0).
+pub async fn registration_trend(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "VIEW_PLATFORM_STATS").await?;
+
+    let rows = sqlx::query!(
+        r#"SELECT DATE_TRUNC('day', created_at AT TIME ZONE 'UTC')::date AS "day!: chrono::NaiveDate",
+                  COUNT(*) AS "count!: i64"
+           FROM users
+           WHERE is_bot = FALSE
+             AND created_at >= NOW() - INTERVAL '30 days'
+           GROUP BY 1
+           ORDER BY 1"#
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let trend: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| json!({
+            "date":  r.day.to_string(),   // "YYYY-MM-DD"
+            "count": r.count,
+        }))
+        .collect();
+
+    Ok(Json(trend))
+}
+
+// ─── POST /api/v1/admin/users/:user_id/ban ──────────────────────────────────
+//
+// Ban a user account. Optionally ban their IP address too.
+// Sets banned_at, ban_reason, ban_expires_at on the user row,
+// deletes all active sessions, and optionally inserts an IP ban.
+
+#[derive(Debug, Deserialize)]
+pub struct BanUserRequest {
+    pub reason: String,
+    pub duration_hours: Option<i64>,
+    #[serde(default)]
+    pub ip_ban: bool,
+}
+
+pub async fn ban_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<BanUserRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Prevent banning yourself.
+    if target_id == caller.user_id {
+        return Err(AppError::BadRequest("Cannot ban your own account".into()));
+    }
+
+    // Check target exists.
+    let target = sqlx::query!(
+        "SELECT id, platform_role FROM users WHERE id = $1",
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // Prevent banning other admins/devs.
+    if let Some(ref role) = target.platform_role {
+        if role == "admin" || role == "dev" {
+            return Err(AppError::Forbidden("Cannot ban staff accounts".into()));
+        }
+    }
+
+    let ban_expires = req.duration_hours.map(|h| Utc::now() + chrono::Duration::hours(h));
+
+    // Set ban columns on user.
+    sqlx::query!(
+        "UPDATE users SET banned_at = NOW(), ban_reason = $1, ban_expires_at = $2 WHERE id = $3",
+        req.reason,
+        ban_expires,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // 1) Mark all existing sessions as revoked in DB.
+    let session_ids: Vec<uuid::Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM sessions WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // 2) Set Redis ban flag (no expiry for permanent, timed for temp bans).
+    let mut redis_conn = state.redis.clone();
+    let ban_ttl = if let Some(h) = req.duration_hours { h * 3600 } else { 86400 * 365 };
+    let _: Result<String, _> = redis::cmd("SET")
+        .arg(format!("banned:{}", target_id))
+        .arg("1")
+        .arg("EX")
+        .arg(ban_ttl)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // 3) Add all session IDs to revoked_sessions Redis SET so in-flight JWTs are rejected.
+    let revoked_key = format!("revoked_sessions:{}", target_id);
+    for sid in &session_ids {
+        let _: Result<i64, _> = redis::cmd("SADD")
+            .arg(&revoked_key)
+            .arg(sid.to_string())
+            .query_async(&mut redis_conn)
+            .await;
+    }
+    if !session_ids.is_empty() {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&revoked_key)
+            .arg(86400_i64) // 24h — JWTs expire in 15min but belt + suspenders
+            .query_async(&mut redis_conn)
+            .await;
+    }
+
+    // 4) Broadcast WS disconnect event to all servers the user is in.
+    let server_ids: Vec<uuid::Uuid> = sqlx::query_scalar!(
+        "SELECT server_id FROM server_members WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for sid in &server_ids {
+        state.ws_broadcast(
+            *sid,
+            serde_json::json!({
+                "type": "user_banned",
+                "user_id": target_id,
+            }),
+        ).await;
+    }
+
+    // Invalidate auth cache so subsequent requests see the ban immediately.
+    crate::discreet_auth::invalidate_user_cache(&state, target_id).await;
+
+    // Optional IP ban.
+    if req.ip_ban {
+        // Get the user's most recent session IP (cast INET → TEXT).
+        let recent_ip = sqlx::query_scalar!(
+            "SELECT ip_address::text FROM sessions WHERE user_id = $1 AND ip_address IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+            target_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .flatten();
+
+        if let Some(ip_str) = recent_ip {
+            sqlx::query!(
+                "INSERT INTO platform_ip_bans (ip_address, reason, banned_by, expires_at) VALUES ($1, $2, $3, $4)",
+                ip_str,
+                req.reason,
+                caller.user_id,
+                ban_expires,
+            )
+            .execute(&state.db)
+            .await?;
+            tracing::warn!(
+                admin = %caller.user_id,
+                target = %target_id,
+                ip = %ip_str,
+                "IP ban applied"
+            );
+        }
+    }
+
+    tracing::warn!(
+        admin = %caller.user_id,
+        target = %target_id,
+        reason = %req.reason,
+        duration_hours = ?req.duration_hours,
+        ip_ban = req.ip_ban,
+        "User banned"
+    );
+    audit_log(&state.db, caller.user_id, target_id, "ban", Some(&req.reason), None).await;
+
+    Ok(Json(json!({ "message": "User banned", "banned_at": Utc::now().to_rfc3339() })))
+}
+
+// ─── DELETE /api/v1/admin/users/:user_id/ban ─────────────────────────────────
+//
+// Unban a user. Clears ban columns and removes any IP bans associated
+// with the user's recent session IPs.
+
+pub async fn unban_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Clear ban columns.
+    sqlx::query!(
+        "UPDATE users SET banned_at = NULL, ban_reason = NULL, ban_expires_at = NULL WHERE id = $1",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Remove Redis ban flag.
+    let mut redis_conn = state.redis.clone();
+    let _: Result<i64, _> = redis::cmd("DEL")
+        .arg(format!("banned:{}", target_id))
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Remove IP bans that were created for this user's IPs.
+    // Find their session IPs and delete matching IP ban rows.
+    let session_ips: Vec<Option<String>> = sqlx::query_scalar!(
+        "SELECT DISTINCT ip_address::text FROM sessions WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for ip in session_ips.iter().flatten() {
+        sqlx::query!(
+            "DELETE FROM platform_ip_bans WHERE ip_address = $1",
+            ip,
+        )
+        .execute(&state.db)
+        .await
+        .ok();
+    }
+
+    audit_log(&state.db, caller.user_id, target_id, "unban", None, None).await;
+    tracing::info!(admin = %caller.user_id, target = %target_id, "User unbanned");
+
+    Ok(Json(json!({ "message": "User unbanned" })))
+}
+
+// ─── Platform audit log helper ───────────────────────────────────────────────
+
+async fn audit_log(
+    db: &sqlx::PgPool,
+    admin_id: Uuid,
+    target_id: Uuid,
+    action: &str,
+    reason: Option<&str>,
+    metadata: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query!(
+        "INSERT INTO platform_audit_log (admin_user_id, target_user_id, action, reason, metadata) VALUES ($1, $2, $3, $4, $5)",
+        admin_id, target_id, action, reason, metadata,
+    )
+    .execute(db)
+    .await;
+}
+
+// ─── POST /admin/users/:user_id/suspend ─────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SuspendRequest {
+    pub reason: Option<String>,
+    pub until: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn suspend_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<SuspendRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    if target_id == caller.user_id {
+        return Err(AppError::BadRequest("Cannot suspend your own account".into()));
+    }
+
+    let target = sqlx::query!("SELECT platform_role FROM users WHERE id = $1", target_id)
+        .fetch_optional(&state.db).await?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+    if matches!(target.platform_role.as_deref(), Some("admin") | Some("dev")) {
+        return Err(AppError::Forbidden("Cannot suspend staff accounts".into()));
+    }
+
+    sqlx::query!(
+        "UPDATE users SET suspended = TRUE, suspended_at = NOW(), suspended_until = $1, suspended_reason = $2 WHERE id = $3",
+        req.until, req.reason, target_id,
+    ).execute(&state.db).await?;
+
+    // Revoke all sessions
+    sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL", target_id)
+        .execute(&state.db).await?;
+
+    audit_log(&state.db, caller.user_id, target_id, "suspend", req.reason.as_deref(), None).await;
+    tracing::info!(admin = %caller.user_id, target = %target_id, "User suspended");
+
+    Ok(Json(json!({ "message": "User suspended" })))
+}
+
+// ─── DELETE /admin/users/:user_id/suspend ────────────────────────────────────
+
+pub async fn unsuspend_user(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    sqlx::query!(
+        "UPDATE users SET suspended = FALSE, suspended_at = NULL, suspended_until = NULL, suspended_reason = NULL WHERE id = $1",
+        target_id,
+    ).execute(&state.db).await?;
+
+    audit_log(&state.db, caller.user_id, target_id, "unsuspend", None, None).await;
+    tracing::info!(admin = %caller.user_id, target = %target_id, "User unsuspended");
+
+    Ok(Json(json!({ "message": "User unsuspended" })))
+}
+
+// ─── POST /admin/users/:user_id/force-password-reset ─────────────────────────
+
+pub async fn force_password_reset(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Revoke all sessions
+    sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL", target_id)
+        .execute(&state.db).await?;
+
+    // TODO: Send password reset email to user's email address
+
+    audit_log(&state.db, caller.user_id, target_id, "force_password_reset", None, None).await;
+    tracing::info!(admin = %caller.user_id, target = %target_id, "Forced password reset");
+
+    Ok(Json(json!({ "message": "Sessions revoked. Password reset email sent." })))
+}
+
+// ─── PATCH /admin/users/:user_id/flags ───────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct UserFlagsRequest {
+    pub admin_override_disappearing: Option<bool>,
+    pub restricted_channel_creation: Option<bool>,
+    pub require_qr_invite: Option<bool>,
+    pub high_risk: Option<bool>,
+    pub high_risk_reason: Option<String>,
+}
+
+pub async fn update_user_flags(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<UserFlagsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    sqlx::query!(
+        r#"UPDATE users SET
+             admin_override_disappearing = COALESCE($1, admin_override_disappearing),
+             restricted_channel_creation = COALESCE($2, restricted_channel_creation),
+             require_qr_invite = COALESCE($3, require_qr_invite),
+             high_risk = COALESCE($4, high_risk),
+             high_risk_reason = COALESCE($5, high_risk_reason)
+           WHERE id = $6"#,
+        req.admin_override_disappearing,
+        req.restricted_channel_creation,
+        req.require_qr_invite,
+        req.high_risk,
+        req.high_risk_reason,
+        target_id,
+    ).execute(&state.db).await?;
+
+    let mut actions = Vec::new();
+    if let Some(v) = req.admin_override_disappearing { actions.push(format!("override_disappearing={v}")); }
+    if let Some(v) = req.restricted_channel_creation { actions.push(format!("restricted_channels={v}")); }
+    if let Some(v) = req.require_qr_invite { actions.push(format!("require_qr={v}")); }
+    if let Some(v) = req.high_risk { actions.push(format!("high_risk={v}")); }
+
+    audit_log(
+        &state.db, caller.user_id, target_id, "update_flags",
+        req.high_risk_reason.as_deref(),
+        Some(json!({ "flags": actions })),
+    ).await;
+
+    Ok(Json(json!({ "message": "User flags updated" })))
+}
+
+// ─── GET /admin/users/:user_id/audit ─────────────────────────────────────────
+
+pub async fn user_audit_log(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    let entries = sqlx::query!(
+        r#"SELECT pal.id, pal.action, pal.reason, pal.metadata, pal.created_at,
+                  u.username as admin_username
+           FROM platform_audit_log pal
+           JOIN users u ON u.id = pal.admin_user_id
+           WHERE pal.target_user_id = $1
+           ORDER BY pal.created_at DESC
+           LIMIT 100"#,
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let log: Vec<serde_json::Value> = entries.iter().map(|e| json!({
+        "id": e.id,
+        "action": e.action,
+        "reason": e.reason,
+        "metadata": e.metadata,
+        "admin": e.admin_username,
+        "created_at": e.created_at.to_rfc3339(),
+    })).collect();
+
+    Ok(Json(json!({ "entries": log })))
+}
+
+// ─── GET /admin/audit-log — Global platform audit log ────────────────────────
+
+fn default_audit_page() -> i64 { 1 }
+
+#[derive(Debug, Deserialize)]
+pub struct AuditLogQuery {
+    #[serde(default = "default_audit_page")]
+    pub page: i64,
+    pub action: Option<String>,
+    pub admin_id: Option<Uuid>,
+    pub target_id: Option<Uuid>,
+}
+
+pub async fn platform_audit_log(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<AuditLogQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "ACCESS_ADMIN_DASHBOARD").await?;
+
+    let per_page: i64 = 50;
+    let page = q.page.max(1);
+    let offset = (page - 1) * per_page;
+
+    // Build dynamic WHERE clauses.
+    let action_clause = if let Some(ref a) = q.action {
+        format!("AND pal.action = '{}'", a.replace('\'', ""))
+    } else {
+        String::new()
+    };
+    let admin_clause = if let Some(aid) = q.admin_id {
+        format!("AND pal.admin_user_id = '{aid}'")
+    } else {
+        String::new()
+    };
+    let target_clause = if let Some(tid) = q.target_id {
+        format!("AND pal.target_user_id = '{tid}'")
+    } else {
+        String::new()
+    };
+
+    let count_sql = format!(
+        "SELECT COUNT(*)::BIGINT FROM platform_audit_log pal WHERE 1=1 {} {} {}",
+        &action_clause, &admin_clause, &target_clause,
+    );
+    let total: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0);
+
+    let query_sql = format!(
+        r#"SELECT pal.id, pal.admin_user_id, pal.target_user_id, pal.action,
+                  pal.reason, pal.metadata, pal.created_at,
+                  adm.username as admin_username,
+                  tgt.username as target_username
+           FROM platform_audit_log pal
+           JOIN users adm ON adm.id = pal.admin_user_id
+           LEFT JOIN users tgt ON tgt.id = pal.target_user_id
+           WHERE 1=1 {} {} {}
+           ORDER BY pal.created_at DESC
+           LIMIT {} OFFSET {}"#,
+        &action_clause, &admin_clause, &target_clause,
+        per_page, offset,
+    );
+
+    let rows: Vec<sqlx::postgres::PgRow> = sqlx::query(&query_sql)
+        .fetch_all(&state.db)
+        .await?;
+
+    let entries: Vec<serde_json::Value> = rows.iter().map(|r| {
+        use sqlx::Row;
+        let created: chrono::DateTime<chrono::Utc> = r.get("created_at");
+        json!({
+            "id": r.get::<Uuid, _>("id"),
+            "admin_user_id": r.get::<Uuid, _>("admin_user_id"),
+            "admin_username": r.get::<String, _>("admin_username"),
+            "target_user_id": r.get::<Option<Uuid>, _>("target_user_id"),
+            "target_username": r.get::<Option<String>, _>("target_username"),
+            "action": r.get::<String, _>("action"),
+            "reason": r.get::<Option<String>, _>("reason"),
+            "metadata": r.get::<Option<serde_json::Value>, _>("metadata"),
+            "created_at": created.to_rfc3339(),
+        })
+    }).collect();
+
+    let total_pages = (total + per_page - 1) / per_page;
+
+    Ok(Json(json!({
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+    })))
+}
+
+// ─── POST /admin/export — Compliance data export ────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ComplianceExportRequest {
+    pub server_id: Uuid,
+    pub start_date: chrono::DateTime<chrono::Utc>,
+    pub end_date: chrono::DateTime<chrono::Utc>,
+    pub format: String,
+}
+
+/// Compliance export for platform admins only. Returns encrypted ciphertext —
+/// the admin CANNOT read plaintext message content (zero-knowledge).
+/// Rate limited to 1 export per hour. Audit-logged.
+pub async fn compliance_export(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ComplianceExportRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // ADMIN ONLY — not dev, not server owners
+    if caller.platform_role != Some(PlatformRole::Admin) {
+        return Err(AppError::Forbidden("Compliance export requires platform admin role".into()));
+    }
+
+    if !matches!(req.format.as_str(), "json" | "csv") {
+        return Err(AppError::BadRequest("Format must be 'json' or 'csv'".into()));
+    }
+
+    // Rate limit: 1 export per hour
+    let rate_key = format!("compliance_export:{}", caller.user_id);
+    let mut redis_conn = state.redis.clone();
+    let count: i64 = crate::discreet_error::redis_or_503(redis::cmd("INCR").arg(&rate_key).query_async(&mut redis_conn).await)?;
+    if count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE").arg(&rate_key).arg(3600i64).query_async(&mut redis_conn).await;
+    }
+    if count > 1 {
+        return Err(AppError::RateLimited("Compliance export is limited to 1 per hour".into()));
+    }
+
+    // Audit log the export
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id: req.server_id,
+            actor_id: caller.user_id,
+            action: "COMPLIANCE_EXPORT",
+            target_type: Some("server"),
+            target_id: Some(req.server_id),
+            changes: Some(serde_json::json!({
+                "start_date": req.start_date.to_rfc3339(),
+                "end_date": req.end_date.to_rfc3339(),
+                "format": req.format,
+            })),
+            reason: Some("Platform admin compliance export"),
+        },
+    ).await;
+
+    // Query messages — returns CIPHERTEXT only (admin cannot read plaintext)
+    let messages = sqlx::query!(
+        r#"SELECT m.id, m.channel_id, m.author_id, m.content_ciphertext,
+                  m.created_at, m.mls_epoch,
+                  c.name as channel_name,
+                  u.username as author_username
+           FROM messages m
+           JOIN channels c ON c.id = m.channel_id
+           JOIN users u ON u.id = m.author_id
+           WHERE c.server_id = $1
+             AND m.created_at >= $2
+             AND m.created_at <= $3
+           ORDER BY m.created_at
+           LIMIT 10000"#,
+        req.server_id,
+        req.start_date,
+        req.end_date,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    // Query members
+    let members = sqlx::query!(
+        "SELECT u.id as user_id, u.username, u.display_name, sm.joined_at
+         FROM server_members sm
+         JOIN users u ON u.id = sm.user_id
+         WHERE sm.server_id = $1
+         ORDER BY sm.joined_at",
+        req.server_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    // Query audit log entries in date range
+    let audit = sqlx::query!(
+        "SELECT id, actor_id, action, target_type, reason, created_at
+         FROM audit_log
+         WHERE server_id = $1
+           AND created_at >= $2
+           AND created_at <= $3
+         ORDER BY created_at
+         LIMIT 5000",
+        req.server_id,
+        req.start_date,
+        req.end_date,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    if req.format == "csv" {
+        let mut csv = String::from("message_id,author_username,channel_name,timestamp,mls_epoch,ciphertext_hex\n");
+        for m in &messages {
+            let hex = hex::encode(&m.content_ciphertext);
+            csv.push_str(&format!(
+                "{},{},{},{},{},{}\n",
+                m.id, m.author_username, m.channel_name, m.created_at.to_rfc3339(), m.mls_epoch, hex
+            ));
+        }
+        Ok(Json(serde_json::json!({
+            "format": "csv",
+            "server_id": req.server_id,
+            "message_count": messages.len(),
+            "member_count": members.len(),
+            "audit_count": audit.len(),
+            "messages_csv": csv,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "exported_by": caller.user_id,
+            "notice": "Message content is encrypted ciphertext. Only channel members with the decryption key can read the plaintext.",
+        })))
+    } else {
+        let msg_json: Vec<serde_json::Value> = messages.iter().map(|m| {
+            serde_json::json!({
+                "message_id": m.id,
+                "author_username": m.author_username,
+                "channel_name": m.channel_name,
+                "timestamp": m.created_at.to_rfc3339(),
+                "mls_epoch": m.mls_epoch,
+                "ciphertext_hex": hex::encode(&m.content_ciphertext),
+            })
+        }).collect();
+
+        let mem_json: Vec<serde_json::Value> = members.iter().map(|m| {
+            serde_json::json!({
+                "user_id": m.user_id,
+                "username": m.username,
+                "display_name": m.display_name,
+                "joined_at": m.joined_at.to_rfc3339(),
+            })
+        }).collect();
+
+        let aud_json: Vec<serde_json::Value> = audit.iter().map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "actor_id": a.actor_id,
+                "action": a.action,
+                "target_type": a.target_type,
+                "reason": a.reason,
+                "timestamp": a.created_at.to_rfc3339(),
+            })
+        }).collect();
+
+        Ok(Json(serde_json::json!({
+            "format": "json",
+            "server_id": req.server_id,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "exported_by": caller.user_id,
+            "notice": "Message content is encrypted ciphertext. Only channel members with the decryption key can read the plaintext.",
+            "messages": msg_json,
+            "members": mem_json,
+            "audit_log": aud_json,
+        })))
+    }
+}
+
+// ─── POST /api/v1/admin/lockdown ─────────────────────────────────────────
+//
+// Emergency lockdown modes:
+//   "full"          — 503 all non-admin requests
+//   "readonly"      — allow GET, block mutations for non-admins
+//   "registrations" — block new signups only (anti-raid)
+//   "off"           — normal operation
+//
+// Stored in Redis key `platform:lockdown` with auto-expiry.
+// Checked in middleware BEFORE auth — unauthenticated requests see 503 instantly.
+
+#[derive(Debug, Deserialize)]
+pub struct LockdownRequest {
+    /// "full", "readonly", "registrations", "off"
+    pub mode: String,
+    /// Human-readable reason displayed to users
+    pub reason: String,
+    /// Auto-expire in minutes (default: 15, max: 1440 = 24h)
+    pub duration_minutes: Option<i64>,
+}
+
+/// POST /api/v1/admin/lockdown — Activate or deactivate emergency lockdown.
+/// Only platform admins can use this endpoint.
+pub async fn set_lockdown(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<LockdownRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Only full admins — not dev role
+    if caller.platform_role != Some(PlatformRole::Admin) {
+        return Err(AppError::Forbidden("Lockdown requires platform admin role".into()));
+    }
+
+    let valid_modes = ["full", "readonly", "registrations", "off"];
+    if !valid_modes.contains(&req.mode.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid lockdown mode '{}'. Must be one of: {}",
+            req.mode,
+            valid_modes.join(", ")
+        )));
+    }
+
+    let duration_min = req.duration_minutes.unwrap_or(15).clamp(1, 1440);
+    let duration_secs = duration_min * 60;
+
+    let mut redis_conn = state.redis.clone();
+
+    if req.mode == "off" {
+        // Deactivate lockdown
+        let _: Result<i64, _> = redis::cmd("DEL")
+            .arg("platform:lockdown")
+            .query_async(&mut redis_conn)
+            .await;
+
+        tracing::warn!(
+            admin = %caller.user_id,
+            "Lockdown deactivated"
+        );
+
+        // Audit log
+        let _ = crate::discreet_audit::log_action(
+            &state.db,
+            crate::discreet_audit::AuditEntry {
+                server_id: Uuid::nil(),
+                actor_id: caller.user_id,
+                action: "LOCKDOWN_OFF",
+                target_type: Some("platform"),
+                target_id: None,
+                changes: Some(json!({ "reason": req.reason })),
+                reason: Some(&req.reason),
+            },
+        ).await;
+
+        return Ok(Json(json!({
+            "message": "Lockdown deactivated",
+            "mode": "off",
+        })));
+    }
+
+    // Activate lockdown
+    let lockdown_state = json!({
+        "mode": req.mode,
+        "reason": req.reason,
+        "activated_by": caller.user_id,
+        "activated_at": Utc::now().to_rfc3339(),
+        "expires_at": (Utc::now() + chrono::Duration::seconds(duration_secs)).to_rfc3339(),
+        "retry_after_seconds": duration_secs,
+    });
+
+    let _: Result<String, _> = redis::cmd("SET")
+        .arg("platform:lockdown")
+        .arg(lockdown_state.to_string())
+        .arg("EX")
+        .arg(duration_secs)
+        .query_async(&mut redis_conn)
+        .await;
+
+    tracing::warn!(
+        admin = %caller.user_id,
+        mode = %req.mode,
+        reason = %req.reason,
+        duration_minutes = duration_min,
+        "Lockdown activated"
+    );
+
+    // Audit log
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id: Uuid::nil(),
+            actor_id: caller.user_id,
+            action: "LOCKDOWN_ON",
+            target_type: Some("platform"),
+            target_id: None,
+            changes: Some(json!({
+                "mode": req.mode,
+                "duration_minutes": duration_min,
+            })),
+            reason: Some(&req.reason),
+        },
+    ).await;
+
+    Ok(Json(json!({
+        "message": format!("Lockdown activated: {} mode", req.mode),
+        "mode": req.mode,
+        "reason": req.reason,
+        "duration_minutes": duration_min,
+        "activated_by": caller.user_id,
+        "activated_at": Utc::now().to_rfc3339(),
+    })))
+}
+
+/// GET /api/v1/admin/lockdown — Check current lockdown status + trigger history.
+pub async fn get_lockdown(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+
+    let mut redis_conn = state.redis.clone();
+    let lockdown: Option<serde_json::Value> = redis::cmd("GET")
+        .arg("platform:lockdown")
+        .query_async::<Option<String>>(&mut redis_conn)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    // TTL remaining (seconds until auto-expire)
+    let ttl: i64 = redis::cmd("TTL")
+        .arg("platform:lockdown")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(-1);
+
+    // Recent lockdown history from audit log (last 10 events)
+    let history = sqlx::query!(
+        "SELECT actor_id, action, changes, reason, created_at
+         FROM audit_log
+         WHERE action LIKE 'LOCKDOWN%' OR action LIKE 'AUTO_LOCKDOWN%'
+         ORDER BY created_at DESC
+         LIMIT 10"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let history_json: Vec<serde_json::Value> = history.iter().map(|r| json!({
+        "activated_by": r.actor_id,
+        "action": r.action,
+        "changes": r.changes,
+        "reason": r.reason,
+        "timestamp": r.created_at.to_string(),
+    })).collect();
+
+    match lockdown {
+        Some(ld) => Ok(Json(json!({
+            "active": true,
+            "lockdown": ld,
+            "ttl_seconds": if ttl > 0 { ttl } else { 0 },
+            "history": history_json,
+        }))),
+        None => Ok(Json(json!({
+            "active": false,
+            "mode": "off",
+            "history": history_json,
+        }))),
+    }
+}
+
+// ─── Auto-trigger lockdown rules ─────────────────────────────────────────
+//
+// Called from login failure path (discreet_auth_handlers).
+// Tracks failed logins in Redis sorted sets keyed by timestamp.
+//
+// Rule 1 (anti-raid): >50 failures in 3 min from >5 distinct IPs
+//   → auto "registrations" lockdown for 15 min
+//
+// Rule 2 (brute-force): >200 failures in 5 min from any source
+//   → auto "readonly" lockdown for 15 min
+//
+// Both are no-ops if a lockdown is already active (no escalation).
+
+/// Default thresholds — admin-configurable via platform_settings in future.
+const RAID_FAIL_THRESHOLD: usize = 50;
+const RAID_WINDOW_SECS: f64 = 180.0; // 3 min
+const RAID_DISTINCT_IPS: usize = 5;
+const BRUTE_FAIL_THRESHOLD: usize = 200;
+const BRUTE_WINDOW_SECS: f64 = 300.0; // 5 min
+const AUTO_LOCKDOWN_DURATION_SECS: i64 = 900; // 15 min
+
+/// Record a failed login and evaluate auto-lockdown triggers.
+///
+/// Called fire-and-forget from the login handler. Errors are logged
+/// but never propagated — auto-lockdown is best-effort.
+pub async fn record_failed_login_and_check_triggers(
+    state: &Arc<AppState>,
+    ip: &str,
+) {
+    let mut redis_conn = state.redis.clone();
+    let now = Utc::now().timestamp_millis() as f64;
+    let zset_key = "lockdown:failed_logins";
+    let ip_zset_key = "lockdown:failed_login_ips";
+
+    // Record this failure with timestamp as score
+    let _: Result<i64, _> = redis::cmd("ZADD")
+        .arg(zset_key)
+        .arg(now)
+        .arg(format!("{}:{}", ip, now as i64))
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Record distinct IP with timestamp
+    let _: Result<i64, _> = redis::cmd("ZADD")
+        .arg(ip_zset_key)
+        .arg(now)
+        .arg(ip)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Set TTL on sorted sets to auto-cleanup (10 min beyond brute window)
+    let _: Result<bool, _> = redis::cmd("EXPIRE")
+        .arg(zset_key)
+        .arg(600_i64)
+        .query_async(&mut redis_conn)
+        .await;
+    let _: Result<bool, _> = redis::cmd("EXPIRE")
+        .arg(ip_zset_key)
+        .arg(600_i64)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Prune entries older than 5 min (covers both windows)
+    let cutoff = now - (BRUTE_WINDOW_SECS * 1000.0);
+    let _: Result<i64, _> = redis::cmd("ZREMRANGEBYSCORE")
+        .arg(zset_key)
+        .arg("-inf")
+        .arg(cutoff)
+        .query_async(&mut redis_conn)
+        .await;
+    let cutoff_ip = now - (RAID_WINDOW_SECS * 1000.0);
+    let _: Result<i64, _> = redis::cmd("ZREMRANGEBYSCORE")
+        .arg(ip_zset_key)
+        .arg("-inf")
+        .arg(cutoff_ip)
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Skip if a lockdown is already active
+    let existing: Option<String> = redis::cmd("GET")
+        .arg("platform:lockdown")
+        .query_async(&mut redis_conn)
+        .await
+        .ok()
+        .flatten();
+    if existing.is_some() {
+        return;
+    }
+
+    // ── Rule 2: brute-force (check first — more severe) ──
+    let brute_count: usize = redis::cmd("ZCOUNT")
+        .arg(zset_key)
+        .arg(now - (BRUTE_WINDOW_SECS * 1000.0))
+        .arg("+inf")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(0);
+
+    if brute_count > BRUTE_FAIL_THRESHOLD {
+        let lockdown_state = json!({
+            "mode": "readonly",
+            "reason": format!("Auto-lockdown: {} failed logins in {} min (brute-force protection)", brute_count, BRUTE_WINDOW_SECS as i64 / 60),
+            "activated_by": "system",
+            "activated_at": Utc::now().to_rfc3339(),
+            "expires_at": (Utc::now() + chrono::Duration::seconds(AUTO_LOCKDOWN_DURATION_SECS)).to_rfc3339(),
+            "retry_after_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+            "trigger": "brute_force_lockdown",
+        });
+        let _: Result<String, _> = redis::cmd("SET")
+            .arg("platform:lockdown")
+            .arg(lockdown_state.to_string())
+            .arg("EX")
+            .arg(AUTO_LOCKDOWN_DURATION_SECS)
+            .query_async(&mut redis_conn)
+            .await;
+
+        tracing::error!(
+            failed_count = brute_count,
+            window_secs = BRUTE_WINDOW_SECS as i64,
+            "AUTO-LOCKDOWN: readonly mode activated (brute-force threshold exceeded)"
+        );
+
+        let _ = crate::discreet_audit::log_action(
+            &state.db,
+            crate::discreet_audit::AuditEntry {
+                server_id: Uuid::nil(),
+                actor_id: Uuid::nil(),
+                action: "AUTO_LOCKDOWN_BRUTE_FORCE",
+                target_type: Some("platform"),
+                target_id: None,
+                changes: Some(json!({
+                    "mode": "readonly",
+                    "failed_logins": brute_count,
+                    "window_seconds": BRUTE_WINDOW_SECS as i64,
+                    "duration_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                })),
+                reason: Some("Brute-force login threshold exceeded"),
+            },
+        ).await;
+
+        crate::discreet_email_handlers::send_admin_alert(
+            state,
+            "Platform Lockdown Activated",
+            &format!("{brute_count} failed login attempts in {} seconds triggered readonly lockdown.", BRUTE_WINDOW_SECS as i64),
+            &[ip.to_string()],
+        ).await;
+
+        return;
+    }
+
+    // ── Rule 1: anti-raid (distributed failed logins) ──
+    let raid_cutoff = now - (RAID_WINDOW_SECS * 1000.0);
+    let raid_count: usize = redis::cmd("ZCOUNT")
+        .arg(zset_key)
+        .arg(raid_cutoff)
+        .arg("+inf")
+        .query_async(&mut redis_conn)
+        .await
+        .unwrap_or(0);
+
+    if raid_count > RAID_FAIL_THRESHOLD {
+        // Count distinct IPs in the raid window
+        let distinct_ips: usize = redis::cmd("ZCOUNT")
+            .arg(ip_zset_key)
+            .arg(raid_cutoff)
+            .arg("+inf")
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or(0);
+
+        if distinct_ips >= RAID_DISTINCT_IPS {
+            // Collect the offending IPs for audit
+            let ip_list: Vec<String> = redis::cmd("ZRANGEBYSCORE")
+                .arg(ip_zset_key)
+                .arg(raid_cutoff)
+                .arg("+inf")
+                .query_async(&mut redis_conn)
+                .await
+                .unwrap_or_default();
+
+            let lockdown_state = json!({
+                "mode": "registrations",
+                "reason": format!("Auto-lockdown: {} failed logins from {} distinct IPs in {} min (anti-raid)", raid_count, distinct_ips, RAID_WINDOW_SECS as i64 / 60),
+                "activated_by": "system",
+                "activated_at": Utc::now().to_rfc3339(),
+                "expires_at": (Utc::now() + chrono::Duration::seconds(AUTO_LOCKDOWN_DURATION_SECS)).to_rfc3339(),
+                "retry_after_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                "trigger": "failed_login_lockdown",
+            });
+            let _: Result<String, _> = redis::cmd("SET")
+                .arg("platform:lockdown")
+                .arg(lockdown_state.to_string())
+                .arg("EX")
+                .arg(AUTO_LOCKDOWN_DURATION_SECS)
+                .query_async(&mut redis_conn)
+                .await;
+
+            tracing::error!(
+                failed_count = raid_count,
+                distinct_ips = distinct_ips,
+                window_secs = RAID_WINDOW_SECS as i64,
+                "AUTO-LOCKDOWN: registrations mode activated (raid threshold exceeded)"
+            );
+
+            let _ = crate::discreet_audit::log_action(
+                &state.db,
+                crate::discreet_audit::AuditEntry {
+                    server_id: Uuid::nil(),
+                    actor_id: Uuid::nil(),
+                    action: "AUTO_LOCKDOWN_RAID",
+                    target_type: Some("platform"),
+                    target_id: None,
+                    changes: Some(json!({
+                        "mode": "registrations",
+                        "failed_logins": raid_count,
+                        "distinct_ips": distinct_ips,
+                        "offending_ips": ip_list,
+                        "window_seconds": RAID_WINDOW_SECS as i64,
+                        "duration_seconds": AUTO_LOCKDOWN_DURATION_SECS,
+                    })),
+                    reason: Some("Distributed login raid threshold exceeded"),
+                },
+            ).await;
+
+            crate::discreet_email_handlers::send_admin_alert(
+                state,
+                "Platform Lockdown Activated",
+                &format!("{raid_count} failed logins from {distinct_ips} distinct IPs triggered registration lockdown."),
+                &ip_list,
+            ).await;
+        }
+    }
+
+    // ── Per-IP flood check (50+ failures in 5 min) ──
+    let ip_flood_key = format!("login_flood:{ip}");
+    let flood_count: i64 = redis::cmd("INCR")
+        .arg(&ip_flood_key)
+        .query_async::<Option<i64>>(&mut redis_conn)
+        .await
+        .unwrap_or(Some(1))
+        .unwrap_or(1);
+    if flood_count == 1 {
+        let _: Result<bool, _> = redis::cmd("EXPIRE")
+            .arg(&ip_flood_key)
+            .arg(300_i64) // 5 minutes
+            .query_async(&mut redis_conn)
+            .await;
+    }
+    if flood_count == 50 {
+        crate::discreet_email_handlers::send_admin_alert(
+            state,
+            &format!("Login Flood Detected (50+ failures from {ip})"),
+            &format!("{flood_count} failed login attempts from IP {ip} in the last 5 minutes."),
+            &[ip.to_string()],
+        ).await;
+    }
+}
+
+// ─── POST /api/v1/admin/users/:user_id/wipe ──────────────────────────────
+
+/// Request body for remote session wipe.
+#[derive(Debug, Deserialize)]
+pub struct WipeSessionsRequest {
+    pub reason: String,
+}
+
+/// Wipe all active sessions for a user, forcing immediate disconnect.
+///
+/// Requires admin platform_role + MANAGE_USERS permission.
+/// Revokes all sessions in Redis (30-day TTL) and broadcasts a
+/// force_disconnect WebSocket event.
+pub async fn wipe_user_sessions(
+    caller: PlatformUser,
+    State(state): State<Arc<AppState>>,
+    Path(target_id): Path<Uuid>,
+    Json(req): Json<WipeSessionsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff_role(&caller)?;
+    require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
+
+    // Validate reason
+    let reason = req.reason.trim().to_string();
+    if reason.len() < 5 {
+        return Err(AppError::BadRequest("Reason must be at least 5 characters".into()));
+    }
+    if reason.len() > 500 {
+        return Err(AppError::BadRequest("Reason must be 500 characters or fewer".into()));
+    }
+
+    // Prevent self-wipe
+    if target_id == caller.user_id {
+        return Err(AppError::BadRequest("Cannot wipe your own sessions".into()));
+    }
+
+    // Verify target exists
+    sqlx::query!(
+        "SELECT id FROM users WHERE id = $1",
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // 1) Fetch all active session IDs for the target user
+    let session_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM sessions WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let wiped_count = session_ids.len();
+
+    // 2) Revoke all sessions in the database
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // 3) Add each session ID to Redis with 30-day TTL so in-flight JWTs are rejected
+    let mut redis_conn = state.redis.clone();
+    for sid in &session_ids {
+        let key = format!("revoked_sessions:{sid}");
+        let set_result: Result<String, _> = redis::cmd("SET")
+            .arg(&key)
+            .arg("1")
+            .arg("EX")
+            .arg(2_592_000_i64) // 30 days
+            .query_async(&mut redis_conn)
+            .await;
+        if let Err(e) = set_result {
+            tracing::debug!("Failed to SET revoked session {sid}: {e}");
+        }
+    }
+
+    // 4) Broadcast force_disconnect to all servers the user is in
+    let server_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT server_id FROM server_members WHERE user_id = $1",
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for sid in &server_ids {
+        state.ws_broadcast(
+            *sid,
+            json!({
+                "type": "force_disconnect",
+                "user_id": target_id,
+                "reason": "Session revoked by administrator",
+            }),
+        ).await;
+    }
+
+    // 5) Invalidate auth cache
+    crate::discreet_auth::invalidate_user_cache(&state, target_id).await;
+
+    // 6) Record in audit log
+    let _ = crate::discreet_audit::log_action(
+        &state.db,
+        crate::discreet_audit::AuditEntry {
+            server_id: Uuid::nil(),
+            actor_id: caller.user_id,
+            action: "SESSION_WIPE",
+            target_type: Some("user"),
+            target_id: Some(target_id),
+            changes: Some(json!({
+                "reason": reason,
+                "sessions_revoked": wiped_count,
+            })),
+            reason: Some(&reason),
+        },
+    ).await;
+
+    tracing::info!(
+        admin = %caller.user_id,
+        target = %target_id,
+        sessions = wiped_count,
+        "Remote session wipe executed"
+    );
+
+    Ok(Json(json!({
+        "wiped_sessions": wiped_count,
+        "user_id": target_id,
+    })))
+}

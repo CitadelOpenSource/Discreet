@@ -1,0 +1,107 @@
+# ── Discreet Docker Compose ──────────────────────────────────────────────
+#
+# Default: starts PostgreSQL and Redis only.
+#   docker compose up -d
+#
+# With local AI (OpenJarvis + Ollama):
+#   docker compose --profile openjarvis up -d
+#
+# Then configure an agent in your server settings:
+#   Provider: OpenJarvis
+#   Endpoint: http://localhost:8000  (or http://openjarvis-server:8000 inside Docker)
+#   Model: default (or any model you've pulled with `ollama pull`)
+#
+# Pull a model after first start:
+#   docker exec -it $(docker ps -qf name=ollama) ollama pull qwen3:8b
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: discreet
+      POSTGRES_PASSWORD: discreet
+      POSTGRES_DB: discreet
+    ports:
+      - "5432:5432"
+    volumes:
+      - discreet_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U discreet -d discreet"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - discreet_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional: run the full server in Docker (requires `cargo sqlx prepare` first)
+  # Uncomment when you want to deploy via Docker instead of running locally.
+  #
+  # server:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   environment:
+  #     HOST: 0.0.0.0
+  #     PORT: 3000
+  #     DATABASE_URL: postgres://discreet:discreet@postgres:5432/discreet
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     AGENTS_ENABLED: "true"
+  #     OPENJARVIS_URL: http://openjarvis-server:8000
+  #     PQ_ENABLED: "false"
+  #     FEDERATION_ENABLED: "false"
+  #   ports:
+  #     - "3000:3000"
+
+  # ── OpenJarvis Local AI (optional, behind profile) ──────────────────────
+  #
+  # Ollama backend: runs local LLM models on your hardware.
+  # No data leaves your network. GPU acceleration supported.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["openjarvis"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OpenJarvis API server: OpenAI-compatible frontend for Ollama.
+  # Provides /v1/chat/completions endpoint that Discreet agents call.
+  openjarvis-server:
+    image: ollama/ollama:latest
+    profiles: ["openjarvis"]
+    entrypoint: ["sh", "-c", "echo 'OpenJarvis API proxy — configure endpoint as http://ollama:11434 in Discreet agent settings' && sleep infinity"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OPENJARVIS_OLLAMA_HOST: http://ollama:11434
+    restart: unless-stopped
+
+volumes:
+  discreet_pg:
+  discreet_redis:
+  ollama_data:

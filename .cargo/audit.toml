@@ -1,0 +1,33 @@
+# Crypto CVEs resolved by OpenMLS 0.8.1 upgrade (curve25519-dalek, ed25519-dalek).
+# All remaining exceptions are unmaintained advisories or unreachable code paths.
+# Each entry documents: what, why it's here, impact, and when to re-evaluate.
+
+[advisories]
+ignore = [
+    # vodozemac unmaintained — transitive from openmls.
+    # No CVE. Monitoring for replacement.
+    "RUSTSEC-2024-0436",
+    # rustls-pemfile unmaintained — transitive from sqlx-core.
+    # No CVE. PEM parsing runs once at startup on trusted input.
+    "RUSTSEC-2025-0134",
+    # rsa pulled transitively via sqlx-mysql compile-time dep.
+    # We use PostgreSQL only. RSA code never executes. No upstream fix.
+    # Re-evaluate quarterly.
+    "RUSTSEC-2023-0071",
+
+    # libcrux-poly1305 0.0.4 — Panic in standalone MAC operations.
+    # Transitive via openmls_rust_crypto 0.5.1 → hpke-rs → hpke-rs-libcrux.
+    # Not exploitable: Discreet uses ciphersuite MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+    # (AES-GCM), never ChaCha20-Poly1305. Poly1305 code path is never exercised.
+    # Will resolve when openmls_rust_crypto releases a version with updated libcrux.
+    # Published: 2026-03-04
+    "RUSTSEC-2026-0073",
+
+    # libcrux-sha3 0.0.6 and 0.0.7 — Incorrect output of incremental portable SHAKE API.
+    # Transitive via openmls_rust_crypto 0.5.1 → hpke-rs → libcrux-kem → libcrux-ml-kem.
+    # Not exploitable: Discreet uses SHA-256 (HKDF-SHA256) for all key derivation,
+    # never SHA-3 or SHAKE. The vulnerable SHAKE API is never called in our code path.
+    # Will resolve when openmls_rust_crypto releases a version with updated libcrux.
+    # Published: 2026-03-04
+    "RUSTSEC-2026-0074",
+]

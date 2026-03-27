@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, channel_id, content_ciphertext, mls_epoch FROM scheduled_messages WHERE status = 'pending' AND send_at <= now() ORDER BY send_at ASC LIMIT 100",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "content_ciphertext",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "mls_epoch",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "84fd22d1faddf89f0bae11470d493a7814dac64eafce4077c467ed75211ddfc4"
+}

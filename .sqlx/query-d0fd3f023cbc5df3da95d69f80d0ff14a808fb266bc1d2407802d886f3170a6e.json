@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.message_id, b.channel_id, b.server_id, b.note, b.created_at,\n                      m.content_ciphertext as \"message_content?\",\n                      m.author_id as \"message_author_id?\",\n                      m.created_at as \"message_created_at?\"\n               FROM user_bookmarks b\n               LEFT JOIN messages m ON m.id = b.message_id\n               WHERE b.user_id = $1 AND b.created_at < $2\n               ORDER BY b.created_at DESC\n               LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "message_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "message_content?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "message_author_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "message_created_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d0fd3f023cbc5df3da95d69f80d0ff14a808fb266bc1d2407802d886f3170a6e"
+}

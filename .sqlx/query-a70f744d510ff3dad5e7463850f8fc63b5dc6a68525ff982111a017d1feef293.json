@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET suspended = FALSE, suspended_at = NULL, suspended_until = NULL, suspended_reason = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a70f744d510ff3dad5e7463850f8fc63b5dc6a68525ff982111a017d1feef293"
+}

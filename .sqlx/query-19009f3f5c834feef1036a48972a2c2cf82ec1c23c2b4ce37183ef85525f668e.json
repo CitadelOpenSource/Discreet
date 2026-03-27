@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET suspended = TRUE, suspended_at = NOW(), suspended_until = $1, suspended_reason = $2 WHERE id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19009f3f5c834feef1036a48972a2c2cf82ec1c23c2b4ce37183ef85525f668e"
+}

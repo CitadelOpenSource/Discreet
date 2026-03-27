@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM agent_configs WHERE id = $1 AND server_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f736aca4d0839fe8c09d3a5b6a85a3f1e7fd6c8bf71a6f71696c8b1640272438"
+}

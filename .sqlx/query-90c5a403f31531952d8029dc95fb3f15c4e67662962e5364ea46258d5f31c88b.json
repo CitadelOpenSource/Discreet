@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE servers SET scheduled_deletion_at = $1, is_archived = TRUE, archived_at = COALESCE(archived_at, NOW()), updated_at = NOW() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90c5a403f31531952d8029dc95fb3f15c4e67662962e5364ea46258d5f31c88b"
+}

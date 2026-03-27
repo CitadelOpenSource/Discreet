@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n               MAX(CAST(SUBSTRING(username FROM 5) AS INTEGER)),\n               0\n           )\n           FROM users\n           WHERE username ~ '^dev_[0-9]+$'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "db2bc603dbc33f29261a2da82284006d51806352c349be62b97d1f94efeae19c"
+}

@@ -1,0 +1,108 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.reporter_id, r.message_id, r.channel_id, r.server_id,\n                  r.reason, r.details, r.status, r.resolved_by, r.resolved_at, r.created_at,\n                  reporter.username as \"reporter_username?\",\n                  m.content_ciphertext as \"message_content?\",\n                  m.author_id as \"message_author_id?\",\n                  author.username as \"message_author_username?\"\n           FROM content_reports r\n           LEFT JOIN users reporter ON reporter.id = r.reporter_id\n           LEFT JOIN messages m ON m.id = r.message_id\n           LEFT JOIN users author ON author.id = m.author_id\n           WHERE r.status = $1\n           ORDER BY r.created_at DESC\n           LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "reporter_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "message_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "details",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "resolved_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "reporter_username?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "message_content?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "message_author_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "message_author_username?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a75dd3df006a8f7e7b680ae0d580637e12e7342affabd4d08ae03b3bf027a8b4"
+}

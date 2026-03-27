@@ -1,0 +1,229 @@
+/* skins.css — Structural CSS for themed skins.
+ * Each .theme-* class applies layout, typography, and rendering overrides
+ * that CSS custom properties alone cannot express. Only ONE skin class
+ * is active at a time; theme.ts manages the body class lifecycle. */
+
+/* ─── Arcade ─────────────────────────────────────────────────────────── */
+
+/* Blocky inputs and square avatars */
+.theme-arcade input,
+.theme-arcade textarea,
+.theme-arcade select {
+  border-radius: 0;
+}
+
+/* Bounce-scale on button hover (motion-safe only) */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-arcade button:hover,
+  .theme-arcade [role="button"]:hover {
+    transform: scale(1.05);
+    transition: transform 100ms ease;
+  }
+
+  .theme-arcade button:active,
+  .theme-arcade [role="button"]:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Scrollbar matches dark purple bg */
+.theme-arcade ::-webkit-scrollbar-thumb {
+  background: #2a2a4e;
+}
+
+.theme-arcade ::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+/* ─── Pixel ──────────────────────────────────────────────────────────── */
+
+.theme-pixel {
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  letter-spacing: 1px;
+  scroll-behavior: auto;
+  image-rendering: pixelated;
+}
+
+.theme-pixel * {
+  scroll-behavior: auto;
+}
+
+/* Crisp pixel rendering on all images */
+.theme-pixel img,
+.theme-pixel video,
+.theme-pixel canvas {
+  image-rendering: pixelated;
+}
+
+/* Beveled 3D button press — raised at rest, pressed on hover/active */
+.theme-pixel button,
+.theme-pixel [role="button"] {
+  box-shadow:
+    inset -2px -2px 0 #222,
+    inset 2px 2px 0 #666;
+  border: 2px solid #111;
+  border-radius: 0;
+}
+
+.theme-pixel button:hover,
+.theme-pixel [role="button"]:hover {
+  box-shadow:
+    inset 2px 2px 0 #222,
+    inset -2px -2px 0 #666;
+}
+
+.theme-pixel button:active,
+.theme-pixel [role="button"]:active {
+  box-shadow:
+    inset 2px 2px 0 #111,
+    inset -2px -2px 0 #555;
+}
+
+/* Sidebar channel entries as inventory slots */
+.theme-pixel [class*="channel"],
+.theme-pixel [class*="sidebar"] li {
+  border: 2px solid #1a1a1a;
+  border-radius: 0;
+  box-shadow:
+    inset -1px -1px 0 #222,
+    inset 1px 1px 0 #555;
+}
+
+/* Square everything — scrollbars, inputs, selects */
+.theme-pixel input,
+.theme-pixel textarea,
+.theme-pixel select {
+  border-radius: 0;
+  -webkit-font-smoothing: none;
+}
+
+/* Transitions handled via --transition-* CSS vars set to 0ms in theme definition.
+ * Components using var(--transition-fast) etc. snap instantly. */
+
+/* ─── Cipher ─────────────────────────────────────────────────────────── */
+
+/* Subtle green text glow on all content */
+.theme-cipher {
+  text-shadow: 0 0 3px rgba(0,255,65,0.2);
+}
+
+/* Digital rain scanline overlay — CSS-only, no JS */
+.theme-cipher::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    rgba(0,255,65,0.03) 2px,
+    transparent 4px
+  );
+  animation: cipher-scroll 20s linear infinite;
+}
+
+@keyframes cipher-scroll {
+  from { background-position: 0 0; }
+  to { background-position: 0 100vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-cipher::before { animation: none; }
+}
+
+/* Enhanced glow on focused inputs */
+.theme-cipher input:focus,
+.theme-cipher textarea:focus {
+  text-shadow: 0 0 8px rgba(0,255,65,0.6);
+  box-shadow: 0 0 8px rgba(0,255,65,0.3);
+}
+
+/* Green pulse border for new message emphasis */
+@keyframes cipher-pulse {
+  0%, 100% { border-color: #0a3a0a; }
+  50% { border-color: #00ff41; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-cipher [data-new-message] { animation: none; }
+}
+
+/* Cipher buttons — flat with glow on hover */
+.theme-cipher button:hover,
+.theme-cipher [role="button"]:hover {
+  box-shadow: 0 0 8px rgba(0,255,65,0.25);
+}
+
+/* Scrollbar blends with pitch black */
+.theme-cipher ::-webkit-scrollbar-thumb {
+  background: #0a3a0a;
+}
+
+.theme-cipher ::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+/* ─── Neon ───────────────────────────────────────────────────────────── */
+
+/* Gradient border on major containers (border-image for 0-4px radius) */
+.theme-neon [class*="sidebar"],
+.theme-neon [class*="modal"],
+.theme-neon [class*="card"] {
+  border: 1px solid;
+  border-image: linear-gradient(135deg, #ff0080, #00ffff) 1;
+}
+
+/* Gradient text on headings */
+.theme-neon h1,
+.theme-neon h2,
+.theme-neon h3 {
+  background: linear-gradient(135deg, #ff0080, #00ffff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Cyan accent for links */
+.theme-neon a {
+  color: #00ffff;
+}
+
+.theme-neon a:hover {
+  text-shadow: 0 0 8px rgba(0,255,255,0.5);
+}
+
+/* Neon glow on button hover (motion-safe only) */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-neon button:hover,
+  .theme-neon [role="button"]:hover {
+    box-shadow: 0 0 20px rgba(255,0,128,0.4),
+                0 0 40px rgba(0,255,255,0.2);
+    transition: box-shadow 150ms ease;
+  }
+}
+
+/* Glitch micro-animation on username hover (motion-safe only) */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes neon-glitch {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-2px); }
+    40% { transform: translateX(2px); }
+    60% { transform: translateX(-1px); }
+    80% { transform: translateX(1px); }
+  }
+
+  .theme-neon [class*="username"]:hover {
+    animation: neon-glitch 200ms ease;
+  }
+}
+
+/* Scrollbar matches deep purple-black */
+.theme-neon ::-webkit-scrollbar-thumb {
+  background: #2a0040;
+}
+
+.theme-neon ::-webkit-scrollbar-track {
+  background: #0a0014;
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1\n            FROM users u\n            JOIN platform_role_permissions prp ON prp.role_name = u.platform_role\n            JOIN platform_permissions pp ON pp.id = prp.permission_id\n            WHERE u.id = $1\n              AND pp.name = $2\n              AND u.platform_role IS NOT NULL\n        ) AS \"has_permission!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_permission!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4733c38418601ea4dc30062c49ad6a0c531efd36d0a30925118ff9a208f68c45"
+}

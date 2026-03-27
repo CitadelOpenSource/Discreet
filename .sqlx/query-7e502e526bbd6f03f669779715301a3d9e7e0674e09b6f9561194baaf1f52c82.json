@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username, f.created_at as blocked_at\n         FROM friendships f\n         JOIN users u ON u.id = f.friend_id\n         WHERE f.user_id = $1 AND f.status = 'blocked'\n         ORDER BY u.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "blocked_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7e502e526bbd6f03f669779715301a3d9e7e0674e09b6f9561194baaf1f52c82"
+}

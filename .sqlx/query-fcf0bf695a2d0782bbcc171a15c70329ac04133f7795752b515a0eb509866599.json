@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name, s.icon_url\n         FROM servers s\n         WHERE s.id IN (\n             SELECT a.server_id FROM server_members a\n             INNER JOIN server_members b ON a.server_id = b.server_id\n             WHERE a.user_id = $1 AND b.user_id = $2\n         )\n         ORDER BY s.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "icon_url",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fcf0bf695a2d0782bbcc171a15c70329ac04133f7795752b515a0eb509866599"
+}

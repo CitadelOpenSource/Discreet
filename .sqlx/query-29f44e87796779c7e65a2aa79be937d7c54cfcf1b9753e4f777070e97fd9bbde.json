@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO error_reports (source, component, error_message, stack_trace, severity)\n         VALUES ('server', $1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "29f44e87796779c7e65a2aa79be937d7c54cfcf1b9753e4f777070e97fd9bbde"
+}

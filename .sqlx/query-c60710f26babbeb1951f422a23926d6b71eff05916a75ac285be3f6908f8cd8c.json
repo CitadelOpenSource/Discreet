@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM messages WHERE author_id = $1 AND deleted = FALSE AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c60710f26babbeb1951f422a23926d6b71eff05916a75ac285be3f6908f8cd8c"
+}

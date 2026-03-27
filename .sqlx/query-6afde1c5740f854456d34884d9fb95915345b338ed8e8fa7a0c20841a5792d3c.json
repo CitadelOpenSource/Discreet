@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET\n             admin_override_disappearing = COALESCE($1, admin_override_disappearing),\n             restricted_channel_creation = COALESCE($2, restricted_channel_creation),\n             require_qr_invite = COALESCE($3, require_qr_invite),\n             high_risk = COALESCE($4, high_risk),\n             high_risk_reason = COALESCE($5, high_risk_reason)\n           WHERE id = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6afde1c5740f854456d34884d9fb95915345b338ed8e8fa7a0c20841a5792d3c"
+}

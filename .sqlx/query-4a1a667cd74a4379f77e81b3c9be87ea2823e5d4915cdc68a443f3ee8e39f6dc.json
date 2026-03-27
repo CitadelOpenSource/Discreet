@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, provider_type, model, endpoint_url, system_prompt,\n                      max_tokens, temperature, encrypted_api_key IS NOT NULL as \"has_key!\"\n               FROM agent_configs\n               WHERE server_id = $1 AND enabled = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "model",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "endpoint_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "system_prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_tokens",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "temperature",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_key!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "4a1a667cd74a4379f77e81b3c9be87ea2823e5d4915cdc68a443f3ee8e39f6dc"
+}

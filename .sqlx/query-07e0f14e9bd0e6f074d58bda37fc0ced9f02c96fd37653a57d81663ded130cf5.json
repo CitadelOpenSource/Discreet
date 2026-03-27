@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, code, join_code, title, host_id, is_active, password_hash IS NOT NULL as \"has_password!\",\n         allow_guests, max_participants, created_at\n         FROM meeting_rooms WHERE code = $1 AND is_active = TRUE AND expires_at > NOW()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "join_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "has_password!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "allow_guests",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_participants",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "07e0f14e9bd0e6f074d58bda37fc0ced9f02c96fd37653a57d81663ded130cf5"
+}

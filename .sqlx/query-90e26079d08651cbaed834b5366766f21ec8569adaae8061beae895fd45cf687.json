@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE bot_configs\n        SET api_key_encrypted = $1,\n            api_key_nonce = $2\n        WHERE bot_user_id = $3 AND server_id = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90e26079d08651cbaed834b5366766f21ec8569adaae8061beae895fd45cf687"
+}

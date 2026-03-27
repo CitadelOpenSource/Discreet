@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Download Discreet</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e2e8f0;font-family:'DM Sans','Inter',system-ui,sans-serif;min-height:100vh}
+a{color:#00D4AA;text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:900px;margin:0 auto;padding:40px 20px 60px}
+.logo{text-align:center;margin-bottom:8px;font-size:32px;font-weight:900;letter-spacing:-0.5px;background:linear-gradient(135deg,#00D4AA,#00B894);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.tagline{text-align:center;color:#64748b;font-size:14px;margin-bottom:48px}
+h1{text-align:center;font-size:28px;font-weight:800;margin-bottom:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:48px}
+.card{background:#141922;border:1px solid #1e293b;border-radius:14px;padding:28px 24px;display:flex;flex-direction:column;align-items:center;gap:16px;transition:border-color .15s}
+.card:hover{border-color:#00D4AA44}
+.card svg{flex-shrink:0}
+.card h2{font-size:18px;font-weight:700;margin:0}
+.card .meta{font-size:11px;color:#64748b;text-align:center;line-height:1.6}
+.card .meta code{font-family:'JetBrains Mono',monospace;font-size:10px;background:#0a0e17;padding:2px 6px;border-radius:4px;word-break:break-all;display:inline-block;margin-top:4px;color:#94a3b8}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 32px;border-radius:10px;border:none;background:linear-gradient(135deg,#00D4AA,#00B894);color:#000;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;transition:opacity .15s}
+.btn:hover{opacity:.9;text-decoration:none}
+.btn-outline{background:transparent;border:1px solid #1e293b;color:#e2e8f0}
+.btn-outline:hover{border-color:#00D4AA;color:#00D4AA;opacity:1}
+.footer-note{text-align:center;font-size:12px;color:#64748b;line-height:1.7;max-width:600px;margin:0 auto;padding-top:32px;border-top:1px solid #1e293b}
+.vt{font-size:10px;color:#64748b;margin-top:2px}
+.vt a{color:#64748b;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">Discreet</div>
+  <div class="tagline">Communication Without Compromise</div>
+  <h1>Download</h1>
+  <p style="text-align:center;color:#94a3b8;font-size:14px;margin-bottom:36px">Available for every platform. End-to-end encrypted everywhere.</p>
+
+  <div class="grid">
+
+    <!-- Windows -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="#00D4AA"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+      <h2>Windows</h2>
+      <a href="#" class="btn">Download .msi</a>
+      <div class="meta">
+        Installer for Windows 10/11 (64-bit)<br>
+        Size: ~85 MB<br>
+        SHA-256:<br><code>TBD — will be populated at release</code>
+      </div>
+      <div class="vt"><a href="#">VirusTotal scan results</a></div>
+    </div>
+
+    <!-- macOS -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="#00D4AA"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      <h2>macOS</h2>
+      <a href="#" class="btn">Download .dmg</a>
+      <div class="meta">
+        Universal binary (Intel + Apple Silicon)<br>
+        Size: ~90 MB<br>
+        SHA-256:<br><code>TBD — will be populated at release</code>
+      </div>
+      <div class="vt"><a href="#">VirusTotal scan results</a></div>
+    </div>
+
+    <!-- Linux -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="#00D4AA"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.868.07 1.723-.26 2.456-.594.733-.34 1.455-.566 1.816-.665a1.264 1.264 0 00.788-.57c.134-.271.106-.596.046-.802-.058-.21-.173-.395-.276-.564-.206-.333-.348-.64-.13-.95.063-.09.14-.2.204-.313.296-.536.373-1.138-.134-1.697-.26-.297-.635-.357-.872-.471-.199-.098-.467-.198-.637-.235-.272-.06-.484.016-.67-.064-.035-.014-.07-.035-.105-.049a2.545 2.545 0 00.105-.282c.038-.117.061-.235.069-.354a.446.446 0 00.016-.06c.542-1.975-.063-3.926-1.485-5.594-1.486-1.69-1.732-2.688-1.594-4.089.101-1.031.543-3.45-.243-5.024-.366-.73-1.023-1.267-1.81-1.47A3.012 3.012 0 0012.504 0z"/></svg>
+      <h2>Linux</h2>
+      <a href="#" class="btn">Download .AppImage</a>
+      <div class="meta">
+        AppImage for x86_64 (most distros)<br>
+        Size: ~95 MB<br>
+        SHA-256:<br><code>TBD — will be populated at release</code>
+      </div>
+      <div class="vt"><a href="#">VirusTotal scan results</a></div>
+    </div>
+
+    <!-- Android -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="#00D4AA"><path d="M17.523 15.341a1 1 0 01-.996-.906l-.007-.094V9.723a1 1 0 011.993-.117l.007.117v4.618a1 1 0 01-1 1zm-11.046 0a1 1 0 01-.996-.906l-.007-.094V9.723a1 1 0 011.993-.117l.007.117v4.618a1 1 0 01-1 1zM16.67 5.987l1.322-2.29a.276.276 0 00-.478-.278l-1.338 2.318A7.594 7.594 0 0012 4.681a7.59 7.59 0 00-4.176 1.056L6.486 3.42a.276.276 0 00-.478.277L7.33 5.987C4.885 7.32 3.3 9.674 3.3 12.397h17.4c0-2.723-1.584-5.077-4.03-6.41zM9.3 9.9a.72.72 0 110-1.44.72.72 0 010 1.44zm5.4 0a.72.72 0 110-1.44.72.72 0 010 1.44zM3.3 13.397v5.4a1.8 1.8 0 001.8 1.8h1.2v2.7a1 1 0 001.993.117l.007-.117v-2.7h3.4v2.7a1 1 0 001.993.117l.007-.117v-2.7h1.2a1.8 1.8 0 001.8-1.8v-5.4z"/></svg>
+      <h2>Android</h2>
+      <a href="#" class="btn">Download .apk</a>
+      <div class="meta">
+        Direct APK download (Android 8+)<br>
+        Google Play Store listing planned<br>
+        Size: ~45 MB<br>
+        SHA-256:<br><code>TBD — will be populated at release</code>
+      </div>
+      <div class="vt"><a href="#">VirusTotal scan results</a></div>
+    </div>
+
+    <!-- iOS -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="#00D4AA"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      <h2>iOS</h2>
+      <a href="#" class="btn btn-outline">Join TestFlight</a>
+      <div class="meta">
+        iOS 16+ required<br>
+        TestFlight beta — App Store listing planned<br>
+        Size: ~50 MB
+      </div>
+    </div>
+
+    <!-- Web App -->
+    <div class="card">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00D4AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      <h2>Web App</h2>
+      <a href="/app" class="btn">Open in Browser</a>
+      <div class="meta">
+        No download required<br>
+        Works in Chrome, Firefox, Safari, Edge<br>
+        Full E2EE — encryption runs in your browser
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    All downloads are verified with SHA-256 checksums. We recommend verifying the checksum after downloading and scanning with <a href="https://www.virustotal.com" rel="noopener noreferrer">VirusTotal</a> before installing.<br><br>
+    Discreet is open source under <a href="https://github.com/CitadelOpenSource/Discreet">AGPL-3.0</a>. You can build from source if you prefer not to trust pre-built binaries.
+  </div>
+</div>
+</body>
+</html>

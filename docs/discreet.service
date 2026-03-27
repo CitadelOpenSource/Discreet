@@ -1,0 +1,49 @@
+# discreet.service — systemd unit for the Discreet backend.
+#
+# Installation:
+#   sudo cp docs/discreet.service /etc/systemd/system/discreet.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now discreet
+#
+# Logs:
+#   journalctl -u discreet -f
+#
+# Requires: PostgreSQL, Redis running on the same host or reachable via network.
+
+[Unit]
+Description=Discreet E2EE Messenger
+Documentation=https://github.com/CitadelOpenSource/Discreet
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=discreet
+Group=discreet
+WorkingDirectory=/opt/discreet
+ExecStart=/opt/discreet/target/release/discreet-server
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=RUST_LOG=discreet_server=info,tower_http=info
+EnvironmentFile=/opt/discreet/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/discreet
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO subscriptions (user_id, tier, status, payment_provider, provider_customer_id, provider_subscription_id)\n         VALUES ($1, $2, 'active', $3, $4, $5)\n         ON CONFLICT (user_id) DO UPDATE SET\n            tier = EXCLUDED.tier,\n            status = 'active',\n            payment_provider = EXCLUDED.payment_provider,\n            provider_customer_id = EXCLUDED.provider_customer_id,\n            provider_subscription_id = EXCLUDED.provider_subscription_id,\n            cancel_at_period_end = FALSE,\n            updated_at = NOW()\n         RETURNING tier, status",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "66fb66c5d3e066a3b2ba655534a03a3f54fd8e30d0499fe0cfb0d2c29dec87d4"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(BIT_OR(r.permissions), 0) as \"perms!\"\n             FROM server_members sm\n             JOIN member_roles mr ON mr.server_id = sm.server_id AND mr.user_id = sm.user_id\n             JOIN roles r ON r.id = mr.role_id\n             WHERE sm.server_id = $1 AND sm.user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "perms!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "42ec2778d6a78ef8f266aa71ece933948fbac9ad8888d3403f30255ec8dbdc0d"
+}

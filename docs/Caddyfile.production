@@ -1,0 +1,59 @@
+# Caddyfile.production — Production reverse proxy for Discreet.
+#
+# Caddy handles automatic HTTPS via Let's Encrypt, HTTP→HTTPS redirects,
+# OCSP stapling, and certificate renewal. No manual TLS configuration needed.
+#
+# Deployment:
+#   cp docs/Caddyfile.production /etc/caddy/Caddyfile
+#   sudo systemctl restart caddy
+#
+# Requires: Caddy 2.7+ (https://caddyserver.com/docs/install)
+
+# ─── Frontend (Vite build output) ────────────────────────────────────────
+
+discreetai.net {
+    encode gzip zstd
+
+    # Serve the built Vite SPA
+    root * /opt/discreet/client/dist
+    try_files {path} /index.html
+    file_server
+
+    # Security headers (supplement Rust middleware for static files)
+    header {
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        -Server
+    }
+
+    # Cache static assets aggressively (Vite hashes filenames)
+    @static path *.js *.css *.woff2 *.png *.svg *.webp *.ico
+    header @static Cache-Control "public, max-age=31536000, immutable"
+}
+
+# ─── API + WebSocket backend ─────────────────────────────────────────────
+
+api.discreetai.net {
+    reverse_proxy localhost:3001 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# ─── Landing page (if served separately from the SPA) ───────────────────
+# Uncomment if landing.html is served by the Rust backend at /
+# and the SPA lives under /app:
+#
+# discreetai.net {
+#     handle /app/* {
+#         root * /opt/discreet/client/dist
+#         try_files {path} /app/index.html
+#         file_server
+#     }
+#     handle {
+#         reverse_proxy localhost:3001
+#     }
+# }

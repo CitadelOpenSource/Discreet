@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, content_ciphertext, mls_epoch, send_at, status, created_at FROM scheduled_messages WHERE user_id = $1 AND channel_id = $2 ORDER BY send_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "content_ciphertext",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "mls_epoch",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "send_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fbb0fc8d9b7d04f0130dd551f4ce5365f5e2a4af29f43c2760474897af11d395"
+}

@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Discreet — End-to-End Encrypted Communities</title>
+<meta name="description" content="End-to-end encrypted messaging for communities, organizations, and operations. Self-hostable. No government ID required." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e17;
+  --surface:#12161f;
+  --border:rgba(255,255,255,0.06);
+  --text:#e6edf3;
+  --text-secondary:#8b949e;
+  --accent:#7C3AED;
+}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  overflow-x:hidden;
+}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Hero ─────────────────────────────────────────────── */
+.hero{
+  position:relative;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:80px 24px;
+  overflow:hidden;
+}
+
+/* Animated gradient mesh background */
+.hero::before,
+.hero::after{
+  content:'';
+  position:absolute;
+  border-radius:50%;
+  filter:blur(120px);
+  opacity:0.15;
+  pointer-events:none;
+  will-change:transform;
+}
+.hero::before{
+  width:800px;
+  height:800px;
+  background:radial-gradient(circle,#7C3AED 0%,transparent 70%);
+  top:-200px;
+  right:-200px;
+  animation:meshDrift1 20s ease-in-out infinite alternate;
+}
+.hero::after{
+  width:600px;
+  height:600px;
+  background:radial-gradient(circle,#0066ff 0%,transparent 70%);
+  bottom:-150px;
+  left:-150px;
+  animation:meshDrift2 25s ease-in-out infinite alternate;
+}
+@keyframes meshDrift1{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(-80px,60px) scale(1.1)}
+  100%{transform:translate(-40px,120px) scale(0.95)}
+}
+@keyframes meshDrift2{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(60px,-40px) scale(1.15)}
+  100%{transform:translate(100px,-80px) scale(0.9)}
+}
+
+.hero-content{
+  position:relative;
+  z-index:1;
+}
+
+.hero h1{
+  font-size:clamp(2.5rem, 5vw, 4rem);
+  font-weight:700;
+  color:#fff;
+  letter-spacing:-0.02em;
+  line-height:1.1;
+  margin-bottom:24px;
+}
+
+.hero .subtext{
+  font-size:clamp(1rem, 2vw, 1.25rem);
+  color:var(--text-secondary);
+  max-width:600px;
+  margin:0 auto 40px;
+  line-height:1.7;
+}
+
+.cta-row{
+  display:flex;
+  gap:16px;
+  justify-content:center;
+  margin-bottom:32px;
+}
+.cta-row a{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:48px;
+  width:180px;
+  border-radius:8px;
+  font-weight:600;
+  font-size:15px;
+  transition:transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cta-row a:hover{
+  transform:translateY(-1px);
+  text-decoration:none;
+}
+.cta-primary{
+  background:var(--accent);
+  color:#0a0e17;
+}
+.cta-primary:hover{
+  box-shadow:0 8px 32px rgba(0,212,170,0.3);
+}
+.cta-secondary{
+  background:transparent;
+  border:1px solid var(--accent);
+  color:var(--accent);
+}
+.cta-secondary:hover{
+  box-shadow:0 8px 32px rgba(0,212,170,0.15);
+}
+
+.trust-row{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-size:13px;
+  color:var(--text-secondary);
+}
+.trust-row .dot{
+  width:3px;
+  height:3px;
+  border-radius:50%;
+  background:var(--text-secondary);
+  opacity:0.5;
+}
+
+/* ── Features ─────────────────────────────────────────── */
+.features{max-width:1100px;margin:0 auto;padding:80px 24px 60px}
+.features h2{text-align:center;font-size:clamp(1.5rem,3vw,2rem);font-weight:700;color:#fff;margin-bottom:48px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:12px;transition:border-color 0.2s ease}
+.card:hover{border-color:rgba(0,212,170,0.15)}
+.card .card-icon{margin-bottom:16px}
+.card h3{font-size:16px;font-weight:600;color:#fff;margin-bottom:8px}
+.card p{font-size:14px;color:var(--text-secondary);line-height:1.6}
+@media(max-width:860px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:540px){.grid{grid-template-columns:1fr}}
+
+/* ── Radar Demo ──────────────────────────────────────── */
+.radar-section{padding:60px 24px 80px;text-align:center}
+.radar-title{font-size:18px;font-weight:600;color:var(--accent);margin-bottom:8px}
+.radar-wrap{max-width:480px;margin:0 auto}
+.radar-subtitle{font-size:14px;color:var(--text-secondary);margin-top:16px}
+@keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes radarPulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+/* ── Comparison Table ─────────────────────────────────── */
+.compare{max-width:900px;margin:0 auto;padding:80px 24px 60px}
+.compare h2{text-align:center;font-size:clamp(1.5rem,3vw,2rem);font-weight:700;color:#fff;margin-bottom:40px}
+.compare .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.compare table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+.compare thead th{background:#161b22;padding:14px 16px;text-align:center;font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;border:1px solid #21262d}
+.compare thead th:first-child{text-align:left}
+.compare td{padding:12px 16px;text-align:center;border:1px solid #21262d;font-size:13px;color:var(--text-secondary)}
+.compare td:first-child{text-align:left;color:var(--text);font-weight:500}
+.compare td:nth-child(2){background:rgba(0,212,170,0.03)}
+.compare .ic{display:inline-block;vertical-align:middle}
+
+/* ── Use Cases ────────────────────────────────────────── */
+.use-cases{max-width:1100px;margin:0 auto;padding:80px 24px 60px}
+.use-cases h2{text-align:center;font-size:clamp(1.5rem,3vw,2rem);font-weight:700;color:#fff;margin-bottom:48px}
+.use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.use-card{padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.use-card .use-icon{margin-bottom:16px}
+.use-card h3{font-size:18px;font-weight:600;color:#fff;margin-bottom:12px}
+.use-card p{font-size:14px;color:var(--text-secondary);line-height:1.7}
+@media(max-width:768px){.use-grid{grid-template-columns:1fr}}
+
+/* ── Badges ───────────────────────────────────────────── */
+.badges-section{padding:60px 24px;text-align:center}
+.badges-row{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center}
+.badge-pill{border:1px solid var(--accent);border-radius:20px;padding:8px 20px;font-size:13px;color:var(--text-secondary);font-weight:500;white-space:nowrap}
+.badge-pill.badge-highlight{border-width:2px;font-weight:700;color:var(--accent);font-size:14px}
+
+/* ── Footer ───────────────────────────────────────────── */
+footer{background:#080b12;text-align:center;padding:48px 24px 32px;color:var(--text-secondary);font-size:13px}
+footer .footer-links{display:flex;gap:24px;justify-content:center;margin-bottom:16px;flex-wrap:wrap}
+footer .footer-links a{color:var(--text-secondary);font-weight:500;transition:color 0.15s}
+footer .footer-links a:hover{color:var(--accent)}
+footer .footer-social{display:flex;gap:16px;justify-content:center;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+footer .footer-social a{color:var(--text-secondary);font-weight:500}
+footer .footer-social a:hover{color:var(--accent)}
+footer .footer-copy{font-size:11px;color:#4a5568;line-height:1.8}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media(max-width:540px){
+  .cta-row{flex-direction:column;align-items:center}
+  .trust-row{flex-wrap:wrap;justify-content:center}
+}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-content">
+    <h1>Communication Without Compromise</h1>
+    <p class="subtext">End-to-end encrypted messaging for communities, organizations, and operations. Self-hostable. No government ID required.</p>
+    <div class="cta-row">
+      <a href="/app?register=true" class="cta-primary">Get Started</a>
+      <a href="https://github.com/CitadelOpenSource/Discreet" class="cta-secondary">View Source</a>
+    </div>
+    <div class="trust-row">
+      <span>AGPL-3.0 Licensed</span>
+      <span class="dot"></span>
+      <span>Patent Pending</span>
+      <span class="dot"></span>
+      <span>OWASP 2026 Compliant</span>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <h2>Built for Privacy, Designed for Scale</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 4L6 11v9c0 8.4 5.96 16.24 14 18 8.04-1.76 14-9.6 14-18v-9L20 4z"/>
+          <path d="M14 20l4 4 8-8"/>
+        </svg>
+      </div>
+      <h3>End-to-End Encrypted</h3>
+      <p>MLS RFC 9420 group encryption. AES-256-GCM. Your server stores ciphertext it cannot decrypt.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="16" r="8"/>
+          <path d="M12 16h-4M32 16h-4M20 8V4M20 24v4"/>
+          <path d="M14.34 10.34L11.52 7.52M25.66 10.34l2.82-2.82M14.34 21.66l-2.82 2.82M25.66 21.66l2.82 2.82"/>
+          <circle cx="20" cy="16" r="3"/>
+          <path d="M10 32h20M14 36h12"/>
+        </svg>
+      </div>
+      <h3>AI Agents</h3>
+      <p>Encrypted AI assistants join conversations as full MLS group members. Modular provider support. Patent pending.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="20" r="4"/>
+          <circle cx="20" cy="20" r="10" stroke-dasharray="3 3"/>
+          <circle cx="20" cy="20" r="16" stroke-dasharray="3 3"/>
+          <path d="M20 4v4M20 32v4M4 20h4M32 20h4"/>
+        </svg>
+      </div>
+      <h3>Proximity Mesh</h3>
+      <p>Encrypted offline communication via Bluetooth LE. X25519 key exchange. SAS verification. No internet required.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6a8 8 0 0 1 8 8v6a8 8 0 0 1-16 0v-6a8 8 0 0 1 8-8z"/>
+          <path d="M32 18v2a12 12 0 0 1-24 0v-2"/>
+          <path d="M20 30v6M14 36h12"/>
+        </svg>
+      </div>
+      <h3>Encrypted Voice</h3>
+      <p>SFrame encrypted calls. WebRTC. Noise suppression. Push-to-talk. Latency monitoring.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="6" width="24" height="28" rx="2"/>
+          <path d="M14 14h12M14 20h12M14 26h12"/>
+          <circle cx="12" cy="14" r="1" fill="#7C3AED" stroke="none"/>
+          <circle cx="12" cy="20" r="1" fill="#7C3AED" stroke="none"/>
+          <circle cx="12" cy="26" r="1" fill="#7C3AED" stroke="none"/>
+        </svg>
+      </div>
+      <h3>Self-Hostable</h3>
+      <p>One command. Your hardware. Your data. Deploy on Oracle, AWS, Raspberry Pi, or any Linux box.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8l-6 6 6 6"/>
+          <path d="M28 8l6 6-6 6"/>
+          <path d="M23 4L17 36"/>
+        </svg>
+      </div>
+      <h3>Open Source</h3>
+      <p>100,000+ lines. AGPL-3.0 licensed. Every line auditable. Zero telemetry. Zero ads.</p>
+    </div>
+  </div>
+</section>
+
+<section class="radar-section">
+  <div class="radar-title">Proximity Radar</div>
+  <div class="radar-wrap">
+    <svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background -->
+      <circle cx="150" cy="150" r="140" fill="#0a0e17" stroke="#1a2332" stroke-width="1"/>
+      <!-- Concentric rings -->
+      <circle cx="150" cy="150" r="46.2" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <circle cx="150" cy="150" r="92.4" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <circle cx="150" cy="150" r="140" fill="none" stroke="#1a2332" stroke-width="0.5"/>
+      <!-- Range labels -->
+      <text x="200" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">5m</text>
+      <text x="246" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">15m</text>
+      <text x="275" y="147" fill="#8b949e" font-family="Inter,sans-serif" font-size="10" text-anchor="start">30m</text>
+      <!-- Crosshairs -->
+      <line x1="150" y1="10" x2="150" y2="290" stroke="#1a2332" stroke-width="0.3"/>
+      <line x1="10" y1="150" x2="290" y2="150" stroke="#1a2332" stroke-width="0.3"/>
+      <!-- Rotating sweep -->
+      <g style="transform-origin:150px 150px;animation:radarSweep 4s linear infinite">
+        <line x1="150" y1="150" x2="150" y2="10" stroke="url(#sweepGrad)" stroke-width="1.5"/>
+        <defs>
+          <linearGradient id="sweepGrad" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="#7C3AED" stop-opacity="0.1"/>
+            <stop offset="100%" stop-color="#7C3AED" stop-opacity="0.8"/>
+          </linearGradient>
+        </defs>
+      </g>
+      <!-- Device dots -->
+      <circle cx="170" cy="125" r="4" fill="#7C3AED" style="animation:radarPulse 1s ease-in-out infinite alternate"/>
+      <circle cx="120" cy="170" r="4" fill="#7C3AED" style="animation:radarPulse 1s ease-in-out 0.2s infinite alternate"/>
+      <circle cx="195" cy="180" r="4" fill="#7C3AED" style="animation:radarPulse 1s ease-in-out 0.5s infinite alternate"/>
+      <circle cx="105" cy="110" r="4" fill="#7C3AED" style="animation:radarPulse 1s ease-in-out 0.7s infinite alternate"/>
+      <circle cx="215" cy="100" r="4" fill="#7C3AED" style="animation:radarPulse 1s ease-in-out 0.3s infinite alternate"/>
+      <!-- Center dot -->
+      <circle cx="150" cy="150" r="3" fill="#7C3AED"/>
+    </svg>
+  </div>
+  <div class="radar-subtitle">Encrypted offline communication — zero infrastructure required.</div>
+</section>
+
+<section class="compare">
+  <h2>How Discreet Compares</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Discreet</th>
+          <th>Signal</th>
+          <th>Element</th>
+          <th>Discord</th>
+          <th>Slack</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>E2EE by Default</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>No Phone Required</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>No Government ID</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Self-Hostable</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Community Servers</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>AI Agents</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Proximity Mesh</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Encrypted Voice</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Open Source</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+        <tr>
+          <td>Tamper-Evident Audit</td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#7C3AED"/><path d="M5 9l3 3 5-5" stroke="#0a0e17" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+          <td><svg class="ic" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#f85149"/><path d="M6 6l6 6M12 6l-6 6" stroke="#0a0e17" stroke-width="2" stroke-linecap="round"/></svg></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="use-cases">
+  <h2>Built for Every Use Case</h2>
+  <div class="use-grid">
+    <div class="use-card">
+      <div class="use-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="12" r="5"/>
+          <circle cx="10" cy="24" r="4"/>
+          <circle cx="30" cy="24" r="4"/>
+          <path d="M14 32c0-3.3 2.7-6 6-6s6 2.7 6 6M4 34c0-2.8 2.2-5 5-5s5 2.2 5 5M26 34c0-2.8 2.2-5 5-5s5 2.2 5 5"/>
+        </svg>
+      </div>
+      <h3>For Communities</h3>
+      <p>Servers, channels, threads, reactions, custom emoji, voice chat, bots, forums.</p>
+    </div>
+    <div class="use-card">
+      <div class="use-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6" y="8" width="28" height="24" rx="2"/>
+          <path d="M6 16h28"/>
+          <path d="M14 8v8"/>
+          <path d="M26 8v8"/>
+          <rect x="11" y="21" width="6" height="4" rx="1"/>
+          <rect x="23" y="21" width="6" height="4" rx="1"/>
+          <rect x="11" y="27" width="6" height="2" rx="0.5"/>
+          <rect x="23" y="27" width="6" height="2" rx="0.5"/>
+        </svg>
+      </div>
+      <h3>For Organizations</h3>
+      <p>Tamper-evident audit trail, RBAC, data retention policies, compliance-ready, self-hosted deployment, data sovereignty.</p>
+    </div>
+    <div class="use-card">
+      <div class="use-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="20" cy="20" r="16"/>
+          <circle cx="20" cy="20" r="10" stroke-dasharray="3 3"/>
+          <circle cx="20" cy="20" r="4"/>
+          <path d="M20 4v4M20 32v4M4 20h4M32 20h4"/>
+        </svg>
+      </div>
+      <h3>For Operations</h3>
+      <p>Proximity mesh, offline capability, air-gapped deployment, tactical edge ready, zero-knowledge architecture, BLE contact exchange.</p>
+    </div>
+  </div>
+</section>
+
+<section class="badges-section">
+  <div class="badges-row">
+    <span class="badge-pill">Patent Pending</span>
+    <span class="badge-pill">AGPL-3.0</span>
+    <span class="badge-pill">OWASP 2026</span>
+    <span class="badge-pill">Zero Knowledge</span>
+    <span class="badge-pill badge-highlight">NO GOVERNMENT ID</span>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-links">
+    <a href="/app/privacy">Privacy</a>
+    <a href="/app/terms">Terms</a>
+    <a href="/app/eula">EULA</a>
+    <a href="https://github.com/CitadelOpenSource/Discreet">GitHub</a>
+    <a href="/app/self-hosting">Self-Hosting Guide</a>
+  </div>
+  <div class="footer-social">
+    <a href="https://twitter.com/DiscreetAI">Twitter @DiscreetAI</a>
+    <a href="https://github.com/CitadelOpenSource/Discreet"><img src="https://img.shields.io/github/stars/CitadelOpenSource/Discreet?style=social" alt="GitHub Stars" height="20" /></a>
+  </div>
+  <div class="footer-copy">
+    Copyright 2026 Citadel Open Source LLC. All rights reserved.<br/>
+    Built with Rust, React, and a commitment to privacy.
+  </div>
+</footer>
+
+</body>
+</html>

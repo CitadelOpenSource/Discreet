@@ -1,0 +1,55 @@
+/*
+ * Self-hosted fonts for Discreet themes.
+ * NO external CDN requests — all fonts served from /fonts/.
+ *
+ * Required font files (place in client/public/fonts/):
+ *   - press-start-2p-v16-latin-regular.woff2   (Arcade + Pixel themes)
+ *   - fira-code-v27-latin-regular.woff2         (Phosphor theme)
+ *   - share-tech-mono-v16-latin-regular.woff2   (Cipher theme)
+ *   - orbitron-v35-latin-regular.woff2          (Neon theme, 400)
+ *   - orbitron-v35-latin-700.woff2              (Neon theme, 700)
+ *
+ * Source: google-webfonts-helper (https://gwfh.mranftl.com/fonts)
+ * or the google/fonts GitHub repository.
+ * License: SIL Open Font License 1.1 (AGPL-compatible).
+ */
+
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/press-start-2p-v16-latin-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/fira-code-v27-latin-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Share Tech Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/share-tech-mono-v16-latin-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/orbitron-v35-latin-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/orbitron-v35-latin-700.woff2') format('woff2');
+}

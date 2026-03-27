@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n            (SELECT show_shared_servers FROM user_settings WHERE user_id = $1),\n            true\n        )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ea2153f2412c758036c0672c6839c2717fa2191cbe91e03647491352cbd94f2d"
+}

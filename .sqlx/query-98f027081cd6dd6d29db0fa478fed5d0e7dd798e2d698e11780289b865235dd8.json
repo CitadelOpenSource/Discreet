@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT c.id, c.name\n           FROM messages m\n           JOIN channels c ON c.id = m.channel_id\n           WHERE m.author_id = $1 AND m.deleted = FALSE\n           ORDER BY c.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "98f027081cd6dd6d29db0fa478fed5d0e7dd798e2d698e11780289b865235dd8"
+}

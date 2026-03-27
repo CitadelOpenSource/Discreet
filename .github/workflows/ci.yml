@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: discreet
+          POSTGRES_PASSWORD: discreet
+          POSTGRES_DB: discreet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U discreet -d discreet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://discreet:discreet@localhost:5432/discreet
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret-at-least-32-bytes-long-for-jwt-hmac
+      SQLX_OFFLINE: "true"
+      SELF_HOSTED: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked 2>/dev/null || true
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build WASM kernel
+        run: |
+          cd discreet-kernel
+          wasm-pack build --target web --release
+
+      - name: Build client
+        working-directory: client
+        run: npm ci && npm run build
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply database migrations
+        run: |
+          for f in migrations/*.sql; do
+            echo "Applying $f..."
+            psql "$DATABASE_URL" -f "$f" 2>&1 || true
+          done
+
+      - name: Build
+        run: cargo build
+
+      - name: Clippy (zero warnings)
+        run: cargo clippy -- -D warnings
+
+      - name: Test (unit tests)
+        run: cargo test --lib
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked --force
+
+      - name: SQLx offline check
+        run: cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgres://discreet:discreet@localhost:5432/discreet
+
+      - name: Cargo audit
+        run: |
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit

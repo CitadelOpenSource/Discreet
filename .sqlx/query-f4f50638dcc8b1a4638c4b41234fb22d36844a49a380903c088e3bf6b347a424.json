@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.thread_id, m.author_id, u.username as author_username,\n           encode(m.content_ciphertext, 'base64') as \"content_ciphertext!\",\n           m.reply_to_id, m.created_at\n           FROM thread_messages m JOIN users u ON u.id = m.author_id\n           WHERE m.thread_id = $1 AND m.deleted = FALSE\n           ORDER BY m.created_at ASC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_ciphertext!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reply_to_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      false
+    ]
+  },
+  "hash": "f4f50638dcc8b1a4638c4b41234fb22d36844a49a380903c088e3bf6b347a424"
+}

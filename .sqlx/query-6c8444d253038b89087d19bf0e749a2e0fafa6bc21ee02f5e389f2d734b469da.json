@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sp.id, sp.name, sp.server_id, sp.creator_id, sp.created_at,\n                  COUNT(s.id) as \"sticker_count!\"\n           FROM sticker_packs sp\n           LEFT JOIN stickers s ON s.pack_id = sp.id\n           WHERE sp.server_id IS NULL\n              OR sp.server_id IN (SELECT server_id FROM server_members WHERE user_id = $1)\n           GROUP BY sp.id\n           ORDER BY sp.created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "creator_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "sticker_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6c8444d253038b89087d19bf0e749a2e0fafa6bc21ee02f5e389f2d734b469da"
+}

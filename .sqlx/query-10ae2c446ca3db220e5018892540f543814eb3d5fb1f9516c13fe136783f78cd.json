@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.content_ciphertext, m.author_id, m.created_at, p.pinned_by, p.pinned_at, p.category\n         FROM pinned_messages p\n         JOIN messages m ON m.id = p.message_id\n         WHERE p.channel_id = $1\n         ORDER BY p.pinned_at DESC\n         LIMIT 50",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "content_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "pinned_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "pinned_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "category",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "10ae2c446ca3db220e5018892540f543814eb3d5fb1f9516c13fe136783f78cd"
+}

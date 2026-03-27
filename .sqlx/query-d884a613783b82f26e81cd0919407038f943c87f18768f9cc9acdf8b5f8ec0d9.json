@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhooks SET enabled = $2, failure_count = CASE WHEN $2 THEN 0 ELSE failure_count END WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d884a613783b82f26e81cd0919407038f943c87f18768f9cc9acdf8b5f8ec0d9"
+}

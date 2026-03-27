@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages\n         SET deleted = TRUE, content_ciphertext = '\\x00', edited_at = NOW()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "29b406a0d3ec64a19fd22d54d4f8ec3da8ddb4172d8c0f1771483843b7b5b718"
+}

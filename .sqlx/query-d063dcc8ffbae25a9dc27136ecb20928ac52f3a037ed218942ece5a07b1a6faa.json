@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, server_id, muted, mute_until, level, suppress_everyone, event_reminders, email_reminders\n         FROM server_notification_settings\n         WHERE user_id = $1 AND server_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "muted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "mute_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "suppress_everyone",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_reminders",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "email_reminders",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d063dcc8ffbae25a9dc27136ecb20928ac52f3a037ed218942ece5a07b1a6faa"
+}

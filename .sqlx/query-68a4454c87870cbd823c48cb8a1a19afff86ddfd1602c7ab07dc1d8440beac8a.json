@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_tier,\n                      platform_role,\n                      badge_type,\n                      email_verified\n               FROM users\n               WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_tier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "platform_role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "badge_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "email_verified",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "68a4454c87870cbd823c48cb8a1a19afff86ddfd1602c7ab07dc1d8440beac8a"
+}

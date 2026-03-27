@@ -1,0 +1,30 @@
+[package]
+name = "discreet-kernel-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+serde_json = "1"
+discreet-kernel = { path = ".." }
+
+# Fuzz targets are defined here. Each corresponds to a file in fuzz_targets/.
+[[bin]]
+name = "fuzz_kernel_handle"
+path = "fuzz_targets/fuzz_kernel_handle.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_validate"
+path = "fuzz_targets/fuzz_validate.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_sanitize"
+path = "fuzz_targets/fuzz_sanitize.rs"
+doc = false

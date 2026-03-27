@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sessions SET revoked_at = NOW()\n         WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b4319bfcc50fbd4b69e908ec6f76bfc074f8d18aae444a0a093f4a4dd8c7c65"
+}

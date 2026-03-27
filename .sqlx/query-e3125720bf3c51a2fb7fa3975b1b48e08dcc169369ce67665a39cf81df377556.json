@@ -1,0 +1,210 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_settings\n         SET theme = COALESCE($1, theme),\n             font_size = COALESCE($2, font_size),\n             compact_mode = COALESCE($3, compact_mode),\n             show_embeds = COALESCE($4, show_embeds),\n             dm_privacy = COALESCE($5, dm_privacy),\n             friend_request_privacy = COALESCE($6, friend_request_privacy),\n             notification_level = COALESCE($7, notification_level),\n             show_shared_servers = COALESCE($8, show_shared_servers),\n             timezone = COALESCE($9, timezone),\n             show_read_receipts = COALESCE($10, show_read_receipts),\n             show_typing_indicator = COALESCE($11, show_typing_indicator),\n             show_link_previews = COALESCE($12, show_link_previews),\n             dnd_enabled = COALESCE($13, dnd_enabled),\n             dnd_start = COALESCE($14, dnd_start),\n             dnd_end = COALESCE($15, dnd_end),\n             dnd_days = COALESCE($16, dnd_days),\n             sound_dm = COALESCE($17, sound_dm),\n             sound_server = COALESCE($18, sound_server),\n             sound_mention = COALESCE($19, sound_mention),\n             message_density = COALESCE($20, message_density),\n             chat_font_size = COALESCE($21, chat_font_size),\n             default_status = COALESCE($22, default_status),\n             suppress_all_everyone = COALESCE($23, suppress_all_everyone),\n             show_timestamps = COALESCE($24, show_timestamps),\n             timestamp_format = COALESCE($25, timestamp_format),\n             layout_mode = COALESCE($26, layout_mode),\n             updated_at = NOW()\n         WHERE user_id = $27\n         RETURNING user_id, theme, font_size, compact_mode, show_embeds, dm_privacy, friend_request_privacy, notification_level, show_shared_servers, timezone, show_read_receipts, show_typing_indicator, show_link_previews, dnd_enabled, dnd_start, dnd_end, dnd_days, sound_dm, sound_server, sound_mention, message_density, chat_font_size, default_status, suppress_all_everyone, show_timestamps, timestamp_format, layout_mode, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "theme",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "font_size",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "compact_mode",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "show_embeds",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "dm_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "friend_request_privacy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "notification_level",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "show_shared_servers",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "timezone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "show_read_receipts",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "show_typing_indicator",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "show_link_previews",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "dnd_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "dnd_start",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "dnd_end",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "dnd_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "sound_dm",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "sound_server",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "sound_mention",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "message_density",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "chat_font_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 22,
+        "name": "default_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 23,
+        "name": "suppress_all_everyone",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 24,
+        "name": "show_timestamps",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 25,
+        "name": "timestamp_format",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 26,
+        "name": "layout_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 27,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Bool",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e3125720bf3c51a2fb7fa3975b1b48e08dcc169369ce67665a39cf81df377556"
+}
