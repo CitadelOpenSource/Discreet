@@ -67,7 +67,6 @@ pub mod discreet_platform_settings;
 pub mod discreet_playbook_handlers;
 pub mod discreet_poll_handlers;
 pub mod discreet_post_quantum;
-#[cfg(feature = "pq")]
 pub mod discreet_pq_crypto;
 pub mod discreet_qr_handlers;
 pub mod discreet_premium;

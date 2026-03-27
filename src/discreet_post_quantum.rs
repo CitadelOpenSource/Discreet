@@ -129,9 +129,9 @@ pub struct PQConfig {
 impl Default for PQConfig {
     fn default() -> Self {
         Self {
-            default_level: PQSecurityLevel::PQContinuous,
-            enforce_pq: false,
-            allow_classical_fallback: true,
+            default_level: PQSecurityLevel::PQFull,
+            enforce_pq: true,
+            allow_classical_fallback: false,
             rekey_schedule: PQRekeySchedule::default(),
         }
     }

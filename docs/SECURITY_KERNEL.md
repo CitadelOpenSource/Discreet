@@ -100,3 +100,40 @@ The same Rust kernel crate compiles to:
 - **Native library** for mobile (via uniffi FFI bindings)
 
 One audited, tested, fuzzed security core. Three platforms.
+
+## Post-Quantum Cryptography
+
+Discreet uses a hybrid classical + post-quantum cryptographic architecture. Both classical and post-quantum algorithms must be broken to compromise any communication.
+
+| Layer | Classical | Post-Quantum | Standard | Implementation |
+|-------|-----------|-------------|----------|----------------|
+| Key exchange | X25519 (ECDH) | ML-KEM-768 | NIST FIPS 203 | libcrux-ml-kem (Cryspen) |
+| Signatures | Ed25519 | ML-DSA-65 | NIST FIPS 204 | Pending libcrux-ml-dsa |
+| Symmetric | AES-256-GCM | — | Quantum-resistant at 128-bit security (Grover) | RustCrypto aes-gcm |
+| Key derivation | HKDF-SHA256 | — | Quantum-resistant | RustCrypto hkdf |
+
+### ML-KEM-768 implementation
+
+The ML-KEM-768 implementation is **libcrux-ml-kem** by Cryspen:
+
+- Formally verified for panic freedom, correctness, and secret independence using hax and F*
+- FIPS 203 compliant with mandatory key validation before encapsulation
+- SIMD-optimized with runtime CPU feature detection (AVX2 on x86-64, Neon on AArch64)
+- Same team that verified Signal's PQXDH protocol and discovered the KyberSlash timing vulnerability
+- Apache-2.0 licensed (AGPL compatible)
+
+ML-DSA-65 signatures are gated behind a feature flag pending a formally verified implementation (libcrux-ml-dsa) on crates.io. Ed25519 signatures remain active for all credentials.
+
+### How it works
+
+MLS (RFC 9420) handles group key agreement using the classical cipher suite `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`. At the application layer, ML-KEM-768 encapsulation wraps MLS group secrets at join and rekey operations. All received public keys undergo FIPS 203 validation before use.
+
+This hybrid approach means an attacker must break **both** X25519 and ML-KEM-768 to decrypt messages. A quantum computer capable of running Shor's algorithm breaks only the classical half — the post-quantum half remains secure.
+
+### Why hybrid, not pure PQ
+
+OpenMLS 0.8 does not yet support post-quantum cipher suites natively. The MLS protocol has cipher suite agility (algorithms can be upgraded without protocol changes), but no MLS implementation has shipped PQ suites in a stable release. Our application-layer hybrid approach provides PQ protection today while the ecosystem matures. When OpenMLS adds native PQ cipher suites, we will migrate from hybrid wrapping to native integration.
+
+### Rekey schedule
+
+Post-quantum rekeying occurs every 50 messages or every hour (matching Apple PQ3's cadence). This limits the window of compromise if any single key is exposed, regardless of whether the threat is classical or quantum.

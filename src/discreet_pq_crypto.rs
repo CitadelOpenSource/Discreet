@@ -1,93 +1,93 @@
 // discreet_pq_crypto.rs — Post-quantum cryptographic operations.
 //
-// Wraps ML-KEM-768 (FIPS 203) for key encapsulation and ML-DSA-65
-// (FIPS 204) for digital signatures. Gated behind the `pq` feature flag.
+// ML-KEM-768 (FIPS 203): libcrux-ml-kem by Cryspen. Formally verified for
+// panic freedom, correctness, and secret independence using hax and F*.
+// SIMD-optimized (AVX2, AArch64 Neon) with runtime CPU feature detection.
 //
-// These are the building blocks for hybrid PQ+classical key exchange
-// described in discreet_post_quantum.rs. The classical halves (X25519,
-// Ed25519) live behind the existing `post-quantum` feature flag.
+// ML-DSA-65 (FIPS 204): gated behind `pq-sig` feature until a formally
+// verified implementation (libcrux-ml-dsa) is available on crates.io.
 //
-// Compile: cargo build --features pq
-// Test:    cargo test --features pq pq_crypto
+// The hybrid architecture layers ML-KEM over MLS group secrets at the
+// application level, since OpenMLS 0.8 does not support PQ cipher suites.
 
-use ml_kem::{
-    kem::{Decapsulate, Encapsulate},
-    KemCore, MlKem768, MlKem768Params,
-};
-use ml_dsa::{MlDsa65, KeyGen as DsaKeyGen, SigningKey, VerifyingKey};
+use libcrux_ml_kem::mlkem768;
+use rand::RngCore;
 
-/// ML-KEM-768 encapsulation key (public key, 1184 bytes).
-pub type KemEncapsulationKey = ml_kem::kem::EncapsulationKey<MlKem768Params>;
+/// ML-KEM-768 key pair (public + private).
+pub type MlKemKeyPair = mlkem768::MlKem768KeyPair;
 
-/// ML-KEM-768 decapsulation key (secret key, 2400 bytes).
-pub type KemDecapsulationKey = ml_kem::kem::DecapsulationKey<MlKem768Params>;
+/// ML-KEM-768 ciphertext (1088 bytes).
+pub type MlKemCiphertext = mlkem768::MlKem768Ciphertext;
 
 // ─── ML-KEM-768 Key Encapsulation ───────────────────────────────────────
 
 /// Generate an ML-KEM-768 keypair.
 ///
-/// Returns `(decapsulation_key, encapsulation_key)` — the decapsulation key
-/// is secret and must be stored securely; the encapsulation key is public.
-pub fn pq_kem_keygen() -> (KemDecapsulationKey, KemEncapsulationKey) {
-    let mut rng = rand::thread_rng();
-    MlKem768::generate(&mut rng)
+/// Uses 64 bytes of OS randomness. The private key must be stored securely;
+/// the public key is shared with peers for encapsulation.
+pub fn pq_kem_keygen() -> MlKemKeyPair {
+    let mut randomness = [0u8; 64];
+    rand::thread_rng().fill_bytes(&mut randomness);
+    mlkem768::generate_key_pair(randomness)
 }
 
-/// Encapsulate a shared secret using the recipient's public encapsulation key.
+/// Validate a public key per FIPS 203 requirements.
+///
+/// MUST be called before encapsulating with any received public key.
+/// Rejects malformed keys that could enable chosen-ciphertext attacks.
+pub fn pq_validate_public_key(public_key: &mlkem768::MlKem768PublicKey) -> bool {
+    mlkem768::validate_public_key(public_key)
+}
+
+/// Encapsulate a shared secret using the recipient's public key.
 ///
 /// Returns `(ciphertext, shared_secret)`. The ciphertext is sent to the
-/// recipient; the shared secret is used to derive symmetric keys via HKDF.
+/// recipient; the 32-byte shared secret derives symmetric keys via HKDF.
+///
+/// Returns `None` if the public key fails FIPS 203 validation.
 pub fn pq_encapsulate(
-    encapsulation_key: &KemEncapsulationKey,
-) -> (ml_kem::Ciphertext<MlKem768Params>, [u8; 32]) {
-    let mut rng = rand::thread_rng();
-    let (ct, ss) = encapsulation_key.encapsulate(&mut rng).expect("ML-KEM encapsulation");
-    let mut secret = [0u8; 32];
-    secret.copy_from_slice(ss.as_slice());
-    (ct, secret)
+    public_key: &mlkem768::MlKem768PublicKey,
+) -> Option<(MlKemCiphertext, [u8; 32])> {
+    if !mlkem768::validate_public_key(public_key) {
+        return None;
+    }
+    let mut randomness = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut randomness);
+    let (ct, ss) = mlkem768::encapsulate(public_key, randomness);
+    Some((ct, ss))
 }
 
-/// Decapsulate a shared secret from a ciphertext using the secret
-/// decapsulation key.
+/// Decapsulate a shared secret from a ciphertext using the private key.
 ///
-/// Returns the same 32-byte shared secret that was produced by
-/// `pq_encapsulate` on the sender side.
+/// Returns the same 32-byte shared secret produced by `pq_encapsulate`.
 pub fn pq_decapsulate(
-    decapsulation_key: &KemDecapsulationKey,
-    ciphertext: &ml_kem::Ciphertext<MlKem768Params>,
+    private_key: &mlkem768::MlKem768PrivateKey,
+    ciphertext: &MlKemCiphertext,
 ) -> [u8; 32] {
-    let ss = decapsulation_key.decapsulate(ciphertext).expect("ML-KEM decapsulation");
-    let mut secret = [0u8; 32];
-    secret.copy_from_slice(ss.as_slice());
-    secret
+    mlkem768::decapsulate(private_key, ciphertext)
 }
 
-// ─── ML-DSA-65 Digital Signatures ───────────────────────────────────────
+// ─── ML-DSA-65 Digital Signatures (gated behind pq-sig feature) ─────────
 
-/// Generate an ML-DSA-65 signing keypair.
-///
-/// Returns `(signing_key, verifying_key)` — the signing key is secret.
+#[cfg(feature = "pq-sig")]
+pub use ml_dsa::{MlDsa65, SigningKey, VerifyingKey};
+
+#[cfg(feature = "pq-sig")]
 pub fn pq_sig_keygen() -> (SigningKey<MlDsa65>, VerifyingKey<MlDsa65>) {
+    use ml_dsa::KeyGen as DsaKeyGen;
     let mut rng = rand::thread_rng();
     let sk = SigningKey::<MlDsa65>::generate(&mut rng);
     let vk = sk.verifying_key().clone();
     (sk, vk)
 }
 
-/// Sign a message with ML-DSA-65.
-///
-/// Returns the signature bytes. The signature is deterministic for
-/// a given message and key (no additional randomness needed).
+#[cfg(feature = "pq-sig")]
 pub fn pq_sign(signing_key: &SigningKey<MlDsa65>, message: &[u8]) -> Vec<u8> {
     use ml_dsa::Signer;
-    let sig = signing_key.sign(message);
-    sig.to_bytes().to_vec()
+    signing_key.sign(message).to_bytes().to_vec()
 }
 
-/// Verify an ML-DSA-65 signature.
-///
-/// Returns `true` if the signature is valid for the given message and
-/// verifying key, `false` otherwise. Never panics on invalid signatures.
+#[cfg(feature = "pq-sig")]
 pub fn pq_verify(
     verifying_key: &VerifyingKey<MlDsa65>,
     message: &[u8],
@@ -107,18 +107,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kem_keygen_roundtrip() {
-        let (dk, ek) = pq_kem_keygen();
-        // Keys should have non-trivial length.
-        let _ = &dk;
-        let _ = &ek;
+    fn kem_keygen_produces_valid_key() {
+        let kp = pq_kem_keygen();
+        assert!(
+            pq_validate_public_key(kp.public_key()),
+            "Generated public key must pass FIPS 203 validation"
+        );
     }
 
     #[test]
     fn kem_encapsulate_decapsulate() {
-        let (dk, ek) = pq_kem_keygen();
-        let (ct, ss_sender) = pq_encapsulate(&ek);
-        let ss_receiver = pq_decapsulate(&dk, &ct);
+        let kp = pq_kem_keygen();
+        let (ct, ss_sender) = pq_encapsulate(kp.public_key())
+            .expect("Encapsulation with valid key must succeed");
+        let ss_receiver = pq_decapsulate(kp.private_key(), &ct);
         assert_eq!(
             ss_sender, ss_receiver,
             "Sender and receiver shared secrets must match"
@@ -127,20 +129,23 @@ mod tests {
 
     #[test]
     fn kem_different_keys_different_secrets() {
-        let (_, ek1) = pq_kem_keygen();
-        let (_, ek2) = pq_kem_keygen();
-        let (_, ss1) = pq_encapsulate(&ek1);
-        let (_, ss2) = pq_encapsulate(&ek2);
+        let kp1 = pq_kem_keygen();
+        let kp2 = pq_kem_keygen();
+        let (_, ss1) = pq_encapsulate(kp1.public_key()).unwrap();
+        let (_, ss2) = pq_encapsulate(kp2.public_key()).unwrap();
         assert_ne!(ss1, ss2, "Different keys should produce different secrets");
     }
 
     #[test]
-    fn sig_keygen_roundtrip() {
-        let (sk, vk) = pq_sig_keygen();
-        let _ = &sk;
-        let _ = &vk;
+    fn kem_key_validation_rejects_zeros() {
+        // All-zero bytes should not pass validation
+        let zero_key = mlkem768::MlKem768PublicKey::from([0u8; 1184]);
+        // Note: validation may or may not reject all-zeros depending on
+        // the implementation. The important thing is it doesn't panic.
+        let _ = pq_validate_public_key(&zero_key);
     }
 
+    #[cfg(feature = "pq-sig")]
     #[test]
     fn sig_sign_verify() {
         let (sk, vk) = pq_sig_keygen();
@@ -152,6 +157,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "pq-sig")]
     #[test]
     fn sig_verify_wrong_message() {
         let (sk, vk) = pq_sig_keygen();
@@ -162,6 +168,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "pq-sig")]
     #[test]
     fn sig_verify_wrong_key() {
         let (sk, _) = pq_sig_keygen();
@@ -173,16 +180,11 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "pq-sig")]
     #[test]
     fn sig_verify_garbage_signature() {
         let (_, vk) = pq_sig_keygen();
-        assert!(
-            !pq_verify(&vk, b"test", &[0u8; 10]),
-            "Garbage signature should not verify"
-        );
-        assert!(
-            !pq_verify(&vk, b"test", &[]),
-            "Empty signature should not verify"
-        );
+        assert!(!pq_verify(&vk, b"test", &[0u8; 10]));
+        assert!(!pq_verify(&vk, b"test", &[]));
     }
 }

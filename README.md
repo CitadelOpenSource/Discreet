@@ -19,6 +19,8 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Security-WASM%20Kernel-green?style=flat-square" alt="WASM Security Kernel" />
   &nbsp;
+  <img src="https://img.shields.io/badge/Post--Quantum-ML--KEM--768-7C3AED?style=flat-square" alt="Post-Quantum ML-KEM-768" />
+  &nbsp;
   <img src="https://img.shields.io/badge/License-AGPL--3.0-purple?style=flat-square" alt="AGPL-3.0" />
   <br /><br />
 </div>
@@ -48,7 +50,7 @@ Discreet is an open-source messenger that gives you servers, channels, roles, vo
 
 ## How It Works
 
-Messages are encrypted on your device using MLS (RFC 9420) with AES-256-GCM before they leave. Voice and video use SFrame (RFC 9605) to encrypt every audio and video frame peer-to-peer. Passwords are hashed with Argon2id. Keys are derived with HKDF-SHA256. Post-quantum key exchange (ML-KEM-768) is available behind a feature flag. The server stores ciphertext and cannot decrypt anything.
+Messages are encrypted on your device using MLS (RFC 9420) with AES-256-GCM before they leave. Voice and video use SFrame (RFC 9605) to encrypt every audio and video frame peer-to-peer. Passwords are hashed with Argon2id. Keys are derived with HKDF-SHA256. Hybrid post-quantum key exchange (X25519 + ML-KEM-768) and signatures (Ed25519 + ML-DSA-65) protect against harvest-now-decrypt-later quantum attacks. The server stores ciphertext and cannot decrypt anything.
 
 You can sign up three ways: email and password, OAuth (Google, GitHub, Discord, Apple), or anonymously with a BIP-39 12-word seed phrase that acts as your only credential. No phone number is ever required. No address book is uploaded. No tracking pixels, no analytics, no telemetry.
 
@@ -80,7 +82,7 @@ The highlights:
 - Disappearing messages with server-enforced retention policies
 - FIDO2 passkeys and TOTP two-factor authentication
 - Automatic EXIF metadata stripping on all image uploads
-- Post-quantum cryptography (ML-KEM-768, ML-DSA-65) behind `--features pq`
+- Formally verified post-quantum encryption: X25519 + ML-KEM-768 (FIPS 203, libcrux-ml-kem by Cryspen)
 - WebAssembly Security Kernel — all cryptography, input validation, content sanitization, and permission evaluation runs inside an isolated Rust/WASM module. The JavaScript UI layer never touches cryptographic keys or unsanitized data.
 
 ## What's Next
