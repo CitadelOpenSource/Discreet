@@ -133,6 +133,9 @@ export interface MessageListProps {
   voiceBaseUrl: string;
   channelTtlSeconds: number | null;
 
+  // Layout
+  showIds?: boolean;
+
   // Refs
   msgEndRef: React.RefObject<HTMLDivElement>;
 }
@@ -276,6 +279,7 @@ export function MessageList(props: MessageListProps) {
             <div
               className="msg-row"
               data-msg-id={m.id}
+              title={props.showIds ? `msg:${m.id}` : undefined}
               onContextMenu={e => onContextMenu(e, m)}
               style={{
                 display: 'flex',

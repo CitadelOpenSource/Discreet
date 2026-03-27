@@ -344,10 +344,45 @@ export default function SettingsAppearance({ s, save, sel, sectionVisible, setSa
             const active = layout.mode === lm.id;
             return (
               <div key={lm.id} onClick={() => { layout.setMode(lm.id); save('layout_mode', lm.id); }}
-                style={{ flex: 1, padding: '12px 10px', borderRadius: 'var(--radius-md)', cursor: 'pointer', border: `2px solid ${active ? T.ac : T.bd}`, background: active ? ta(T.ac, '0f') : 'transparent', textAlign: 'center' }}>
-                <div style={{ fontSize: 20, marginBottom: 4, opacity: 0.7 }}>{lm.icon}</div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: active ? T.ac : T.tx }}>{lm.name}</div>
-                <div style={{ fontSize: 9, color: T.mt, marginTop: 3, lineHeight: 1.4 }}>{lm.description}</div>
+                style={{ flex: 1, borderRadius: 'var(--radius-md)', cursor: 'pointer', border: `2px solid ${active ? T.ac : T.bd}`, background: active ? ta(T.ac, '0f') : 'transparent', overflow: 'hidden' }}>
+                {/* Wireframe preview */}
+                <div style={{ height: 56, display: 'flex', background: T.bg, borderBottom: `1px solid ${T.bd}` }}>
+                  {lm.id !== 'simple' && (
+                    <div style={{ width: 10, background: T.sf2, borderRight: `1px solid ${T.bd}`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px 0', gap: 2 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: 'var(--radius-full, 3px)', background: active ? T.ac : T.mt, opacity: 0.4 }} />
+                      <div style={{ width: 6, height: 6, borderRadius: 'var(--radius-full, 3px)', background: T.sf, opacity: 0.3 }} />
+                    </div>
+                  )}
+                  {lm.id !== 'simple' && (
+                    <div style={{ width: 28, background: T.sf, borderRight: `1px solid ${T.bd}`, padding: '4px 2px' }}>
+                      <div style={{ height: 4, width: '80%', background: T.mt, borderRadius: 1, opacity: 0.3, marginBottom: 3 }} />
+                      <div style={{ height: 3, width: '60%', background: T.mt, borderRadius: 1, opacity: 0.2, marginBottom: 2 }} />
+                      <div style={{ height: 3, width: '70%', background: active ? T.ac : T.mt, borderRadius: 1, opacity: 0.4, marginBottom: 2 }} />
+                      <div style={{ height: 3, width: '50%', background: T.mt, borderRadius: 1, opacity: 0.2 }} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, padding: 4, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 2 }}>
+                    <div style={{ height: 3, width: '55%', background: T.mt, borderRadius: 1, opacity: 0.25 }} />
+                    <div style={{ height: 3, width: '40%', background: T.mt, borderRadius: 1, opacity: 0.25 }} />
+                    <div style={{ height: 6, background: T.sf2, borderRadius: 2, border: `1px solid ${T.bd}` }} />
+                  </div>
+                  {lm.id === 'power' && (
+                    <div style={{ width: 22, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: '4px 2px' }}>
+                      <div style={{ height: 3, width: '70%', background: T.mt, borderRadius: 1, opacity: 0.2, marginBottom: 2 }} />
+                      <div style={{ height: 3, width: '50%', background: T.mt, borderRadius: 1, opacity: 0.2 }} />
+                    </div>
+                  )}
+                </div>
+                {lm.id === 'simple' && (
+                  <div style={{ display: 'flex', justifyContent: 'space-around', padding: '2px 0', background: T.sf, borderTop: `1px solid ${T.bd}` }}>
+                    {[1,2,3,4].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: 'var(--radius-full, 3px)', background: i === 1 ? T.ac : T.mt, opacity: i === 1 ? 0.6 : 0.25 }} />)}
+                  </div>
+                )}
+                {/* Label */}
+                <div style={{ padding: '8px 8px 10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: active ? T.ac : T.tx }}>{lm.name}</div>
+                  <div style={{ fontSize: 9, color: T.mt, marginTop: 2, lineHeight: 1.4 }}>{lm.description}</div>
+                </div>
               </div>
             );
           })}

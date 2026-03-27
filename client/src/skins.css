@@ -101,6 +101,15 @@
 /* Transitions handled via --transition-* CSS vars set to 0ms in theme definition.
  * Components using var(--transition-fast) etc. snap instantly. */
 
+/* Bottom tab bar buttons stay clean across all skins */
+.theme-pixel [role="tab"],
+.theme-arcade [role="tab"],
+.theme-neon [role="tab"] {
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+}
+
 /* ─── Cipher ─────────────────────────────────────────────────────────── */
 
 /* Subtle green text glow on all content */

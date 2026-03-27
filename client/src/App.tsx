@@ -254,10 +254,34 @@ function GlobalStyles() {
       .layout-standard { --ui-font-size: 14px; --ui-padding: 12px; }
       .layout-standard .layout-power-only { display: none !important; }
 
-      .layout-power { --ui-font-size: 13px; --ui-padding: 8px; }
-      .layout-power .msg-row { padding: 2px 16px; }
+      .layout-power { --ui-font-size: 13px; --ui-padding: 8px; --font-size-md: 13px; }
+      .layout-power .msg-row { padding: 2px 12px; }
       .layout-power .msg-text { font-size: 13px !important; line-height: 1.35 !important; }
       .layout-power .msg-name { font-size: 12px !important; }
+      .layout-power .sidebar { padding: 4px 4px !important; }
+      .layout-power .sidebar > div { padding: 6px 8px !important; }
+      .layout-power .chat-header { padding: 6px 12px !important; min-height: 40px !important; }
+      .layout-power .member-panel { padding: 6px 8px !important; }
+      .layout-power .date-separator { padding: 4px 12px; }
+      .layout-power .kbd-hint { display: inline-flex !important; }
+      .kbd-hint {
+        display: none; font-size: 9px; font-weight: 600; font-family: var(--font-mono);
+        color: var(--text-tertiary); background: var(--bg-card);
+        border: 1px solid var(--border-color); border-radius: 3px;
+        padding: 0px 4px; margin-left: 4px; line-height: 16px;
+        vertical-align: middle; white-space: nowrap;
+      }
+      .resize-handle {
+        width: 4px; cursor: col-resize; background: transparent;
+        transition: background 0.15s; flex-shrink: 0; position: relative;
+      }
+      .resize-handle:hover, .resize-handle:active {
+        background: var(--accent, #7C3AED);
+      }
+      .resize-handle::after {
+        content: ''; position: absolute; top: 50%; left: -3px; right: -3px;
+        height: 40px; transform: translateY(-50%);
+      }
 
       /* ── Chat bubble mode ───────────────────────────── */
       .bubbles-on .msg-row { padding-left: 16px; padding-right: 16px; }
@@ -932,6 +956,10 @@ export default function App() {
   // Device verification is optional — handled in Settings > Security, no banner.
   const [serverEmoji, setServerEmoji] = useState<CustomEmoji[]>([]);
   const [panel, setPanel] = useState<'members' | 'search' | 'thread' | null>('members');
+  const [memberPanelW, setMemberPanelW] = useState(() => {
+    const saved = parseInt(localStorage.getItem('d_member_panel_w') || '', 10);
+    return saved >= 180 && saved <= 400 ? saved : 240;
+  });
   const [threadParent, setThreadParent] = useState<Msg | null>(null);
   const [threadReplies, setThreadReplies] = useState<Msg[]>([]);
   const [profileCard, setProfileCard] = useState<{ userId: string; pos: { x: number; y: number } } | null>(null);
@@ -2743,7 +2771,7 @@ export default function App() {
               <span /><span /><span />
             </button>
           )}
-          {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }}>{curChannel.name}</span>
+          {view === 'server' && curChannel && (<><I.Hash s={18} /><span style={{ fontWeight: 700, fontSize: 15 }} title={layoutMode.isPower ? `ch:${curChannel.id}` : undefined}>{curChannel.name}</span>
             <div onClick={async () => { setShowPinned(p => !p); if (!showPinned && curServer && curChannel) { try { const pins = await api.getPinnedMessages(curServer.id, curChannel.id); setPinnedMsgs(Array.isArray(pins) ? pins : []); } catch { setPinnedMsgs([]); } } }} style={{ cursor: 'pointer', color: showPinned ? T.ac : T.mt, padding: '2px 6px', display: 'flex', alignItems: 'center', marginLeft: 6 }} title="Pinned Messages" aria-label="Pinned Messages">
               <I.Pin s={14} />
             </div>
@@ -2826,7 +2854,7 @@ export default function App() {
             </div>
             {/* Search (server view only, before bell) */}
             {view === 'server' && (
-              <div className="touch-target" onClick={() => setChannelSearchOpen(p => !p)} style={{ cursor: 'pointer', color: channelSearchOpen ? T.ac : T.mt, padding: 4 }} title="Search messages"><I.Search s={16} /></div>
+              <div className="touch-target" onClick={() => setChannelSearchOpen(p => !p)} style={{ cursor: 'pointer', color: channelSearchOpen ? T.ac : T.mt, padding: 4, display: 'flex', alignItems: 'center' }} title="Search messages"><I.Search s={16} /><span className="kbd-hint">Ctrl+F</span></div>
             )}
             {/* Bell icon with server-backed notification inbox */}
             <NotificationInbox wsLastEvent={wsLastEvent} me={me} onNavigate={async (action) => {
@@ -2872,7 +2900,7 @@ export default function App() {
             </button>
             {/* Members toggle (server view only, last) */}
             {view === 'server' && (
-              <div className="touch-target" onClick={() => setPanel(panel === 'members' ? null : 'members')} style={{ cursor: 'pointer', color: panel === 'members' ? T.ac : T.mt, padding: 4, display: 'flex', alignItems: 'center', gap: 4 }} title="Members"><I.Users s={16} /> <span style={{ fontSize: 11 }}>{members.length}</span></div>
+              <div className="touch-target" onClick={() => setPanel(panel === 'members' ? null : 'members')} style={{ cursor: 'pointer', color: panel === 'members' ? T.ac : T.mt, padding: 4, display: 'flex', alignItems: 'center', gap: 4 }} title="Members"><I.Users s={16} /> <span style={{ fontSize: 11 }}>{members.length}</span><span className="kbd-hint">Ctrl+U</span></div>
             )}
           </div>
         </div>
@@ -3448,6 +3476,7 @@ export default function App() {
             onJoinedServer={loadServers}
             voiceBaseUrl={api.baseUrl}
             channelTtlSeconds={disappearingEnabled ? (curChannel?.ttl_seconds ?? (curDm?.ttl_seconds ?? null)) : null}
+            showIds={layoutMode.isPower}
             msgEndRef={msgEndRef}
           />
 
@@ -3535,8 +3564,27 @@ export default function App() {
       )}
 
       {/* ═══ Right Panel ═══ */}
+      {view === 'server' && !openThread && panel === 'members' && layoutMode.isPower && (
+        <div className="resize-handle" onMouseDown={e => {
+          e.preventDefault();
+          const startX = e.clientX;
+          const startW = memberPanelW;
+          let lastW = startW;
+          const onMove = (ev: MouseEvent) => {
+            lastW = Math.max(180, Math.min(400, startW - (ev.clientX - startX)));
+            setMemberPanelW(lastW);
+          };
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            localStorage.setItem('d_member_panel_w', String(lastW));
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }} />
+      )}
       {view === 'server' && !openThread && panel === 'members' && (showMembersSkeleton && members.length === 0 ? (
-        <div className="member-panel" style={{ width: 240, minWidth: 240, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: 16 }}>
+        <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderLeft: `1px solid ${T.bd}`, padding: 16 }}>
           <SkeletonBar w="45%" h={9} mb={14} />
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, animation: `fadeIn 0.3s ${i * 0.06}s both` }}>
@@ -3572,7 +3620,7 @@ export default function App() {
         const groups = Array.from(roleMap.values()).filter(g => g.members.length > 0).sort((a, b) => a.position - b.position);
 
         return (
-          <div className="member-panel" style={{ width: 240, minWidth: 240, background: T.sf, borderLeft: `1px solid ${T.bd}`, overflowY: 'auto', padding: 12 }}>
+          <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderLeft: `1px solid ${T.bd}`, overflowY: 'auto', padding: 12 }}>
             {groups.map(group => (
               <div key={group.name}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: group.color, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 0 4px', display: 'flex', justifyContent: 'space-between' }}>
