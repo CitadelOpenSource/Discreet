@@ -117,7 +117,7 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
 mod tests {
     use super::*;
     use axum::{body::Body, http::Request, routing::get, Router};
-    use tower::util::ServiceExt;
+    use tower::ServiceExt;
 
     async fn build_app() -> Router {
         Router::new()

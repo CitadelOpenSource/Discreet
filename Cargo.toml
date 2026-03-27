@@ -21,10 +21,10 @@ pq = ["dep:ml-kem", "dep:ml-dsa"]
 
 [dependencies]
 # ── Web framework ─────────────────────────────────────────
-axum = { version = "0.7", features = ["ws", "macros", "multipart"] }
-axum-extra = { version = "0.9", features = ["typed-header"] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "fs"] }
+axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
 hyper = { version = "1.0", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 
@@ -46,7 +46,7 @@ redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
 # ── Auth ──────────────────────────────────────────────────
 argon2 = "0.5"
 bip39 = "2.2"                    # BIP-39 mnemonic seed phrases for anonymous registration
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 oauth2 = "5"
 url = "2"                    # WebAuthn RP origin parsing
@@ -96,7 +96,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-thiserror = "1"
+thiserror = "2"
 dotenvy = "0.15"
 envy = "0.4"
 async-trait = "0.1"

@@ -9,11 +9,11 @@
 //   GET    /servers/:id                     — Get server details
 //   PATCH  /servers/:id                     — Update server (owner only)
 //   DELETE /servers/:id                     — Delete server (owner only)
-//   POST   /servers/:id/join               — Join via invite code
-//   POST   /servers/:id/leave              — Leave a server
-//   GET    /servers/:id/members            — List server members
-//   POST   /servers/:id/invites            — Create an invite
-//   GET    /servers/:id/invites            — List active invites (owner/admin)
+//   POST   /servers/{id}/join               — Join via invite code
+//   POST   /servers/{id}/leave              — Leave a server
+//   GET    /servers/{id}/members            — List server members
+//   POST   /servers/{id}/invites            — Create an invite
+//   GET    /servers/{id}/invites            — List active invites (owner/admin)
 
 use axum::{
     extract::{Json, Path, Query, State},
@@ -189,8 +189,8 @@ pub async fn create_server(
     }
 
     // Tier limit: max servers per user.
-    let user_tier = sqlx::query_scalar!(
-        "SELECT account_tier FROM users WHERE id = $1",
+    let user_tier: String = sqlx::query_scalar!(
+        "SELECT account_tier::text as \"account_tier!\" FROM users WHERE id = $1",
         auth.user_id,
     )
     .fetch_one(&state.db)
@@ -798,7 +798,7 @@ pub async fn delete_server(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── POST /servers/:id/join ─────────────────────────────────────────────
+// ─── POST /servers/{id}/join ─────────────────────────────────────────────
 
 pub async fn join_server(
     auth: AuthUser,
@@ -861,8 +861,8 @@ pub async fn join_server(
     }
 
     // Tier limit: max members per server (based on server owner's tier).
-    let owner_tier = sqlx::query_scalar!(
-        "SELECT u.account_tier FROM servers s JOIN users u ON u.id = s.owner_id WHERE s.id = $1",
+    let owner_tier: String = sqlx::query_scalar!(
+        "SELECT u.account_tier::text as \"account_tier!\" FROM servers s JOIN users u ON u.id = s.owner_id WHERE s.id = $1",
         server_id,
     )
     .fetch_one(&state.db)
@@ -898,7 +898,7 @@ pub async fn join_server(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── POST /servers/:id/leave ────────────────────────────────────────────
+// ─── POST /servers/{id}/leave ────────────────────────────────────────────
 
 pub async fn leave_server(
     auth: AuthUser,
@@ -937,7 +937,7 @@ pub async fn leave_server(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── GET /servers/:id/members ───────────────────────────────────────────
+// ─── GET /servers/{id}/members ───────────────────────────────────────────
 
 pub async fn list_members(
     auth: AuthUser,
@@ -986,14 +986,14 @@ pub async fn list_members(
     Ok(Json(members))
 }
 
-// ─── PATCH /servers/:id/notification-level ──────────────────────────────
+// ─── PATCH /servers/{id}/notification-level ──────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateNotificationLevelRequest {
     pub notification_level: String,
 }
 
-/// PATCH /servers/:id/notification-level — set per-server notification preference.
+/// PATCH /servers/{id}/notification-level — set per-server notification preference.
 pub async fn set_notification_level(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -1020,7 +1020,7 @@ pub async fn set_notification_level(
     Ok(Json(serde_json::json!({ "notification_level": req.notification_level })))
 }
 
-// ─── PATCH /servers/:id/visibility ──────────────────────────────────────
+// ─── PATCH /servers/{id}/visibility ──────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct SetVisibilityRequest {
@@ -1028,7 +1028,7 @@ pub struct SetVisibilityRequest {
     pub visibility_override: Option<String>,
 }
 
-/// PATCH /servers/:id/visibility — set per-server online appearance.
+/// PATCH /servers/{id}/visibility — set per-server online appearance.
 pub async fn set_visibility_override(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -1068,7 +1068,7 @@ pub async fn set_visibility_override(
     Ok(Json(serde_json::json!({ "visibility_override": req.visibility_override })))
 }
 
-// ─── POST /servers/:id/invites ──────────────────────────────────────────
+// ─── POST /servers/{id}/invites ──────────────────────────────────────────
 
 pub async fn create_invite(
     auth: AuthUser,
@@ -1124,7 +1124,7 @@ pub async fn create_invite(
     ))
 }
 
-// ─── GET /servers/:id/invites ───────────────────────────────────────────
+// ─── GET /servers/{id}/invites ───────────────────────────────────────────
 
 pub async fn list_invites(
     auth: AuthUser,
@@ -1161,7 +1161,7 @@ pub async fn list_invites(
     Ok(Json(invites))
 }
 
-// ─── POST /servers/:id/vanity ───────────────────────────────────────────
+// ─── POST /servers/{id}/vanity ───────────────────────────────────────────
 
 pub async fn set_server_vanity(
     auth: AuthUser,
@@ -1306,7 +1306,7 @@ fn generate_invite_code() -> String {
         .collect()
 }
 
-// ─── PUT /servers/:id/members/:user_id/nickname ────────────────────────
+// ─── PUT /servers/{id}/members/:user_id/nickname ────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct SetNicknameRequest {
@@ -1374,7 +1374,7 @@ pub async fn set_nickname(
     })))
 }
 
-// ─── GET /servers/:id/members/search?q=... ─────────────────────────────
+// ─── GET /servers/{id}/members/search?q=... ─────────────────────────────
 
 /// Search server members by username, display name, or nickname.
 pub async fn search_members(
@@ -1433,7 +1433,7 @@ pub struct SearchMembersQuery {
     pub q: String,
 }
 
-// ─── POST /servers/:id/bots ────────────────────────────────────────────
+// ─── POST /servers/{id}/bots ────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBotRequest {
@@ -1554,7 +1554,7 @@ pub async fn create_bot(
     ))
 }
 
-// ─── GET /servers/:id/bots ─────────────────────────────────────────────
+// ─── GET /servers/{id}/bots ─────────────────────────────────────────────
 
 pub async fn list_bots(
     auth: AuthUser,
@@ -1590,7 +1590,7 @@ pub async fn list_bots(
     Ok(Json(bots))
 }
 
-// ─── POST /servers/:id/archive ──────────────────────────────────────────
+// ─── POST /servers/{id}/archive ──────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveRequest {
@@ -1656,7 +1656,7 @@ pub async fn archive_server(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── POST /servers/:id/schedule-deletion ────────────────────────────────
+// ─── POST /servers/{id}/schedule-deletion ────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct ScheduleDeletionRequest {
@@ -1918,7 +1918,7 @@ pub async fn list_inactive_servers(
     Ok(Json(servers))
 }
 
-// ─── POST /admin/servers/:id/archive (admin override) ───────────────────
+// ─── POST /admin/servers/{id}/archive (admin override) ───────────────────
 
 pub async fn admin_archive_server(
     caller: crate::discreet_platform_permissions::PlatformUser,
@@ -1973,7 +1973,7 @@ pub async fn admin_archive_server(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── POST /admin/servers/:id/schedule-deletion (admin override) ─────────
+// ─── POST /admin/servers/{id}/schedule-deletion (admin override) ─────────
 
 pub async fn admin_schedule_deletion(
     caller: crate::discreet_platform_permissions::PlatformUser,
@@ -2037,27 +2037,27 @@ pub fn server_routes() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
         .route("/servers", post(create_server))
         .route("/servers", get(list_servers))
-        .route("/servers/:id", get(get_server))
-        .route("/servers/:id", patch(update_server))
-        .route("/servers/:id", delete(delete_server))
-        .route("/servers/:id/join", post(join_server))
-        .route("/servers/:id/leave", post(leave_server))
-        .route("/servers/:id/members", get(list_members))
-        .route("/servers/:id/members/search", get(search_members))
-        .route("/servers/:id/invites", post(create_invite))
-        .route("/servers/:id/invites", get(list_invites))
-        .route("/servers/:id/vanity", post(set_server_vanity))
-        .route("/servers/:id/bots", post(create_bot))
-        .route("/servers/:id/bots", get(list_bots))
-        .route("/servers/:id/archive", post(archive_server))
-        .route("/servers/:id/schedule-deletion", post(schedule_server_deletion))
-        .route("/invites/:code", get(resolve_invite_code))
+        .route("/servers/{id}", get(get_server))
+        .route("/servers/{id}", patch(update_server))
+        .route("/servers/{id}", delete(delete_server))
+        .route("/servers/{id}/join", post(join_server))
+        .route("/servers/{id}/leave", post(leave_server))
+        .route("/servers/{id}/members", get(list_members))
+        .route("/servers/{id}/members/search", get(search_members))
+        .route("/servers/{id}/invites", post(create_invite))
+        .route("/servers/{id}/invites", get(list_invites))
+        .route("/servers/{id}/vanity", post(set_server_vanity))
+        .route("/servers/{id}/bots", post(create_bot))
+        .route("/servers/{id}/bots", get(list_bots))
+        .route("/servers/{id}/archive", post(archive_server))
+        .route("/servers/{id}/schedule-deletion", post(schedule_server_deletion))
+        .route("/invites/{code}", get(resolve_invite_code))
 }
 
 pub fn server_admin_routes() -> axum::Router<Arc<AppState>> {
     use axum::routing::{get, post};
     axum::Router::new()
         .route("/admin/inactive-servers", get(list_inactive_servers))
-        .route("/admin/servers/:id/archive", post(admin_archive_server))
-        .route("/admin/servers/:id/schedule-deletion", post(admin_schedule_deletion))
+        .route("/admin/servers/{id}/archive", post(admin_archive_server))
+        .route("/admin/servers/{id}/schedule-deletion", post(admin_schedule_deletion))
 }

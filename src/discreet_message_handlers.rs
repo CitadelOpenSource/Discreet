@@ -6,8 +6,8 @@
 // Clients encrypt before sending and decrypt after receiving.
 //
 // Endpoints:
-//   POST   /channels/:channel_id/messages           — Send encrypted message
-//   GET    /channels/:channel_id/messages           — Get message history (paginated)
+//   POST   /channels/{channel_id}/messages           — Send encrypted message
+//   GET    /channels/{channel_id}/messages           — Get message history (paginated)
 //   PATCH  /messages/:id                            — Edit message (replace ciphertext)
 //   DELETE /messages/:id                            — Soft-delete message
 
@@ -115,7 +115,7 @@ pub struct MessageInfo {
     pub mentioned_user_ids: Option<serde_json::Value>,
 }
 
-// ─── POST /channels/:channel_id/messages ────────────────────────────────
+// ─── POST /channels/{channel_id}/messages ────────────────────────────────
 
 pub async fn send_message(
     auth: AuthUser,
@@ -872,7 +872,7 @@ pub async fn send_message(
     ))
 }
 
-// ─── GET /channels/:channel_id/messages ─────────────────────────────────
+// ─── GET /channels/{channel_id}/messages ─────────────────────────────────
 
 pub async fn get_messages(
     auth: AuthUser,
@@ -1119,7 +1119,7 @@ pub async fn delete_message(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── POST /channels/:channel_id/messages/bulk-delete ─────────────────
+// ─── POST /channels/{channel_id}/messages/bulk-delete ─────────────────
 
 /// Bulk soft-delete messages by IDs. Owner/mod only. Used by client-side
 /// word search: client decrypts messages, finds matches, sends IDs here.
@@ -1191,7 +1191,7 @@ pub async fn bulk_delete_messages(
     Ok(Json(serde_json::json!({ "deleted": count })))
 }
 
-// ─── GET /channels/:channel_id/messages/search ──────────────────────────
+// ─── GET /channels/{channel_id}/messages/search ──────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParams {
@@ -1255,7 +1255,7 @@ fn encode_base64(data: &[u8]) -> String {
     STANDARD.encode(data)
 }
 
-// ─── GET /messages/:id/thread ─────────────────────────────────────────
+// ─── GET /messages/{id}/thread ─────────────────────────────────────────
 
 pub async fn get_thread_replies(
     auth: AuthUser,
@@ -1316,11 +1316,11 @@ pub async fn get_thread_replies(
 pub fn message_routes() -> axum::Router<Arc<AppState>> {
     use axum::routing::{delete, get, patch, post};
     axum::Router::new()
-        .route("/channels/:channel_id/messages", post(send_message))
-        .route("/channels/:channel_id/messages", get(get_messages))
-        .route("/channels/:channel_id/messages/search", get(search_messages))
-        .route("/channels/:channel_id/messages/bulk-delete", post(bulk_delete_messages))
-        .route("/messages/:id", patch(edit_message))
-        .route("/messages/:id", delete(delete_message))
-        .route("/messages/:id/thread", get(get_thread_replies))
+        .route("/channels/{channel_id}/messages", post(send_message))
+        .route("/channels/{channel_id}/messages", get(get_messages))
+        .route("/channels/{channel_id}/messages/search", get(search_messages))
+        .route("/channels/{channel_id}/messages/bulk-delete", post(bulk_delete_messages))
+        .route("/messages/{id}", patch(edit_message))
+        .route("/messages/{id}", delete(delete_message))
+        .route("/messages/{id}/thread", get(get_thread_replies))
 }

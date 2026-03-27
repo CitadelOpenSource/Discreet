@@ -8,11 +8,10 @@
 // so that permission changes take effect within 30 seconds without re-login.
 
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{header, request::Parts},
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -140,7 +139,6 @@ pub async fn invalidate_user_cache(state: &AppState, user_id: Uuid) {
         .await;
 }
 
-#[async_trait]
 impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
     type Rejection = AppError;
 
@@ -159,7 +157,7 @@ impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
             .ok_or_else(|| AppError::Unauthorized("Invalid Authorization format".into()))?;
 
         let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
-        let validation = Validation::default();
+        let validation = Validation::new(Algorithm::HS256);
 
         let token_data = decode::<Claims>(token, &key, &validation)
             .map_err(|e| AppError::Unauthorized(format!("Invalid token: {e}")))?;
@@ -257,5 +255,23 @@ impl FromRequestParts<std::sync::Arc<AppState>> for AuthUser {
             is_banned: user_state.is_banned,
             is_guest: user_state.is_guest,
         })
+    }
+}
+
+/// Allows `Option<AuthUser>` in handler signatures. If auth fails, the handler
+/// receives `None` instead of a rejection — used for endpoints accessible to
+/// both authenticated and unauthenticated users (e.g. error telemetry).
+impl axum::extract::OptionalFromRequestParts<std::sync::Arc<AppState>> for AuthUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &std::sync::Arc<AppState>,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        Ok(
+            <Self as FromRequestParts<std::sync::Arc<AppState>>>::from_request_parts(parts, state)
+                .await
+                .ok()
+        )
     }
 }

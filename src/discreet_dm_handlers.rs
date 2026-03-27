@@ -10,8 +10,8 @@
 // Endpoints:
 //   POST   /api/v1/dms                        — Create or get DM channel with a user
 //   GET    /api/v1/dms                        — List all DM channels
-//   GET    /api/v1/dms/:id/messages          — Get DM message history
-//   POST   /api/v1/dms/:id/messages          — Send encrypted DM
+//   GET    /api/v1/dms/{id}/messages          — Get DM message history
+//   POST   /api/v1/dms/{id}/messages          — Send encrypted DM
 
 use axum::{
     extract::{Json, Path, Query, State},
@@ -221,7 +221,7 @@ pub async fn list_dms(
     Ok(Json(serde_json::json!({ "channels": channels })))
 }
 
-// ─── POST /api/v1/dms/:id/messages ────────────────────────────────────
+// ─── POST /api/v1/dms/{id}/messages ────────────────────────────────────
 
 /// Send an encrypted DM. The server stores only ciphertext.
 pub async fn send_dm(
@@ -287,7 +287,7 @@ pub async fn send_dm(
     ))
 }
 
-// ─── GET /api/v1/dms/:id/messages ─────────────────────────────────────
+// ─── GET /api/v1/dms/{id}/messages ─────────────────────────────────────
 
 /// Get DM message history (paginated). Returns encrypted ciphertext.
 pub async fn get_dm_messages(
@@ -384,6 +384,6 @@ pub fn dm_routes() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
         .route("/dms", post(create_dm))
         .route("/dms", get(list_dms))
-        .route("/dms/:id/messages", post(send_dm))
-        .route("/dms/:id/messages", get(get_dm_messages))
+        .route("/dms/{id}/messages", post(send_dm))
+        .route("/dms/{id}/messages", get(get_dm_messages))
 }

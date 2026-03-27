@@ -19,7 +19,7 @@ use axum::{
     http::{header, HeaderMap},
     response::IntoResponse,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -174,7 +174,7 @@ pub async fn ws_connect(
         Duration::from_secs(10),
         async {
             let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
-            let validation = Validation::default();
+            let validation = Validation::new(Algorithm::HS256);
             let token_data = decode::<Claims>(&token, &key, &validation)
                 .map_err(|e| AppError::Unauthorized(format!("Invalid token: {e}")))?;
 
@@ -294,7 +294,7 @@ async fn handle_ws(
         "username": username,
         "presence": presence_map,
     });
-    if socket.send(Message::Text(welcome.to_string())).await.is_err() {
+    if socket.send(Message::Text(welcome.to_string().into())).await.is_err() {
         state.remove_presence(user_id, server_id).await;
         return;
     }
@@ -387,13 +387,13 @@ async fn handle_ws(
                                 v.to_string()
                             } else { msg }
                         } else { msg };
-                        if socket.send(Message::Text(forwarded)).await.is_err() {
+                        if socket.send(Message::Text(forwarded.into())).await.is_err() {
                             break;
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         let lag_msg = serde_json::json!({ "type": "lagged", "missed": n });
-                        let _ = socket.send(Message::Text(lag_msg.to_string())).await;
+                        let _ = socket.send(Message::Text(lag_msg.to_string().into())).await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
@@ -440,7 +440,7 @@ async fn handle_ws(
                             // cannot access the WebSocket sender).
                             if msg.msg_type == "ws_ping" {
                                 let _ = socket.send(Message::Text(
-                                    serde_json::json!({ "type": "ws_pong" }).to_string()
+                                    serde_json::json!({ "type": "ws_pong" }).to_string().into()
                                 )).await;
                             // Block guests from voice channels.
                             } else if is_guest && (msg.msg_type == "voice_join" || msg.msg_type == "force_voice_join") {
@@ -448,7 +448,7 @@ async fn handle_ws(
                                     "type": "error",
                                     "message": "Guests cannot join voice channels. Register an account first (Settings \u{2192} Profile \u{2192} Upgrade).",
                                 });
-                                let _ = socket.send(Message::Text(err.to_string())).await;
+                                let _ = socket.send(Message::Text(err.to_string().into())).await;
                             } else {
                                 handle_client_message(&state, &msg, server_id, user_id, &username).await;
                             }

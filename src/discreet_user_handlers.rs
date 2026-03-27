@@ -1252,6 +1252,6 @@ pub fn user_routes() -> axum::Router<Arc<AppState>> {
         .route("/users/@me/status", put(update_status))
         .route("/users/@me/settings", get(get_user_settings).put(update_user_settings))
         .route("/users/@me/servers", get(list_my_servers))
-        .route("/users/:id", get(get_user))
-        .route("/users/:id/shared-servers", get(get_shared_servers))
+        .route("/users/{id}", get(get_user))
+        .route("/users/{id}/shared-servers", get(get_shared_servers))
 }

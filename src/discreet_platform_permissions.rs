@@ -19,7 +19,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -165,7 +165,6 @@ impl PlatformUser {
     }
 }
 
-#[async_trait]
 impl FromRequestParts<Arc<AppState>> for PlatformUser {
     type Rejection = AppError;
 

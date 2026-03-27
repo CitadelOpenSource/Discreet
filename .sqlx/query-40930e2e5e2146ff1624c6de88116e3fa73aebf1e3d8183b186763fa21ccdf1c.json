@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.account_tier::text as \"account_tier!\" FROM servers s JOIN users u ON u.id = s.owner_id WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_tier!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "40930e2e5e2146ff1624c6de88116e3fa73aebf1e3d8183b186763fa21ccdf1c"
+}

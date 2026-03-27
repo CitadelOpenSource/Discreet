@@ -10,7 +10,7 @@
 //! - Redis cache with 1-hour TTL
 //! - Requires authentication (JWT)
 
-use axum::{extract::Query, response::IntoResponse, Extension, Json};
+use axum::{extract::{Query, State}, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
@@ -128,7 +128,7 @@ fn extract_og(html: &str) -> LinkPreviewResponse {
 /// GET /api/v1/link-preview?url=<url>
 pub async fn link_preview_handler(
     _auth: AuthUser,
-    Extension(state): Extension<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Query(q): Query<LinkPreviewQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let url = q.url.trim().to_string();
