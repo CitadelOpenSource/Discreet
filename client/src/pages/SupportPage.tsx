@@ -3,21 +3,26 @@
  * Crypto donations, sponsorship links, and enterprise contact.
  */
 import React, { useState } from 'react';
+import { getLandingColors } from '../hooks/useLandingTheme';
+import { PublicHeader } from '../components/PublicHeader';
 
 const BTC_ADDRESS = 'bc1qXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 const ETH_ADDRESS = '0xXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 const XMR_ADDRESS = '4XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
-const COLORS = {
-  bg: '#07090f',
-  card: '#0b0d15',
-  card2: '#0f1119',
-  border: '#181c2a',
-  text: '#dde0ea',
-  muted: '#5a6080',
-  accent: '#00d4aa',
-  accentHover: '#009e7e',
-};
+function getColors() {
+  const C = getLandingColors();
+  return {
+    bg: C.bg,
+    card: C.sf,
+    card2: C.sf2,
+    border: C.bd,
+    text: C.tx,
+    muted: C.mt,
+    accent: C.ac,
+    accentHover: '#6D28D9',
+  };
+}
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -94,6 +99,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function SupportPage() {
+  const COLORS = getColors();
   return (
     <div style={{
       minHeight: '100vh',
@@ -104,7 +110,8 @@ export default function SupportPage() {
       alignItems: 'center',
       padding: '48px 16px',
     }}>
-      <div style={{ maxWidth: 560, width: '100%' }}>
+      <PublicHeader />
+      <div style={{ maxWidth: 560, width: '100%', paddingTop: 56 }}>
         <button
           onClick={() => window.history.back()}
           style={{

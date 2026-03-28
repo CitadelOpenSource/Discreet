@@ -7,14 +7,72 @@
 import React from 'react';
 
 // ── Hardcoded theme values (ErrorBoundary can't use T — it may have crashed) ─
-const BG   = '#07090f';
-const SF   = '#0b0d15';
-const BD   = '#181c2a';
-const TX   = '#dde0ea';
-const MT   = '#5a6080';
-const AC   = '#00d4aa';
-const ERR  = '#ff4757';
-const WARN = '#ffa502';
+// Reads website preference so the error page matches what the user was seeing.
+function getErrorTheme() {
+  try {
+    const pref = localStorage.getItem('d_landing_theme');
+    if (pref === 'light') return 'light';
+    const auth = localStorage.getItem('discreet-theme-preference');
+    if (auth === 'dawn' || auth === 'daylight') return 'light';
+  } catch { /* localStorage unavailable */ }
+  return 'dark';
+}
+
+const DARK_COLORS  = { BG: '#07090f', SF: '#0b0d15', BD: '#181c2a', TX: '#dde0ea', MT: '#5a6080' };
+const LIGHT_COLORS = { BG: '#F5F3F0', SF: '#EDEAE6', BD: 'rgba(0,0,0,0.12)', TX: '#1a1a2e', MT: '#6b7280' };
+const _lt = getErrorTheme() === 'light';
+const BG   = _lt ? LIGHT_COLORS.BG : DARK_COLORS.BG;
+const SF   = _lt ? LIGHT_COLORS.SF : DARK_COLORS.SF;
+const BD   = _lt ? LIGHT_COLORS.BD : DARK_COLORS.BD;
+const TX   = _lt ? LIGHT_COLORS.TX : DARK_COLORS.TX;
+const MT   = _lt ? LIGHT_COLORS.MT : DARK_COLORS.MT;
+const AC   = '#7C3AED';
+const ERR  = '#dc2626';
+const WARN = '#f59e0b';
+
+// ── Crash report helper ──────────────────────────────────────────────────────
+// Strips absolute file paths from stack traces to avoid leaking local dev paths.
+function sanitizeStack(stack: string): string {
+  return stack.replace(/(?:[A-Z]:)?\/[^\s)]+\/(src\/)/gi, '$1')
+              .replace(/(?:[A-Z]:\\)[^\s)]+\\(src\\)/gi, '$1');
+}
+
+function sendCrashReport(message: string, stack: string, component: string) {
+  if (!import.meta.env.PROD) return;
+  try {
+    const body = JSON.stringify({
+      error_message: (message || '').slice(0, 500),
+      stack: sanitizeStack((stack || '').slice(0, 4000)),
+      component,
+      url: window.location.pathname,
+      browser: navigator.userAgent,
+      severity: 'critical',
+      timestamp: new Date().toISOString(),
+    });
+    fetch(`${window.location.origin}/api/v1/errors/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).catch(() => {});
+  } catch { /* best effort */ }
+}
+
+/** Attach global handlers for uncaught errors and unhandled rejections. */
+export function setupGlobalErrorHandlers() {
+  window.onerror = (_msg, _source, _line, _col, error) => {
+    sendCrashReport(
+      error?.message || String(_msg || 'Unknown error'),
+      error?.stack || `at ${_source || 'unknown'}:${_line || 0}:${_col || 0}`,
+      'window.onerror',
+    );
+  };
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    const message = reason instanceof Error ? reason.message : String(reason || 'Unhandled rejection');
+    const stack = reason instanceof Error ? (reason.stack || '') : '';
+    sendCrashReport(message, stack, 'unhandledrejection');
+  });
+}
 
 // ── Error code → user-friendly info ─────────────────────────────────────────
 
@@ -71,7 +129,7 @@ function ErrorPage({
       }}>
         {/* Logo — inline SVG (ErrorBoundary can't import lucide-react safely) */}
         <div style={{ marginBottom: 24 }}>
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={AC} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 12px ${AC})`, marginBottom: 8 }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={TX} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 12px ${AC}44)`, marginBottom: 8 }}>
             <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
@@ -154,8 +212,8 @@ function ErrorPage({
           {onLogin && (
             <button onClick={onLogin} style={{
               padding: '10px 24px', borderRadius: 8, border: 'none',
-              background: `linear-gradient(135deg, ${AC}, #009e7e)`,
-              color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              background: AC,
+              color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
             }}>
               Log In
             </button>
@@ -163,8 +221,8 @@ function ErrorPage({
           {onReload && (
             <button onClick={onReload} style={{
               padding: '10px 24px', borderRadius: 8, border: 'none',
-              background: `linear-gradient(135deg, ${AC}, #009e7e)`,
-              color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              background: AC,
+              color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
             }}>
               Reload
             </button>
@@ -259,22 +317,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
-
-    // Report to server in production
-    if (import.meta.env.PROD) {
-      const report = {
-        component: this.props.name || 'root',
-        error_message: error.message,
-        stack: errorInfo.componentStack || error.stack || '',
-        timestamp: new Date().toISOString(),
-        browser: navigator.userAgent,
-      };
-      fetch(`${window.location.origin}/api/v1/errors/report`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(report),
-      }).catch(() => { /* best effort */ });
-    }
+    sendCrashReport(error.message, errorInfo.componentStack || error.stack || '', this.props.name || 'root');
   }
 
   handleRetry = () => {
@@ -332,7 +375,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: showDetails ? 12 : 0 }}>
               <button onClick={this.handleRetry} style={{
                 padding: '8px 20px', borderRadius: 8, border: 'none',
-                background: 'var(--accent, #00d4aa)', color: '#000',
+                background: `var(--accent, ${AC})`, color: '#fff',
                 fontSize: 13, fontWeight: 700, cursor: 'pointer',
               }}>
                 Retry
@@ -383,10 +426,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     return (
       <>
         <ErrorPage
-          title="Something Went Wrong"
-          description="An unexpected error occurred in the application. You can try reloading or report this bug to help us fix it."
-          icon="💥"
-          color={ERR}
+          title="Something Unexpected Happened"
+          description="Our team has been notified. You can try reloading or report additional details to help us fix it faster."
+          icon="⚠️"
+          color={AC}
           code={errorName !== 'Error' ? errorName : 'REACT_ERROR'}
           details={details}
           onReload={this.handleReload}

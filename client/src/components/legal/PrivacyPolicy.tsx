@@ -4,11 +4,12 @@
  */
 import React from 'react';
 import { getLandingColors } from '../../hooks/useLandingTheme';
+import { PublicHeader } from '../PublicHeader';
 
 function useS() {
   const C = getLandingColors();
   return {
-    page: { background: C.bg, color: C.tx, minHeight: '100vh', height: '100vh', overflowY: 'auto', padding: '60px 24px 80px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 } as React.CSSProperties,
+    page: { background: C.bg, color: C.tx, minHeight: '100vh', height: '100vh', overflowY: 'auto', padding: '80px 24px 80px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 } as React.CSSProperties,
     wrap: { maxWidth: 720, margin: '0 auto' } as React.CSSProperties,
     h1: { fontSize: 32, fontWeight: 800, marginBottom: 8, letterSpacing: -0.5 } as React.CSSProperties,
     updated: { fontSize: 13, color: C.mt, marginBottom: 40 } as React.CSSProperties,
@@ -28,9 +29,8 @@ export function PrivacyPolicy() {
   const S = useS();
   return (
     <div style={S.page}>
+      <PublicHeader />
       <div style={S.wrap}>
-        <a href="/" style={S.back}>&larr; Back to Discreet</a>
-
         <h1 style={S.h1}>Privacy Policy</h1>
         <div style={S.updated}>Last updated: March 20, 2026</div>
 

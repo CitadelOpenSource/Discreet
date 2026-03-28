@@ -1,7 +1,7 @@
 import './kernel/trusted-types';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary, setupGlobalErrorHandlers } from './components/ErrorBoundary';
 import { TimezoneProvider } from './hooks/TimezoneContext';
 import { MobileProvider } from './contexts/MobileContext';
 import { LayoutProvider } from './contexts/LayoutContext';
@@ -10,11 +10,12 @@ import './i18n/i18n';
 import './fonts.css';
 import './skins.css';
 
-// Initialize MLS WASM module before rendering
+setupGlobalErrorHandlers();
+
 initCrypto().then(() => {
-  console.log('[main] Crypto initialized, rendering app...');
+  console.log('[main] Crypto initialized');
 }).catch(() => {
-  console.warn('[main] WASM crypto unavailable, using legacy mode');
+  console.warn('[main] WASM crypto unavailable, using legacy path');
 });
 
 // Detect /meet/:code URL (e.g. /meet/ABC123)
@@ -33,8 +34,8 @@ const App = React.lazy(() => import('./App'));
 const GuestMeetingJoin = React.lazy(() =>
   import('./components/GuestMeetingJoin').then(m => ({ default: m.GuestMeetingJoin }))
 );
-const PrivacyPolicy = React.lazy(() => import('./components/PrivacyPolicy'));
-const TermsOfService = React.lazy(() => import('./components/TermsOfService'));
+const PrivacyPolicy = React.lazy(() => import('./components/legal/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = React.lazy(() => import('./components/legal/TermsOfService').then(m => ({ default: m.TermsOfService })));
 const TierComparisonPage = React.lazy(() =>
   import('./components/TierComparisonPage').then(m => ({ default: m.TierComparisonPage }))
 );

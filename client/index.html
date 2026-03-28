@@ -20,10 +20,11 @@
   <link rel="manifest" href="/manifest.json" />
   <script>
   (function(){
+    var lt=localStorage.getItem('d_landing_theme');
     var t=localStorage.getItem('d_theme')||localStorage.getItem('discreet-theme-preference');
     if(!t)t=window.matchMedia('(prefers-color-scheme:dark)').matches?'midnight':'dawn';
     document.documentElement.setAttribute('data-theme',t);
-    var light=t==='dawn'||t==='light'||t==='daylight';
+    var light=lt==='light'||t==='dawn'||t==='light'||t==='daylight';
     document.documentElement.style.background=light?'#F5F3F0':'#07090f';
     document.documentElement.style.colorScheme=light?'light':'dark';
   })();

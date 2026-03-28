@@ -4,11 +4,12 @@
  */
 import React from 'react';
 import { getLandingColors } from '../../hooks/useLandingTheme';
+import { PublicHeader } from '../PublicHeader';
 
 function S() {
   const C = getLandingColors();
   return {
-    page: { background: C.bg, color: C.tx, minHeight: '100vh', padding: '60px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 } as React.CSSProperties,
+    page: { background: C.bg, color: C.tx, minHeight: '100vh', padding: '80px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif', lineHeight: 1.7 } as React.CSSProperties,
     wrap: { maxWidth: 720, margin: '0 auto' } as React.CSSProperties,
     back: { display: 'inline-block', marginBottom: 32, color: C.ac, textDecoration: 'none', fontSize: 14, fontWeight: 600 } as React.CSSProperties,
     h1: { fontSize: 32, fontWeight: 800, marginBottom: 8, letterSpacing: -0.5 } as React.CSSProperties,
@@ -26,9 +27,8 @@ export function WarrantCanary() {
   const s = S();
   return (
     <div style={s.page}>
+      <PublicHeader />
       <div style={s.wrap}>
-        <a href="/app" style={s.back}>&larr; Back to Discreet</a>
-
         <h1 style={s.h1}>Warrant Canary</h1>
         <div style={s.updated}>Last updated: March 2026</div>
 
