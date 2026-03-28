@@ -87,66 +87,52 @@ import type { CtxMenuItem } from './components/CtxMenu';
 
 // ── Types ─────────────────────────────────────────────────
 interface Server { id: string; name: string; owner_id: string; icon_url?: string; member_count?: number; slash_commands_enabled?: boolean; message_retention_days?: number | null; disappearing_messages_default?: string | null; last_activity_at?: string | null; is_archived?: boolean; archived_at?: string | null; scheduled_deletion_at?: string | null; }
-interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; read_only?: boolean; ttl_seconds?: number | null; }
-interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; priority?: string; renderModel?: RenderMessage; }
+interface Channel { id: string; name: string; server_id: string; channel_type: string; category_id?: string; position: number; last_message_at?: string; read_only?: boolean; ttl_seconds?: number | null; topic?: string; slowmode_seconds?: number; is_nsfw?: boolean; is_archived?: boolean; }
+interface Msg { id: string; author_id: string; content_ciphertext: string; mls_epoch: number; created_at: string; reply_to_id?: string; parent_message_id?: string; reply_count?: number; mentioned_user_ids?: string[]; text?: string; authorName?: string; priority?: string; renderModel?: RenderMessage; category?: string; friendsOnlyHidden?: boolean; }
 interface DM { id: string; other_user_id: string; other_username: string; other_is_bot?: boolean; last_message_at?: string; ttl_seconds?: number | null; ttl_set_by?: string; ttl_set_at?: string; }
+interface Member { user_id: string; username: string; display_name?: string; avatar_url?: string; nickname?: string; is_bot?: boolean; roles?: string[]; joined_at?: string; [key: string]: unknown; }
+interface GroupDm { id: string; name: string; members?: string[]; last_message_at?: string; [key: string]: unknown; }
+interface AppUser { id: string; username: string; display_name?: string; avatar_url?: string; email?: string; email_verified?: boolean; account_tier?: string; is_guest?: boolean; founder?: boolean; onboarding_complete?: boolean; [key: string]: unknown; }
+interface PlatformUser { badge_type?: string; account_tier?: string; platform_role?: string; [key: string]: unknown; }
+interface Role { id: string; name: string; color: string; permissions: number; position?: number; hoist?: boolean; [key: string]: unknown; }
+interface Bookmark { id: string; message_id: string; channel_id: string; server_id: string; note?: string; channel_name?: string; text?: string; created_at?: string; message_author_id?: string; message_content?: string; message_created_at?: string; [key: string]: unknown; }
+interface Reaction { emoji: string; user_ids: string[]; count: number; }
+interface Bot { id: string; display_name?: string; username?: string; persona?: string; is_bot?: boolean; [key: string]: unknown; }
+interface UserSettings { theme?: string; locale?: string; timezone?: string; show_read_receipts?: boolean; show_typing_indicator?: boolean; show_link_previews?: boolean; friends_only_mode?: boolean; ai_disabled?: boolean; dnd_enabled?: boolean; dnd_start?: string; dnd_end?: string; dnd_days?: string; sound_dm?: string; sound_server?: string; sound_mention?: string; message_density?: 'compact' | 'cozy' | 'spacious'; chat_bubbles?: boolean; bubble_position?: 'standard' | 'aligned'; timestamp_format?: string; show_timestamps?: boolean; layout_mode?: string; chat_font_size?: number; font_size?: string; high_contrast?: boolean; reduce_motion?: boolean; focus_rings?: boolean; voice_mode?: string; voice_noise_suppression?: boolean; push_to_talk_key?: string; sounds_enabled?: boolean; default_status?: string; [key: string]: unknown; }
+interface WsEvent { type: string; channel_id?: string; author_id?: string; user_id?: string; status?: string; custom_status?: string; display_name?: string; avatar_url?: string; nickname?: string; emoji?: string; message_id?: string; mentioned_user_id?: string; content?: string; text?: string; reason?: string; message?: string; id?: string; server_id?: string; invite_code?: string; voice_channel_id?: string; url?: string; from?: string; offer?: unknown; answer?: unknown; candidate?: unknown; key_id?: number; epoch?: number; target_user_ids?: string[]; code?: string; ack_count?: number; member_count?: number; agent_id?: string; disclosure_text?: string; [key: string]: unknown; }
+interface InviteInfo { server_name?: string; member_count?: number; icon_url?: string; }
+interface MeetingInfo { code?: string; }
 
 // ── Crypto ────────────────────────────────────────────────
+// Encryption is mandatory. If the kernel or MLS is unavailable, encryption
+// fails and the message is NOT sent. No plaintext fallback. (SKI-002 resolved.)
 
-// Initialize the kernel Worker — non-blocking, failures are handled per-call
 let _kernelReady = false;
 kernelInit().then(() => { _kernelReady = true; }).catch(() => {});
 
 async function enc(cid: string, text: string): Promise<string> {
-  // Try kernel first — generates outgoing ciphertext via WASM Worker
   if (_kernelReady) {
-    try { return (await kernelGenerateOutgoing(cid, text)).encrypted; } catch {
-      console.warn('[crypto] Kernel encrypt unavailable, using legacy path');
-    }
+    try { return (await kernelGenerateOutgoing(cid, text)).encrypted; } catch { /* kernel error — try MLS */ }
   }
-  // Legacy: try MLS, fall back to HKDF
   if (isMlsAvailable()) {
-    try { return await encryptMessage(cid, text); } catch { /* MLS group not set up — fall back */ }
+    return encryptMessage(cid, text);
   }
-  // HKDF-SHA256 fallback with key commitment
-  const e = new TextEncoder(), salt = e.encode('discreet-mls-v1'), ikm = e.encode(`discreet:${cid}:0`);
-  const km = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey', 'deriveBits']);
-  const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0`) }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  const commitBits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0:commit`) }, km, 256);
-  const commit = new Uint8Array(commitBits);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, e.encode(text));
-  // Output: [commitment(32) | iv(12) | ciphertext]
-  const c = new Uint8Array(32 + iv.length + new Uint8Array(ct).length); c.set(commit); c.set(iv, 32); c.set(new Uint8Array(ct), 44);
-  return btoa(String.fromCharCode(...c));
+  throw new Error('Encryption unavailable — kernel and MLS both failed to initialize');
 }
 
 interface DecResult { text: string; renderModel?: RenderMessage }
 
 async function dec(cid: string, b64: string): Promise<DecResult> {
-  // Try kernel first — returns sanitized render model with capabilities
   if (_kernelReady) {
     try {
       const { render_model } = await kernelDecrypt(cid, b64);
       return { text: render_model.content.text, renderModel: render_model };
-    } catch {
-      console.warn('[crypto] Kernel decrypt unavailable, using legacy path');
-    }
+    } catch { /* kernel error — try MLS */ }
   }
-  // Legacy: try MLS, fall back to HKDF
   if (isMlsAvailable()) {
-    try { return { text: await decryptMessage(cid, b64) }; } catch { /* fall back */ }
+    try { return { text: await decryptMessage(cid, b64) }; } catch { /* MLS failed */ }
   }
-  try {
-    const d = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    if (d.length < 44) throw new Error('Key commitment failed');
-    const e = new TextEncoder(), salt = e.encode('discreet-mls-v1'), ikm = e.encode(`discreet:${cid}:0`);
-    const km = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey', 'deriveBits']);
-    const commitBits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0:commit`) }, km, 256);
-    const expected = new Uint8Array(commitBits); let diff = 0; for (let i = 0; i < 32; i++) diff |= d[i] ^ expected[i]; if (diff !== 0) throw new Error('Key commitment failed');
-    const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: e.encode(`discreet:${cid}:0`) }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(32, 44) }, key, d.slice(44)); return { text: new TextDecoder().decode(pt) };
-  } catch { return { text: b64 }; }
+  return { text: '[Decryption failed — encryption keys not available]' };
 }
 
 // ── Quick Emojis (dynamic — see EmojiPicker.getQuickReact) ──
@@ -219,51 +205,65 @@ function GlobalStyles() {
       :root { --chat-font-size: 14px; }
       .chat-root  { height:100vh; display:flex; overflow:hidden; }
       .chat-main  { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
-      .msg-actions:hover { display:flex !important; }
-      div:hover > .msg-actions { display:flex !important; }
+      .msg-actions { display: none; }
+      .msg-actions:hover, div:hover > .msg-actions { display: flex; }
+
+      /* Defaults for elements whose properties are overridden by density/layout/mobile.
+         Inline styles must NOT set these — CSS cascade controls them. */
+      .msg-text { font-size: var(--chat-font-size, 14px); line-height: 1.5; }
+      .msg-name { font-size: 14px; }
+      .chat-header { padding: 10px 16px; min-height: 48px; }
+      .sidebar { padding: 0; display: flex; }
+      .member-panel { padding: 16px; }
+      .server-rail { display: flex; }
+      .server-rail--hidden { display: none; }
+      .sidebar--hidden { display: none; }
+      .notif-badge { background: var(--notif-badge-bg, #ed4245); }
 
       /* ── Message density modes ─────────────────────── */
       .density-compact .msg-row { padding: 1px 16px; gap: 6px; }
       .density-compact .msg-avatar { width: 0; height: 0; overflow: hidden; }
-      .density-compact .msg-name { font-size: 12px !important; display: inline !important; }
+      .density-compact .msg-name { font-size: 12px; display: inline; }
       .density-compact .msg-name::after { content: ': '; }
-      .density-compact .msg-text { font-size: var(--chat-font-size) !important; line-height: 1.3 !important; display: inline !important; }
+      .density-compact .msg-text { font-size: var(--chat-font-size); line-height: 1.3; display: inline; }
       .density-compact .msg-ts { opacity: 0; transition: opacity 0.15s; }
       .density-compact .msg-row:hover .msg-ts { opacity: 1; }
       .density-cozy .msg-row { padding: 4px 16px; gap: 10px; }
       .density-cozy .msg-avatar { width: 36px; height: 36px; }
-      .density-cozy .msg-text { line-height: 1.5 !important; }
+      .density-cozy .msg-text { line-height: 1.5; }
       .density-spacious .msg-row { padding: 8px 16px; gap: 14px; }
       .density-spacious .msg-avatar { width: 44px; height: 44px; }
-      .density-spacious .msg-text { line-height: 1.7 !important; }
+      .density-spacious .msg-text { line-height: 1.7; }
 
       /* ── Layout modes ───────────────────────────────── */
       .layout-simple { --ui-font-size: 16px; --ui-padding: 16px; }
       .layout-simple .msg-row { padding: 6px 16px; }
-      .layout-simple .msg-text { font-size: 16px !important; line-height: 1.6 !important; }
-      .layout-simple .msg-name { font-size: 15px !important; }
-      .layout-simple .layout-power-only { display: none !important; }
-      .layout-simple .layout-standard-plus { display: none !important; }
-      .layout-simple .member-list { display: none !important; }
-      .layout-simple .thread-panel { display: none !important; }
+      .layout-simple .msg-text { font-size: 16px; line-height: 1.6; }
+      .layout-simple .msg-name { font-size: 15px; }
+      .layout-power-only { display: none; }
+      .layout-standard-plus { display: none; }
+      .layout-simple .member-list { display: none; }
+      .layout-simple .thread-panel { display: none; }
       .layout-simple button, .layout-simple [role="button"],
       .layout-simple input, .layout-simple select { min-height: 44px; }
       .layout-simple .msg-input-wrap { min-height: 48px; }
-      .layout-simple .msg-input-wrap button[aria-label="Send"] { display: flex !important; }
+      .layout-simple .msg-input-wrap button[aria-label="Send"] { display: flex; }
 
       .layout-standard { --ui-font-size: 14px; --ui-padding: 12px; }
-      .layout-standard .layout-power-only { display: none !important; }
+      .layout-standard .layout-standard-plus { display: block; }
 
       .layout-power { --ui-font-size: 13px; --ui-padding: 8px; --font-size-md: 13px; }
+      .layout-power .layout-power-only { display: block; }
+      .layout-power .layout-standard-plus { display: block; }
       .layout-power .msg-row { padding: 2px 12px; }
-      .layout-power .msg-text { font-size: 13px !important; line-height: 1.35 !important; }
-      .layout-power .msg-name { font-size: 12px !important; }
-      .layout-power .sidebar { padding: 4px 4px !important; }
-      .layout-power .sidebar > div { padding: 6px 8px !important; }
-      .layout-power .chat-header { padding: 6px 12px !important; min-height: 40px !important; }
-      .layout-power .member-panel { padding: 6px 8px !important; }
+      .layout-power .msg-text { font-size: 13px; line-height: 1.35; }
+      .layout-power .msg-name { font-size: 12px; }
+      .layout-power .sidebar { padding: 4px 4px; }
+      .layout-power .sidebar > div { padding: 6px 8px; }
+      .layout-power .chat-header { padding: 6px 12px; min-height: 40px; }
+      .layout-power .member-panel { padding: 6px 8px; }
       .layout-power .date-separator { padding: 4px 12px; }
-      .layout-power .kbd-hint { display: inline-flex !important; }
+      .layout-power .kbd-hint { display: inline-flex; }
       .kbd-hint {
         display: none; font-size: 9px; font-weight: 600; font-family: var(--font-mono);
         color: var(--text-tertiary); background: var(--bg-card);
@@ -304,15 +304,17 @@ function GlobalStyles() {
 
       /* ── Message grouping: compact continuation messages ── */
       .msg-grouped .msg-avatar { visibility: hidden; width: 0; overflow: hidden; }
-      .msg-grouped .msg-name { display: none !important; }
+      .msg-grouped .msg-name { display: none; }
       .msg-grouped .msg-ts { opacity: 0; transition: opacity 0.15s; }
       .msg-grouped:hover .msg-ts { opacity: 1; }
 
       /* ── Nighttime mode ─────────────────────────────── */
       .nighttime-active { transition: background 0.5s ease, color 0.5s ease; }
-      .nighttime-active .notif-badge { background: #6b7280 !important; }
+      .nighttime-active .notif-badge { --notif-badge-bg: #6b7280; background: #6b7280; }
 
       /* ── Reduced motion (WCAG 2.2 AA) ─────────────── */
+      /* !important required: WCAG mandates overriding ALL animations
+         including inline styles and third-party libraries. */
       .reduce-motion, .reduce-motion * {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
@@ -329,6 +331,8 @@ function GlobalStyles() {
       }
 
       /* ── High contrast (OS-level) ──────────────────── */
+      /* !important required: OS-level preference must override
+         theme CSS custom properties unconditionally. */
       @media (prefers-contrast: more) {
         :root {
           --border-width: 2px !important;
@@ -341,6 +345,8 @@ function GlobalStyles() {
       }
 
       /* ── High contrast mode (WCAG AA — 4.5:1 normal, 3:1 large) ── */
+      /* !important required: accessibility overrides must win over
+         all theme colors and inline styles for WCAG compliance. */
       .high-contrast {
         --hc-text: #ffffff;
         --hc-muted: #d1d5db;
@@ -359,7 +365,8 @@ function GlobalStyles() {
         box-shadow: 0 0 0 1px var(--bg-primary, #000) !important;
       }
 
-      /* ── Focus visible (keyboard navigation) ────────── */
+      /* !important required: keyboard focus ring must be visible over
+         any background color or inline style. */
       .focus-visible :focus-visible {
         outline: 2px solid var(--accent, #7C3AED) !important;
         outline-offset: 2px !important;
@@ -373,12 +380,12 @@ function GlobalStyles() {
         background:currentColor; transition:height .15s ease;
       }
       .srv-icon:hover::before { height:20px; }
-      .srv-icon--active::before { height:36px !important; }
+      .srv-icon--active::before { height:36px; }
       .srv-icon--unread::before { height:8px; }
 
       /* ── Global transitions ─────────────────────────── */
       .ch-row { transition:background .15s ease, color .15s ease, font-weight .15s ease; }
-      .ch-row:hover { background:rgba(255,255,255,0.04) !important; }
+      .ch-row:hover { background:rgba(255,255,255,0.04); }
 
       /* ── Hamburger (hidden on desktop) ───────────────── */
       .hamburger { display:none; }
@@ -386,25 +393,24 @@ function GlobalStyles() {
 
       /* ── ≤ 768px ─────────────────────────────────────── */
       @media (max-width:768px) {
-        .server-rail { display:none !important; }
+        .server-rail { display:none; }
 
         .sidebar {
-          position:fixed !important;
+          position:fixed;
           left:0; top:0; bottom:0;
           z-index:1001;
-          width:280px !important;
-          min-width:280px !important;
+          width:280px;
+          min-width:280px;
           transform:translateX(-100%);
           transition:transform .3s ease, box-shadow .3s ease;
           box-shadow:none;
         }
         .sidebar--open {
-          transform:translateX(0) !important;
+          transform:translateX(0);
           box-shadow:4px 0 24px rgba(0,0,0,.6);
         }
 
-        /* Lock body scroll when sidebar is open */
-        body.sidebar-open { overflow:hidden !important; }
+        body.sidebar-open { overflow:hidden; }
 
         .hamburger {
           display:flex;
@@ -439,13 +445,13 @@ function GlobalStyles() {
         }
 
         .member-panel {
-          position:fixed !important;
-          left:0 !important; right:0 !important;
-          bottom:0 !important; top:auto !important;
-          width:100% !important;
-          min-width:unset !important;
+          position:fixed;
+          left:0; right:0;
+          bottom:0; top:auto;
+          width:100%;
+          min-width:unset;
           max-height:50vh;
-          border-left:none !important;
+          border-inline-start:none;
           border-top:1px solid rgba(255,255,255,.08);
           z-index:180;
           box-shadow:0 -8px 32px rgba(0,0,0,.4);
@@ -463,32 +469,28 @@ function GlobalStyles() {
           min-height:36px; min-width:36px;
         }
 
-        /* Prevent fixed-width elements from causing horizontal overflow */
         img, video, canvas, table, pre, code {
-          max-width:100% !important;
+          max-width:100%;
         }
       }
 
       /* ── ≤ 480px ─────────────────────────────────────── */
       @media (max-width:480px) {
-        .chat-header { min-height:52px; padding:8px 12px !important; }
+        .chat-header { min-height:52px; padding:8px 12px; }
 
-        /* Larger touch targets on small screens */
         .hamburger   { width:48px; height:48px; }
         .touch-target {
           min-height:48px; min-width:48px;
           display:flex; align-items:center; justify-content:center;
         }
 
-        /* Readable message text, prevents iOS input zoom */
-        .msg-text  { font-size:16px !important; line-height:1.6 !important; }
-        .input-bar input { font-size:16px !important; }
+        /* Prevents iOS input zoom (font-size < 16px triggers zoom) */
+        .msg-text  { font-size:16px; line-height:1.6; }
+        .input-bar input { font-size:16px; }
 
-        /* Full-width sidebar overlay on very small screens */
-        .sidebar        { width:100vw !important; }
-        .sidebar--open  { transform:translateX(0) !important; }
+        .sidebar        { width:100vw; }
+        .sidebar--open  { transform:translateX(0); }
 
-        /* Taller member bottom-sheet */
         .member-panel { max-height:65vh; }
       }
 
@@ -570,39 +572,6 @@ const playSound = (type: 'send' | 'receive' | 'join' | 'leave') => {
 };
 
 // ── Slash Tool Components ─────────────────────────────────
-
-function CalcTool({ onInsert }: { onInsert: (v: string) => void }) {
-  const [expr, setExpr] = React.useState('');
-  const [result, setResult] = React.useState('');
-  const evaluate = (e: string) => {
-    setExpr(e);
-    if (!e.trim()) { setResult(''); return; }
-    try {
-      // Only allow numbers, operators, parens, dots
-      if (!/^[\d+\-*/().%\s]+$/.test(e)) { setResult('Invalid'); return; }
-      // eslint-disable-next-line no-eval
-      const r = Function('"use strict"; return (' + e + ')')();
-      setResult(typeof r === 'number' && isFinite(r) ? String(Math.round(r * 1e10) / 1e10) : 'Error');
-    } catch { setResult('Error'); }
-  };
-  return (
-    <div>
-      <input value={expr} onChange={e => evaluate(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && result && result !== 'Error' && result !== 'Invalid') { e.preventDefault(); onInsert(result); } }}
-        placeholder="e.g. 24 * 365"
-        autoFocus
-        style={{ width: '100%', padding: '8px 10px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.tx, fontSize: 14, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
-      {result && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: result === 'Error' || result === 'Invalid' ? '#ff4757' : T.ac, fontFamily: 'monospace' }}>{result}</span>
-          {result !== 'Error' && result !== 'Invalid' && (
-            <span onClick={() => onInsert(result)} style={{ fontSize: 11, color: T.ac, cursor: 'pointer', fontWeight: 600 }}>Insert ↵</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 const CONVERT_UNITS: Record<string, { units: string[]; convert: (v: number, from: string, to: string) => number }> = {
   Length: {
@@ -741,26 +710,26 @@ export default function App() {
   const [homeTab, setHomeTab] = useState('home');
 
   // ── Core Data ───────────────────────────────────────────
-  const [me, setMe] = useState<any>(null);
+  const [me, setMe] = useState<AppUser | null>(null);
   const [servers, setServers] = useState<Server[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; position: number }[]>([]);
   const [userChannelCats, setUserChannelCats] = useState<{ id: string; name: string; position: number; collapsed: boolean; channel_ids: string[] }[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [dms, setDms] = useState<DM[]>([]);
   const [dmUnreadCounts, setDmUnreadCounts] = useState<Record<string, number>>({});
-  const [groupDms, setGroupDms] = useState<any[]>([]);
-  const [curGroupDm, setCurGroupDm] = useState<any | null>(null);
-  const [dmMsgs, setDmMsgs] = useState<any[]>([]);
+  const [groupDms, setGroupDms] = useState<GroupDm[]>([]);
+  const [curGroupDm, setCurGroupDm] = useState<GroupDm | null>(null);
+  const [dmMsgs, setDmMsgs] = useState<Msg[]>([]);
   const [userMap, setUserMap] = useState<Record<string, string>>({});
   const [rawUsernameMap, setRawUsernameMap] = useState<Record<string, string>>({});
   const [badgeMap, setBadgeMap] = useState<Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }>>({});
-  const [platformUser, setPlatformUser] = useState<any>(null);
+  const [platformUser, setPlatformUser] = useState<PlatformUser | null>(null);
   const [disappearingEnabled, setDisappearingEnabled] = useState(true);
   const [devTierOverride, setDevTierOverride] = useState<Tier | null>(() => localStorage.getItem('d_dev_tier_override') as Tier | null);
-  const [reactions, setReactions] = useState<Record<string, any[]>>({});
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [privacyPrefs, setPrivacyPrefs] = useState({ show_read_receipts: false, show_typing_indicator: false, show_link_previews: false });
   const [friendsOnlyMode, setFriendsOnlyMode] = useState(() => localStorage.getItem('d_friends_only') === 'true');
@@ -772,10 +741,10 @@ export default function App() {
   const [dndSchedule, setDndSchedule] = useState({ enabled: false, start: '22:00', end: '08:00', days: '0,1,2,3,4,5,6' });
   const [serverNotifLevels, setServerNotifLevels] = useState<Record<string, string>>({}); // server_id → 'all'|'mentions'|'nothing'
   const [serverVisibility, setServerVisibility] = useState<Record<string, string | null>>({}); // server_id → null|'online'|'idle'|'invisible'
-  const [msgDensity, setMsgDensity] = useState<'compact' | 'cozy' | 'spacious'>(() => (localStorage.getItem('d_msg_density') as any) || 'cozy');
+  const [msgDensity, setMsgDensity] = useState<'compact' | 'cozy' | 'spacious'>(() => (localStorage.getItem('d_msg_density') as 'compact' | 'cozy' | 'spacious') || 'cozy');
   const [chatBubbles, setChatBubbles] = useState(() => localStorage.getItem('d_chat_bubbles') === 'true');
   const showTimestamps = localStorage.getItem('d_show_timestamps') !== 'false';
-  const [bubblePosition, setBubblePosition] = useState<'standard' | 'aligned'>(() => (localStorage.getItem('d_bubble_position') as any) || 'standard');
+  const [bubblePosition, setBubblePosition] = useState<'standard' | 'aligned'>(() => (localStorage.getItem('d_bubble_position') as 'standard' | 'aligned') || 'standard');
   const [chatFontSize, setChatFontSize] = useState(() => parseInt(localStorage.getItem('d_chat_font_size') || '14', 10));
   const [pollVotes, setPollVotes] = useState<Record<string, number | null>>({}); // pollId → local vote index override
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({}); // user_id → last-event ms
@@ -906,22 +875,22 @@ export default function App() {
 
   // ── UI State ────────────────────────────────────────────
   const [msgInput, setMsgInput] = useState('');
-  const [slashTool, setSlashTool] = useState<'calc' | 'convert' | 'color' | null>(null);
+  const [slashTool, setSlashTool] = useState<'convert' | 'color' | null>(null);
   const [modal, setModal] = useState<string | null>(null);
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(() => { try { return sessionStorage.getItem('d_verify_dismissed') === '1'; } catch { return false; } });
-  const [selectedBot, setSelectedBot] = useState<any>(null);
+  const [selectedBot, setSelectedBot] = useState<Bot | null>(null);
   const [createName, setCreateName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [invitePreview, setInvitePreview] = useState<{ code: string; server_name: string; member_count: number; icon_url?: string; foreign?: boolean; url?: string } | null>(null);
   const [showNewDmModal, setShowNewDmModal] = useState(false);
   const [newDmQuery, setNewDmQuery] = useState('');
-  const [newDmFriends, setNewDmFriends] = useState<any[]>([]);
-  const [newDmSearchResults, setNewDmSearchResults] = useState<any[]>([]);
+  const [newDmFriends, setNewDmFriends] = useState<Member[]>([]);
+  const [newDmSearchResults, setNewDmSearchResults] = useState<Member[]>([]);
   const [newDmSearching, setNewDmSearching] = useState(false);
   const [showGroupDmModal, setShowGroupDmModal] = useState(false);
   const [gdmName, setGdmName] = useState('');
   const [gdmSelected, setGdmSelected] = useState<string[]>([]);
-  const [gdmFriends, setGdmFriends] = useState<any[]>([]);
+  const [gdmFriends, setGdmFriends] = useState<Member[]>([]);
   const [inviteResult, setInviteResult] = useState('');
   const [inviteExpiry, setInviteExpiry] = useState('7d');
   const [inviteMaxUses, setInviteMaxUses] = useState<number | null>(null);
@@ -974,7 +943,7 @@ export default function App() {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [deleteServerTarget, setDeleteServerTarget] = useState<{ id: string; name: string } | null>(null);
   const [scheduledCount, setScheduledCount] = useState(0);
-  const [roles, setRoles] = useState<any[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [userStatus, setUserStatus] = useState(() => localStorage.getItem('d_status') || 'online');
   const [manualStatus, setManualStatus] = useState<string | null>(() => localStorage.getItem('d_manual_status') || null);
   const [presenceMap,    setPresenceMap]    = useState<Record<string, string>>({});
@@ -983,7 +952,7 @@ export default function App() {
   const [showBugReport, setShowBugReport] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>(() => loadNotifications());
   const [showNotifCenter, setShowNotifCenter] = useState(false);
-  const [wsLastEvent, setWsLastEvent] = useState<any>(null);
+  const [wsLastEvent, setWsLastEvent] = useState<WsEvent | null>(null);
   const [wsStatus, setWsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
   const wsHadDisconnect = useRef(false); // track if we ever disconnected (for reconnect message reload)
   const [failedMessages, setFailedMessages] = useState<Record<string, { text: string; channelId: string; replyToId?: string }>>({}); // tempId → retry info
@@ -994,8 +963,8 @@ export default function App() {
   const [showDocEditor,  setShowDocEditor]  = useState(false);
   const [showHealth,     setShowHealth]     = useState(false);
   const [showPinned,     setShowPinned]     = useState(false);
-  const [pinnedMsgs,     setPinnedMsgs]     = useState<any[]>([]);
-  const pinnedIds = useMemo(() => new Set(pinnedMsgs.map((p: any) => p.id as string)), [pinnedMsgs]);
+  const [pinnedMsgs,     setPinnedMsgs]     = useState<Msg[]>([]);
+  const pinnedIds = useMemo(() => new Set(pinnedMsgs.map(p => p.id)), [pinnedMsgs]);
   const [openThread,     setOpenThread]     = useState<ParentMsg | null>(null);
 
   // ── Loading states ───────────────────────────────────────
@@ -1053,7 +1022,7 @@ export default function App() {
   useEffect(() => {
     if (!authed) return;
     if (manualStatus && manualStatus !== 'online') return;
-    let idleTimeout: any;
+    let idleTimeout: ReturnType<typeof setTimeout> | undefined;
     const idleMs = parseInt(localStorage.getItem('d_idle_timeout') || '300000');
     const resetIdle = () => {
       if (userStatus === 'idle' && !manualStatus) { setUserStatus('online'); api.ws?.send(JSON.stringify({ type: 'status_change', status: 'online' })); }
@@ -1095,7 +1064,7 @@ export default function App() {
         if (expiresIn < 5 * 60 * 1000) api.tryRefresh();
       }
     } catch {}
-    loadServers(true); loadDms(); api.listFriends().then((f: any) => { const ids = new Set((Array.isArray(f) ? f : []).map((x: any) => x.friend_id || x.user_id || x.id).filter(Boolean)); setFriendIdSet(ids); }).catch(() => {}); api.getMe().then((u: any) => {
+    loadServers(true); loadDms(); api.listFriends().then((f: unknown) => { const arr = Array.isArray(f) ? f as {friend_id?: string; user_id?: string; id?: string}[] : []; const ids = new Set(arr.map(x => x.friend_id || x.user_id || x.id).filter(Boolean)); setFriendIdSet(ids); }).catch(() => {}); api.getMe().then((u: AppUser | null) => {
       setMe(u);
       // Server is authoritative for onboarding; localStorage is fast cache only
       if (u?.onboarding_complete) {
@@ -1105,10 +1074,10 @@ export default function App() {
         setShowOnboarding(true);
       }
     }).catch(() => {});
-    api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
-    api.listSessions().then((ss: any[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
-    api.getPlatformMe().then((d: any) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null, platform_role: d.platform_role ?? null } })); } }).catch(() => {});
-    api.fetch('/info').then(r => r.json()).then((info: any) => { if (info?.features?.disappearing_messages === false) setDisappearingEnabled(false); }).catch(() => {});
+    api.listBookmarks().then((bm: Bookmark[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {});
+    api.listSessions().then((ss: {device_verified?: boolean}[]) => { if (Array.isArray(ss)) setHasUnverifiedDevice(ss.some(s => !s.device_verified)); }).catch(() => {});
+    api.getPlatformMe().then((d: PlatformUser | null) => { if (d && api.userId) { setPlatformUser(d); setBadgeMap(prev => ({ ...prev, [api.userId!]: { badge_type: d.badge_type ?? null, account_tier: d.account_tier ?? null, platform_role: d.platform_role ?? null } })); } }).catch(() => {});
+    api.fetch('/info').then(r => r.json()).then((info: {features?: {disappearing_messages?: boolean}}) => { if (info?.features?.disappearing_messages === false) setDisappearingEnabled(false); }).catch(() => {});
     // Forward voice ICE candidates to server via WS
     const unsubVoice = vc.engine.onEvent((e) => {
       if (e.type === 'ice_candidate' && api.ws?.readyState === 1) {
@@ -1130,7 +1099,7 @@ export default function App() {
       shortcuts_help:  () => setModal(m => m === 'shortcuts-help' ? null : 'shortcuts-help'),
     });
     // Load theme and timezone from settings
-    api.getSettings?.().then((s: any) => {
+    api.getSettings?.().then((s: UserSettings | null) => {
       if (s?.theme) { applyServerTheme(s.theme); localStorage.setItem('discreet-theme-preference', s.theme); forceUpdate(n => n + 1); }
       if (s?.locale && s.locale !== i18n.language) { i18n.changeLanguage(s.locale); }
       if (s?.timezone && s.timezone !== 'UTC') {
@@ -1189,7 +1158,7 @@ export default function App() {
     const m = window.location.pathname.match(/^\/invite\/([A-Za-z0-9]+)\/?$/);
     if (m) {
       const code = m[1];
-      api.resolveInvite(code).then((info: any) => {
+      api.resolveInvite(code).then((info: InviteInfo) => {
         setInvitePreview({ code, server_name: info.server_name, member_count: info.member_count, icon_url: info.icon_url });
       }).catch(() => {
         setToast('Invalid or expired invite link'); setTimeout(() => setToast(''), 3000);
@@ -1206,7 +1175,7 @@ export default function App() {
     if (m) {
       const joinCode = m[1];
       // Look up by join code, then open MeetingRoom with the meeting's numeric code
-      api.fetch(`/meetings/join/${encodeURIComponent(joinCode)}`).then(r => r.json()).then((info: any) => {
+      api.fetch(`/meetings/join/${encodeURIComponent(joinCode)}`).then(r => r.json()).then((info: MeetingInfo) => {
         if (info?.code) {
           setMeetingCode(info.code);
           setShowMeeting(true);
@@ -1272,7 +1241,7 @@ export default function App() {
   useEffect(() => {
     if (!authed || !curServer) return;
     api.connectWs(curServer.id);
-    const handler = (evt: any) => {
+    const handler = (evt: WsEvent) => {
       // Connection status events from CitadelAPI
       if (evt.type === 'ws_status') {
         if (evt.status === 'connected') {
@@ -1306,7 +1275,7 @@ export default function App() {
             while ((mm = mentionRe.exec(content)) !== null) {
               const mentioned = mm[1].toLowerCase();
               const bot = membersRef.current.find(
-                (mb: any) => mb.is_bot && (mb.username?.toLowerCase() === mentioned || mb.display_name?.toLowerCase() === mentioned),
+                mb => mb.is_bot && (mb.username?.toLowerCase() === mentioned || mb.display_name?.toLowerCase() === mentioned),
               );
               if (bot) api.promptBot(curServer.id, bot.user_id, content, ch?.id ?? undefined).catch(() => {});
             }
@@ -1330,20 +1299,25 @@ export default function App() {
       }
       if (evt.type === 'user_updated' && evt.user_id && evt.display_name !== undefined) {
         setUserMap(p => ({ ...p, [evt.user_id]: evt.display_name || p[evt.user_id] || '?' }));
-        setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, display_name: evt.display_name } : m));
+        setMembers(prev => prev.map(m => m.user_id === evt.user_id ? { ...m, display_name: evt.display_name } : m));
       }
       if (evt.type === 'user_profile_update' && evt.user_id && evt.avatar_url) {
-        setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, avatar_url: evt.avatar_url } : m));
+        setMembers(prev => prev.map(m => m.user_id === evt.user_id ? { ...m, avatar_url: evt.avatar_url } : m));
       }
       if (evt.type === 'member_update' && evt.user_id) {
         if (evt.nickname !== undefined) {
-          setMembers((prev: any[]) => prev.map((m: any) => m.user_id === evt.user_id ? { ...m, nickname: evt.nickname } : m));
+          setMembers(prev => prev.map(m => m.user_id === evt.user_id ? { ...m, nickname: evt.nickname } : m));
           setUserMap(p => {
-            const m = members.find((mb: any) => mb.user_id === evt.user_id);
+            const m = members.find(mb => mb.user_id === evt.user_id);
             const name = evt.nickname || m?.display_name || m?.username || p[evt.user_id];
             return { ...p, [evt.user_id]: name };
           });
         }
+      }
+      if (evt.type === 'auth_expired') {
+        setToast('Session expired. Please log in again.');
+        setTimeout(() => { setToast(''); setAuthed(false); }, 3000);
+        return;
       }
       if (evt.type === 'account_suspended') {
         api.clearAuth();
@@ -1352,7 +1326,7 @@ export default function App() {
         return;
       }
       if (evt.type === 'account_verified') {
-        setMe((prev: any) => prev ? { ...prev, email_verified: true, account_tier: 'verified' } : prev);
+        setMe(prev => prev ? { ...prev, email_verified: true, account_tier: 'verified' } : prev);
         setToast('Email verified! Full access unlocked.');
         setTimeout(() => setToast(''), 4000);
         return;
@@ -1487,8 +1461,8 @@ export default function App() {
       // is already handled above; here we only need to move *this* client.
       if (evt.type === 'force_voice_join' && evt.channel_id && evt.user_id) {
         if (evt.user_id === api.userId) {
-          const ch = channelsRef.current.find((c: any) => c.id === evt.channel_id);
-          if (ch) joinVoice(ch as any);
+          const ch = channelsRef.current.find(c => c.id === evt.channel_id);
+          if (ch) joinVoice(ch);
         }
       }
       // Real-time ack updates
@@ -1604,7 +1578,7 @@ export default function App() {
   const loadCategories = async (sid: string) => { try { const c = await api.listCategories(sid); if (Array.isArray(c)) setCategories(c); } catch {} };
   const loadMembers = async (sid: string) => {
     setLoadingMembers(true);
-    try { const m = await api.listMembers(sid); if (Array.isArray(m)) { setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }> = {}; m.forEach((u: any) => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: u.badge_type ?? null, account_tier: u.account_tier ?? null, platform_role: u.platform_role ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); const myMem = m.find((u: any) => u.user_id === api.userId); if (myMem?.notification_level) setServerNotifLevels(p => ({ ...p, [sid]: myMem.notification_level })); if (myMem) setServerVisibility(p => ({ ...p, [sid]: myMem.visibility_override ?? null })); } } catch {} finally { setLoadingMembers(false); }
+    try { const raw_m = await api.listMembers(sid); if (Array.isArray(raw_m)) { const m = raw_m as Member[]; setMembers(m); const map: Record<string, string> = {}; const raw: Record<string, string> = {}; const bm: Record<string, { badge_type: string | null; account_tier: string | null; platform_role: string | null }> = {}; m.forEach(u => { map[u.user_id] = u.nickname || u.display_name || u.username; raw[u.user_id] = u.username; bm[u.user_id] = { badge_type: (u.badge_type as string) ?? null, account_tier: (u.account_tier as string) ?? null, platform_role: (u.platform_role as string) ?? null }; }); setUserMap(p => ({ ...p, ...map })); setRawUsernameMap(p => ({ ...p, ...raw })); setBadgeMap(prev => ({ ...prev, ...bm })); const myMem = m.find(u => u.user_id === api.userId); if (myMem?.notification_level) setServerNotifLevels(p => ({ ...p, [sid]: myMem.notification_level as string })); if (myMem) setServerVisibility(p => ({ ...p, [sid]: (myMem.visibility_override as string | null) ?? null })); } } catch {} finally { setLoadingMembers(false); }
   };
   const loadRoles = async (sid: string) => {
     try { const r = await api.listRoles(sid); if (Array.isArray(r)) setRoles(r); } catch {}
@@ -1616,7 +1590,7 @@ export default function App() {
       const raw = await api.getMessages(ch.id, 50);
       if (!Array.isArray(raw)) return;
       const isFriendsOnly = friendsOnlyMode && !friendsOnlyExceptions.has(ch.id);
-      const decrypted = await Promise.all(raw.map(async (m: any) => {
+      const decrypted = await Promise.all((raw as Msg[]).map(async (m) => {
         // Friends-only mode: skip decryption for non-friend messages.
         if (isFriendsOnly && m.author_id !== api.userId && !friendIdSet.has(m.author_id)) {
           return { ...m, text: '\u{1F512} *Encrypted — add as friend to read*', friendsOnlyHidden: true, authorName: userMap[m.author_id] || 'Unknown' };
@@ -1640,8 +1614,8 @@ export default function App() {
     if (curDmRef.current)      localStorage.setItem(`d_dm_last_read_${curDmRef.current.id}`, now);
     setCurServer(s); setCurChannel(null); setCurDm(null); setMessages([]); setView('server'); setMobileMenuOpen(false);
     setMembersLoaded(null); setMembers([]);
-    api.listEmojis(s.id).then((e: any) => setServerEmoji(Array.isArray(e) ? e : []));
-    api.listChannelCategories(s.id).then((cats: any) => setUserChannelCats(Array.isArray(cats) ? cats : [])).catch(() => {});
+    api.listEmojis(s.id).then((e: CustomEmoji[]) => setServerEmoji(Array.isArray(e) ? e : []));
+    api.listChannelCategories(s.id).then((cats: {id: string; name: string; position?: number}[]) => setUserChannelCats(Array.isArray(cats) ? cats : [])).catch(() => {});
     const [chs] = await Promise.all([loadChannels(s.id), loadCategories(s.id), loadRoles(s.id)]);
     // Auto-join: localStorage default → 'welcome'/'general' → first text channel
     const textChs = chs.filter((c: Channel) => !c.channel_type || c.channel_type === 'text');
@@ -1666,7 +1640,7 @@ export default function App() {
     setChannelFadeKey(k => k + 1); setMsgScrollTop(0);
     await loadMessages(ch); inputRef.current?.focus();
     setScheduledCount(0);
-    api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => {});
+    api.listScheduledMessages(ch.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: {status?: string}) => m.status === 'pending').length)).catch(() => {});
   };
   const selectDm = async (dm: DM) => {
     if (voiceChannel) doLeaveVoice();
@@ -1680,7 +1654,7 @@ export default function App() {
     setCurDm(dm); setCurGroupDm(null); setCurServer(null); setView('dm'); setMobileMenuOpen(false);
     await loadDmMessages(dm);
   };
-  const selectGroupDm = async (gdm: any) => {
+  const selectGroupDm = async (gdm: GroupDm) => {
     if (voiceChannel) doLeaveVoice();
     setCurGroupDm(gdm); setCurDm(null); setCurServer(null); setView('dm'); setMobileMenuOpen(false);
     try { const raw = await api.getGroupDmMessages(gdm.id); if (Array.isArray(raw)) setDmMsgs(raw.reverse()); } catch {}
@@ -1703,7 +1677,7 @@ export default function App() {
   // drives the text label for users with no special badge.
   const renderPlatformBadge = (uid: string) => {
     // Bot badge takes precedence — bots shouldn't show verified/unverified
-    const member = members.find((m: any) => m.user_id === uid);
+    const member = members.find(m => m.user_id === uid);
     if (member?.is_bot) return <span title="Bot account" style={{ marginInlineStart: 4, fontSize: 8, fontWeight: 700, color: '#fff', background: '#5865F2', padding: '1px 5px', borderRadius: 3, verticalAlign: 'middle', letterSpacing: '0.3px' }}>BOT</span>;
 
     const e = badgeMap[uid];
@@ -1776,8 +1750,8 @@ export default function App() {
           allRoles: roles.map(r => ({ id: r.id, name: r.name })),
           curServer, curChannel, voiceChannel,
           isGuest: !!me?.is_guest,
-          setMembers: setMembers as any,
-          setModal: setModal as any,
+          setMembers: (fn) => setMembers(prev => fn(prev) as Member[]),
+          setModal: (modal) => setModal(typeof modal === 'string' ? modal : null),
           setShowInputEmoji: setShowEmojiPicker,
           setWatchParty: () => {},
           setShowMeeting,
@@ -1817,7 +1791,7 @@ export default function App() {
         while ((mm2 = mentionRe2.exec(text)) !== null) {
           const name = mm2[1].toLowerCase();
           if (name === 'everyone') { mentionIds.push('00000000-0000-0000-0000-000000000000'); continue; }
-          const found = members.find((mb: any) => mb.username?.toLowerCase() === name || mb.display_name?.toLowerCase() === name);
+          const found = members.find(mb => mb.username?.toLowerCase() === name || mb.display_name?.toLowerCase() === name);
           if (found) mentionIds.push(found.user_id);
         }
         const threadRoot = replyTo ? (replyTo.parent_message_id || replyTo.id) : undefined;
@@ -1833,7 +1807,8 @@ export default function App() {
           playSound('send');
           setMsgPriority('normal');
           await loadMessages(curChannel);
-        } catch (sendErr: any) {
+        } catch (sendErr: unknown) {
+          void sendErr;
           // Mark as failed — keep in list, add to failedMessages for retry
           setFailedMessages(prev => ({ ...prev, [tempId]: { text, channelId: curChannel!.id, replyToId: replyId } }));
           // Keep the temp message in the list — failedMessages[tempId] marks it visually
@@ -1846,7 +1821,7 @@ export default function App() {
           while ((mm = mentionRe.exec(text)) !== null) {
             const mentioned = mm[1].toLowerCase();
             const bot = members.find(
-              (mb: any) => mb.is_bot && (mb.username?.toLowerCase() === mentioned || mb.display_name?.toLowerCase() === mentioned),
+              mb => mb.is_bot && (mb.username?.toLowerCase() === mentioned || mb.display_name?.toLowerCase() === mentioned),
             );
             if (bot) api.promptBot(curServer.id, bot.user_id, text, curChannel.id).catch(() => {});
           }
@@ -1859,14 +1834,13 @@ export default function App() {
         await api.sendDmMessage(curDm.id, text);
         setMsgInput(''); await loadDmMessages(curDm);
         // Trigger bot response when DMing a bot directly
-        const botMember = members.find((mb: any) => mb.user_id === curDm.other_user_id && mb.is_bot);
+        const botMember = members.find(mb => mb.user_id === curDm.other_user_id && mb.is_bot);
         if (botMember && curServer) {
           api.promptBot(curServer.id, botMember.user_id, text).catch(() => {});
         }
       }
-    } catch (e: any) {
-      void e; // send failed — user notified via toast below
-      setToast('Send failed: ' + (e?.message || 'Unknown error'));
+    } catch (e: unknown) {
+      setToast('Send failed: ' + (e instanceof Error ? e.message : 'Unknown error'));
       setTimeout(() => setToast(''), 5000);
     }
   };
@@ -1971,22 +1945,24 @@ export default function App() {
     .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isDev = (me?.email && _devEmails.includes(me.email.toLowerCase())) ||
     localStorage.getItem('d_dev_local') === 'true';
-  const isPlatformDevOrAdmin = platformUser?.platform_role === 'dev' || platformUser?.platform_role === 'admin' || (platformUser as any)?.account_tier === 'admin';
-  const isPlatformTester = (me as any)?.account_tier === 'tester';
+  const isPlatformDevOrAdmin = platformUser?.platform_role === 'dev' || platformUser?.platform_role === 'admin' || platformUser?.account_tier === 'admin';
+  const isPlatformTester = me?.account_tier === 'tester';
   const effectiveTier: Tier = (isPlatformDevOrAdmin && devTierOverride)
     ? devTierOverride
     : (isDev && tierRank(tier) < tierRank('verified') ? 'verified' : tier);
   const tierLimits = TIER_LIMITS[effectiveTier];
 
   /** Parse a TIER_LIMIT API error and show the limit modal. Returns true if handled. */
-  const handleTierLimitError = (err: any): boolean => {
+  const handleTierLimitError = (err: unknown): boolean => {
     if (localStorage.getItem('d_self_hosted') === 'true') return false;
     try {
-      const body = typeof err === 'object' ? err : JSON.parse(err?.message || '{}');
-      const code = body?.error?.code || body?.code;
+      const body = typeof err === 'object' && err !== null ? err : JSON.parse(err instanceof Error ? err.message : '{}');
+      const b = body as Record<string, unknown>;
+      const errObj = b.error as Record<string, unknown> | undefined;
+      const code = errObj?.code || b.code;
       if (code === 'TIER_LIMIT') {
-        const e = body?.error || body;
-        setTierLimitModal({ resource: e.message || 'resource', limit: e.limit || 0, tier: e.tier || 'free' });
+        const e = (errObj || b) as Record<string, unknown>;
+        setTierLimitModal({ resource: (e.message as string) || 'resource', limit: (e.limit as number) || 0, tier: (e.tier as string) || 'free' });
         return true;
       }
     } catch {}
@@ -2041,10 +2017,10 @@ export default function App() {
       await loadServers(); await selectServer(s);
     }
     setCreateName(''); setServerPreset(null); setModal(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Try to parse TIER_LIMIT from API response
       if (!handleTierLimitError(err)) {
-        setToast(err?.message || 'Failed to create server');
+        setToast(err instanceof Error ? err.message : 'Failed to create server');
         setTimeout(() => setToast(''), 4000);
       }
     } finally { setServerCreating(false); }
@@ -2074,9 +2050,9 @@ export default function App() {
     }
     items.push({ label: 'React', icon: <I.Smile />, fn: () => setEmojiTarget(m.id) });
     if (curServer && curChannel) {
-      items.push({ label: 'Pin: Important', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'important'); setToast('Pinned as Important'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
-      items.push({ label: 'Pin: Action Required', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'action_required'); setToast('Pinned as Action Required'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
-      items.push({ label: 'Pin: Reference', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'reference'); setToast('Pinned as Reference'); } catch (e: any) { setToast(e?.message || 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Important', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'important'); setToast('Pinned as Important'); } catch (e: unknown) { setToast(e instanceof Error ? e.message : 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Action Required', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'action_required'); setToast('Pinned as Action Required'); } catch (e: unknown) { setToast(e instanceof Error ? e.message : 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
+      items.push({ label: 'Pin: Reference', icon: <I.Pin />, fn: async () => { try { await api.pinMessage(curServer.id, curChannel.id, m.id, 'reference'); setToast('Pinned as Reference'); } catch (e: unknown) { setToast(e instanceof Error ? e.message : 'Failed to pin'); } setTimeout(() => setToast(''), 2000); } });
     }
     items.push({ label: 'Mention Author', icon: <I.At />, fn: () => { setMsgInput(p => p + `@${getName(m.author_id)} `); inputRef.current?.focus(); } });
     items.push({ label: bookmarkedIds.has(m.id) ? 'Remove Bookmark' : 'Bookmark', icon: <I.Bookmark />, fn: () => toggleBookmark(m) });
@@ -2100,7 +2076,7 @@ export default function App() {
     }
   };
 
-  const navigateToBookmark = async (bm: any) => {
+  const navigateToBookmark = async (bm: Bookmark) => {
     const s = servers.find(sv => sv.id === bm.server_id);
     if (!s) return;
     // Select server (loads channels internally), then override to the bookmark's channel.
@@ -2121,7 +2097,7 @@ export default function App() {
 
   // ── Move to Voice ────────────────────────────────────────
   const moveToVoice = (targetUid: string) => {
-    const targetCh = voiceChannel || channels.find((c: any) => c.channel_type === 'voice');
+    const targetCh = voiceChannel || channels.find(c => c.channel_type === 'voice');
     if (!targetCh || !curServer) return;
     api.ws?.send(JSON.stringify({ type: 'force_voice_join', user_id: targetUid, channel_id: targetCh.id }));
     setToast(`Moving ${getName(targetUid)} to #${targetCh.name}`);
@@ -2139,7 +2115,7 @@ export default function App() {
     ];
     if (hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR) && uid !== api.userId && uid !== curServer?.owner_id) {
       items.push({ sep: true });
-      const hasVoiceCh = channels.some((c: any) => c.channel_type === 'voice');
+      const hasVoiceCh = channels.some(c => c.channel_type === 'voice');
       const targetIsBot = members.find(m => m.user_id === uid)?.is_bot;
       if (hasVoiceCh) {
         items.push({ label: targetIsBot ? '🔊 Move Bot to Voice' : '🔊 Move to Voice', icon: <I.Vol />, fn: () => moveToVoice(uid) });
@@ -2327,14 +2303,14 @@ export default function App() {
       {me && !me.email_verified && me.email && !verifyBannerDismissed && _storage.getItem('d_verify_skipped') === '1' && (
         <VerifyEmailBanner
           topOffset={isMobile && showAppBanner ? 40 : 0}
-          onVerify={() => { setMe((prev: any) => prev ? { ...prev, email_verified: true, account_tier: 'verified' } : prev); setVerifyBannerDismissed(true); }}
+          onVerify={() => { setMe(prev => prev ? { ...prev, email_verified: true, account_tier: 'verified' } : prev); setVerifyBannerDismissed(true); }}
           onDismiss={() => { setVerifyBannerDismissed(true); try { sessionStorage.setItem('d_verify_dismissed', '1'); } catch { /* blocked */ } }}
         />
       )}
       {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
 
       {/* ═══ Server Rail (hidden in Simple mode + mobile — replaced by bottom tabs) ═══ */}
-      <div className="server-rail" role="navigation" aria-label="Server list" data-testid="server-list" data-component="ServerRail" style={{ width: 72, minWidth: 72, background: T.bg, display: isCompact ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderInlineEnd: `1px solid ${T.bd}`, overflowY: 'auto' }}>
+      <div className={`server-rail${isCompact ? ' server-rail--hidden' : ''}`} role="navigation" aria-label="Server list" data-testid="server-list" data-component="ServerRail" style={{ width: 72, minWidth: 72, background: T.bg, flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, borderInlineEnd: `1px solid ${T.bd}`, overflowY: 'auto' }}>
         <div className={`srv-icon${view === 'home' ? ' srv-icon--active' : ''}`} onClick={goHome} title="Home" role="button" aria-label="Home" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') goHome(); }} style={{ width: 48, height: 48, borderRadius: view === 'home' ? 16 : 24, background: view === 'home' ? `linear-gradient(135deg,${T.ac},${T.ac2})` : T.sf2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-radius .2s, box-shadow .15s ease', color: view === 'home' ? '#000' : T.tx }}><I.Home /></div>
         <div style={{ width: 28, height: 2, background: T.bd, borderRadius: 1, margin: '4px 0' }} />
         {/* DM button */}
@@ -2378,7 +2354,7 @@ export default function App() {
       </div>
 
       {/* ═══ Sidebar (hidden in Simple mode unless slide-over) ═══ */}
-      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 240, minWidth: 240, background: T.sf, display: (isCompact && !mobileMenuOpen) ? 'none' : 'flex', flexDirection: 'column', borderInlineEnd: `1px solid ${T.bd}` }}>
+      <div className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}${(isCompact && !mobileMenuOpen) ? ' sidebar--hidden' : ''}`} role="navigation" aria-label="Channel sidebar" style={{ width: 240, minWidth: 240, background: T.sf, flexDirection: 'column', borderInlineEnd: `1px solid ${T.bd}` }}>
       <SectionBoundary name="sidebar">
         <div onContextMenu={e => {
           if (view === 'server' && curServer) {
@@ -2407,7 +2383,7 @@ export default function App() {
             <div onClick={() => { goHome(); setHomeTab('events'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'events' ? T.ac : T.mt, background: homeTab === 'events' ? 'rgba(124,58,237,0.08)' : 'transparent' }}><I.Clock /> {t('nav.events')}</div>
             {/* Leaderboard removed — no backing system yet. Re-add post-launch. */}
             <div onClick={() => { goHome(); setHomeTab('tools'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'tools' ? T.ac : T.mt, background: homeTab === 'tools' ? 'rgba(124,58,237,0.08)' : 'transparent' }}><I.Wrench /> {t('nav.tools')}</div>
-            <div onClick={() => { goHome(); setHomeTab('bookmarks'); api.listBookmarks().then((bm: any[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {}); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'bookmarks' ? T.ac : T.mt, background: homeTab === 'bookmarks' ? 'rgba(124,58,237,0.08)' : 'transparent' }}><I.Bookmark /> {t('nav.savedMessages')}</div>
+            <div onClick={() => { goHome(); setHomeTab('bookmarks'); api.listBookmarks().then((bm: Bookmark[]) => { if (Array.isArray(bm)) { setBookmarks(bm); setBookmarkedIds(new Set(bm.map(b => b.message_id))); } }).catch(() => {}); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'bookmarks' ? T.ac : T.mt, background: homeTab === 'bookmarks' ? 'rgba(124,58,237,0.08)' : 'transparent' }}><I.Bookmark /> {t('nav.savedMessages')}</div>
             <div onClick={() => { goHome(); setHomeTab('discover'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'discover' ? T.ac : T.mt, background: homeTab === 'discover' ? 'rgba(124,58,237,0.08)' : 'transparent' }}><I.Globe /> {t('nav.discover')}</div>
             {(isPlatformDevOrAdmin || isPlatformTester) && <div onClick={() => { goHome(); setHomeTab('admin'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: homeTab === 'admin' ? '#f0b232' : T.mt, background: homeTab === 'admin' ? 'rgba(240,178,50,0.08)' : 'transparent' }}><I.ShieldCheck /> {t('nav.admin')}</div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 10px 6px' }}>
@@ -2477,17 +2453,17 @@ export default function App() {
               </div>
             ) : (
             <ChannelSidebar
-              channels={channels as any}
+              channels={channels}
               catData={categories.map(c => ({ id: c.id, name: c.name, position: c.position ?? 0 }))}
-              curChannel={curChannel as any}
-              voiceChannel={voiceChannel as any}
+              curChannel={curChannel}
+              voiceChannel={voiceChannel}
               voicePeers={voiceChannel ? [
                 { id: api.userId!, name: api.username || '?', speaking: vc.speaking, self: true },
                 ...Array.from(vc.streams.keys()).map(pid => ({ id: pid, name: getName(pid), speaking: false }))
               ] : []}
               voicePresence={voicePresence}
               memberMap={Object.fromEntries([
-                ...members.map((m: any) => [m.user_id, { name: m.display_name || m.username, isBot: !!m.is_bot }]),
+                ...members.map(m => [m.user_id, { name: m.display_name || m.username, isBot: !!m.is_bot }]),
                 [api.userId!, { name: api.username || '?', isBot: false }],
               ])}
               unreadCounts={unreadCounts}
@@ -2500,8 +2476,8 @@ export default function App() {
               isOwner={hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)}
               canMoveMember={false}
               userMaxRolePos={0}
-              onClick={(ch) => selectChannel(ch as any)}
-              onVoiceClick={(ch) => joinVoice(ch as any)}
+              onClick={(ch) => selectChannel(ch as Channel)}
+              onVoiceClick={(ch) => joinVoice(ch as Channel)}
               onWatchStream={(ch) => {
                 const info = streamStatus[ch.id];
                 if (info?.active && info.viewerUrl) {
@@ -2511,7 +2487,7 @@ export default function App() {
                   setTimeout(() => setToast(''), 3000);
                 }
               }}
-              onChannelSettings={(ch) => { setEditChannel(ch as any); setEditChannelName(ch.name); setEditChannelTopic((ch as any).topic || ''); setChSettingsTab('overview'); setChSlowmode((ch as any).slowmode_seconds || 0); setChNsfw((ch as any).is_nsfw || false); setChArchived((ch as any).is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${ch.id}`) || '{}')); setModal('edit-channel'); }}
+              onChannelSettings={(ch) => { const c = ch as Channel; setEditChannel(c); setEditChannelName(c.name); setEditChannelTopic(c.topic || ''); setChSettingsTab('overview'); setChSlowmode(c.slowmode_seconds || 0); setChNsfw(c.is_nsfw || false); setChArchived(c.is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${c.id}`) || '{}')); setModal('edit-channel'); }}
               onReorder={async (dragCh, targetCh) => {
                 if (!curServer) return;
                 await api.updateChannel(dragCh.id, { position: targetCh.position });
@@ -2519,7 +2495,7 @@ export default function App() {
                 await loadChannels(curServer.id);
               }}
               onMoveUserToVoice={() => {}}
-              onChannelCtx={(e: React.MouseEvent, ch: any) => {
+              onChannelCtx={(e: React.MouseEvent, ch) => {
                 e.preventDefault();
                 const chMuted = !!mutedChannels[ch.id];
                 const items: CtxMenuItem[] = [
@@ -2561,7 +2537,7 @@ export default function App() {
                 }
                 if (hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.ADMIN)) {
                   items.push({ sep: true });
-                  items.push({ label: '⚙ Channel Settings', icon: <I.Settings />, fn: () => { setEditChannel(ch); setEditChannelName(ch.name); setEditChannelTopic((ch as any).topic || ''); setChSettingsTab('overview'); setChSlowmode((ch as any).slowmode_seconds || 0); setChNsfw((ch as any).is_nsfw || false); setChArchived((ch as any).is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${ch.id}`) || '{}')); setModal('edit-channel'); } });
+                  items.push({ label: '⚙ Channel Settings', icon: <I.Settings />, fn: () => { const c = ch as Channel; setEditChannel(c); setEditChannelName(c.name); setEditChannelTopic(c.topic || ''); setChSettingsTab('overview'); setChSlowmode(c.slowmode_seconds || 0); setChNsfw(c.is_nsfw || false); setChArchived(c.is_archived || false); setChPermOverrides(JSON.parse(localStorage.getItem(`d_ch_perms_${c.id}`) || '{}')); setModal('edit-channel'); } });
                   items.push({ label: 'Clone Channel', icon: <I.Plus />, fn: async () => { if (curServer) { await api.createChannel(curServer.id, `${ch.name}-copy`, null, ch.channel_type); await loadChannels(curServer.id); setToast('Channel cloned'); setTimeout(() => setToast(''), 2000); } } });
                   items.push({ sep: true });
                   items.push({ label: 'Delete Channel', icon: <I.Trash />, danger: true, fn: async () => { if (await showConfirm('Delete Channel', `This will permanently delete #${ch.name} and all its messages. This action cannot be undone.`, true, ch.name, 'Delete Channel')) { await api.deleteChannel(ch.id); if (curServer) await loadChannels(curServer.id); if (curChannel?.id === ch.id) setCurChannel(null); } } });
@@ -2688,7 +2664,7 @@ export default function App() {
                 </div>
                 <div onClick={async () => {
                   setConnDiag(null);
-                  const results: any = { api: 'checking', ws: 'checking', dns: 'checking' };
+                  const results: Record<string, string> = { api: 'checking', ws: 'checking', dns: 'checking' };
                   setConnDiag({ ...results });
                   // Check API
                   try {
@@ -2747,7 +2723,7 @@ export default function App() {
         )}
         {/* Device verification banner removed — device verification is optional in Settings > Security */}
         {/* Header */}
-        <div className="chat-header" style={{ padding: '10px 16px', borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 10, minHeight: 48 }}>
+        <div className="chat-header" style={{ borderBottom: `1px solid ${T.bd}`, display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Nighttime indicator */}
           {nightActive && <span title="Nighttime mode active" style={{ fontSize: 14, opacity: 0.6 }}>🌙</span>}
           {/* Back button — Simple mode: returns to tab list */}
@@ -2787,7 +2763,7 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 8 }}>
                 <select value={curDm.ttl_seconds ?? ''} onChange={async e => {
                   const v = e.target.value === '' ? null : Number(e.target.value);
-                  try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: any) { setToast(err?.message || 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
+                  try { await api.fetch(`/conversations/${curDm.id}/ttl`, { method: 'PUT', body: JSON.stringify({ ttl_seconds: v }) }); setCurDm({ ...curDm, ttl_seconds: v, ttl_set_by: api.userId || undefined, ttl_set_at: new Date().toISOString() }); } catch (err: unknown) { setToast(err instanceof Error ? err.message : 'Failed to set timer'); setTimeout(() => setToast(''), 3000); }
                 }} style={{ fontSize: 11, padding: '2px 6px', background: T.sf2, border: `1px solid ${T.bd}`, borderRadius: 6, color: T.mt, cursor: 'pointer' }}>
                   <option value="">Off</option>
                   <option value="3600">1 Hour</option>
@@ -2825,7 +2801,7 @@ export default function App() {
                         <span style={{ fontSize: 20 }}>{mlsActive ? '🔒' : '🔐'}</span>
                         <div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: mlsActive ? T.ac : '#faa61a' }}>{mlsActive ? 'MLS RFC 9420' : 'AES-256-GCM'}</div>
-                          <div style={{ fontSize: 11, color: T.mt }}>{mlsActive ? 'Group key agreement active' : 'End-to-end encrypted (fallback mode)'}</div>
+                          <div style={{ fontSize: 11, color: T.mt }}>{mlsActive ? 'Group key agreement active' : 'End-to-end encrypted'}</div>
                         </div>
                       </div>
                       <div style={{ fontSize: 12, color: T.tx, lineHeight: 1.6, marginBottom: 10 }}>
@@ -2867,14 +2843,14 @@ export default function App() {
                   try { await api.joinServer(action.server_id, action.invite_code); await loadServers(); } catch {}
                 }
                 // Navigate to the server (selectServer loads channels)
-                const srv = servers.find((s: any) => s.id === action.server_id);
+                const srv = servers.find(s => s.id === action.server_id);
                 if (srv) {
                   await selectServer(srv);
                   // After selectServer, channels are loaded — now auto-join voice if linked
                   if (action.voice_channel_id) {
                     // Small delay to ensure channels state is flushed
                     setTimeout(() => {
-                      const vch = channelsRef.current.find((c: any) => c.id === action.voice_channel_id);
+                      const vch = channelsRef.current.find(c => c.id === action.voice_channel_id);
                       if (vch) joinVoice(vch);
                     }, 200);
                   }
@@ -3037,7 +3013,7 @@ export default function App() {
         {/* ─── Friends View ─── */}
         {view === 'home' && homeTab === 'friends' && (
           <Suspense fallback={InlineLoader}><FriendsView
-            setCtxMenu={setCtxMenu as any}
+            setCtxMenu={setCtxMenu}
             showConfirm={showConfirm}
             isGuest={me?.is_guest}
             isMobile={isMobile}
@@ -3046,7 +3022,7 @@ export default function App() {
                 const dm = await api.createDm(userId);
                 if (dm?.id) {
                   // Navigate to DM and join voice
-                  const ch = { id: dm.id, name: dm.recipient_username || 'DM', type: 'dm' } as any;
+                  const ch: Channel = { id: dm.id, name: dm.recipient_username || 'DM', server_id: '', channel_type: 'dm', position: 0 };
                   selectChannel(ch);
                   vc.join(dm.id);
                 }
@@ -3070,7 +3046,7 @@ export default function App() {
         {/* ─── Leaderboard View ─── */}
         {view === 'home' && homeTab === 'leaderboard' && curServer && (
           <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-            <Suspense fallback={InlineLoader}><LeaderboardPanel serverId={curServer.id} members={members as any} /></Suspense>
+            <Suspense fallback={InlineLoader}><LeaderboardPanel serverId={curServer.id} members={members} /></Suspense>
           </div>
         )}
         {view === 'home' && homeTab === 'leaderboard' && !curServer && (
@@ -3235,7 +3211,7 @@ export default function App() {
                 <div style={{ fontSize: 16, fontWeight: 700, color: T.tx, marginBottom: 6 }}>No saved messages yet</div>
                 <div style={{ fontSize: 13, color: T.mt, lineHeight: 1.5, maxWidth: 300, margin: '0 auto' }}>Hover a message and click the bookmark icon to save it for later.</div>
               </div>
-            ) : bookmarks.map((bm: any) => {
+            ) : bookmarks.map(bm => {
               const serverName = servers.find(s => s.id === bm.server_id)?.name || 'Unknown server';
               return (
                 <div key={bm.message_id} onClick={() => navigateToBookmark(bm)} style={{ padding: '12px 20px', borderBottom: `1px solid ${ta(T.bd,'20')}`, cursor: 'pointer', transition: 'background .1s' }}
@@ -3277,7 +3253,7 @@ export default function App() {
             {curGroupDm.member_ids?.length > 0 && <span style={{ fontSize: 11, color: T.mt }}>{curGroupDm.member_ids.length} members</span>}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {dmMsgs.map((m: any) => (
+            {dmMsgs.map(m => (
               <div key={m.id} style={{ display: 'flex', gap: 10, padding: '4px 16px' }}>
                 <div onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer' }}>
                   <Av name={m.author_id === api.userId ? (api.username || '?') : getName(m.author_id)} size={36} />
@@ -3319,7 +3295,7 @@ export default function App() {
             })()}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {dmMsgs.map((m: any) => (
+            {dmMsgs.map(m => (
               <div key={m.id} style={{ display: 'flex', gap: 10, padding: '4px 16px' }}>
                 <div onClick={e => setProfileCard({ userId: m.author_id, pos: { x: e.clientX, y: e.clientY } })} style={{ cursor: 'pointer' }}>
                   <Av name={m.author_id === api.userId ? api.username : curDm.other_username} size={36} />
@@ -3445,7 +3421,7 @@ export default function App() {
             getName={getName}
             getRawUsername={(uid) => rawUsernameMap[uid] || ''}
             renderPlatformBadge={renderPlatformBadge}
-            getMembers={() => members.map((m: any) => ({ user_id: m.user_id, username: m.username, display_name: m.display_name }))}
+            getMembers={() => members.map(m => ({ user_id: m.user_id, username: m.username, display_name: m.display_name }))}
             getProfanityServerId={() => curServer?.id || null}
             onScroll={setMsgScrollTop}
             onLoadMore={async () => {
@@ -3454,7 +3430,7 @@ export default function App() {
               try {
                 const older = await api.getMessagesBatch(curChannel.id, 50, messages[0]?.id);
                 if (Array.isArray(older) && older.length > 0) {
-                  const decOlder = await Promise.all(older.map(async (m: any) => ({ ...m, text: await dec(curChannel.id, m.content_ciphertext), authorName: userMap[m.author_id] || 'Unknown' })));
+                  const decOlder = await Promise.all((older as Msg[]).map(async (m) => ({ ...m, text: (await dec(curChannel.id, m.content_ciphertext)).text, authorName: userMap[m.author_id] || 'Unknown' })));
                   setMessages(prev => [...decOlder.reverse(), ...prev]);
                 }
               } catch {} setLoadingMore(false);
@@ -3465,13 +3441,13 @@ export default function App() {
             onReact={(msgId, emoji) => addReaction(msgId, emoji)}
             onToggleReaction={(msgId, emoji) => toggleReaction(msgId, emoji)}
             onEmojiTarget={(msgId) => setEmojiTarget(msgId)}
-            onPin={async (msgId) => { if (curServer && curChannel) { try { await api.pinMessage(curServer.id, curChannel.id, msgId, 'important'); setToast('Pinned as Important'); setTimeout(() => setToast(''), 2000); } catch (e: any) { setToast(e?.message || 'Failed to pin'); setTimeout(() => setToast(''), 3000); } } }}
+            onPin={async (msgId) => { if (curServer && curChannel) { try { await api.pinMessage(curServer.id, curChannel.id, msgId, 'important'); setToast('Pinned as Important'); setTimeout(() => setToast(''), 2000); } catch (e: unknown) { setToast(e instanceof Error ? e.message : 'Failed to pin'); setTimeout(() => setToast(''), 3000); } } }}
             onBookmark={(m) => toggleBookmark(m)}
             onReport={(m) => setReportTarget(m)}
             onRetryFailed={(id) => retryFailedMessage(id)}
             onAck={async (msgId) => { try { const res = await api.ackMessage(msgId); setAckCounts(p => ({ ...p, [msgId]: { ack: res.ack_count, total: res.member_count, myAck: true } })); } catch {} }}
             onVotePoll={(pollId, idx, prev) => { setPollVotes(p => ({ ...p, [pollId]: prev === idx ? null : idx })); api.votePoll(pollId, idx).catch(() => setPollVotes(p => ({ ...p, [pollId]: prev }))); }}
-            onOpenThread={async (m) => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const d = await Promise.all((r as any[]).map(async (rm: any) => { try { rm.text = await (window as any).__decryptMsg?.(curChannel!.id, rm.content_ciphertext) ?? rm.content_ciphertext; } catch { rm.text = rm.content_ciphertext; } return rm; })); setThreadReplies(d); } catch { setThreadReplies([]); } }}
+            onOpenThread={async (m) => { setThreadParent(m); setPanel('thread'); try { const r = await api.getThreadReplies(m.id); const replies = (Array.isArray(r) ? r : []) as Msg[]; const d = await Promise.all(replies.map(async (rm) => { try { const decrypted = await (window as {__decryptMsg?: (cid: string, ct: string) => Promise<string>}).__decryptMsg?.(curChannel!.id, rm.content_ciphertext); return { ...rm, text: decrypted ?? rm.content_ciphertext }; } catch { return { ...rm, text: rm.content_ciphertext }; } })); setThreadReplies(d); } catch { setThreadReplies([]); } }}
             onDismissDisclosure={() => { if (curChannel) setAgentDisclosures(p => { const n = { ...p }; delete n[curChannel.id]; return n; }); }}
             onJoinedServer={loadServers}
             voiceBaseUrl={api.baseUrl}
@@ -3499,8 +3475,8 @@ export default function App() {
                 const ct = await enc(curChannel.id, '\u{1F3A4} Voice message');
                 await api.sendVoiceMessage(curChannel.id, blob, durationMs, ct, 0, waveform);
                 await loadMessages(curChannel);
-              } catch (e: any) {
-                setToast(e?.message || 'Voice message failed');
+              } catch (e: unknown) {
+                setToast(e instanceof Error ? e.message : 'Voice message failed');
                 setTimeout(() => setToast(''), 4000);
               }
             }}
@@ -3535,7 +3511,6 @@ export default function App() {
             slashTool={slashTool}
             onSlashToolClose={() => setSlashTool(null)}
             slashToolContent={<>
-              {slashTool === 'calc' && <CalcTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
               {slashTool === 'convert' && <ConvertTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
               {slashTool === 'color' && <ColorTool onInsert={(v: string) => { setMsgInput(p => p + v); setSlashTool(null); inputRef.current?.focus(); }} />}
             </>}
@@ -3584,7 +3559,7 @@ export default function App() {
         }} />
       )}
       {view === 'server' && !openThread && panel === 'members' && (showMembersSkeleton && members.length === 0 ? (
-        <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, padding: 16 }}>
+        <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}` }}>
           <SkeletonBar w="45%" h={9} mb={14} />
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, animation: `fadeIn 0.3s ${i * 0.06}s both` }}>
@@ -3598,7 +3573,7 @@ export default function App() {
         </div>
       ) : (() => {
         // Group members by their highest role
-        const roleMap = new Map<string, { name: string; color: string; position: number; members: any[] }>();
+        const roleMap = new Map<string, { name: string; color: string; position: number; members: Member[] }>();
         // Add 'Online' and 'Offline' defaults
         roleMap.set('__owner', { name: '👑 Owner', color: '#faa61a', position: -1, members: [] });
         roles.forEach(r => roleMap.set(r.id, { name: r.name, color: r.color || T.mt, position: r.position ?? 99, members: [] }));
@@ -3607,9 +3582,10 @@ export default function App() {
         members.forEach(m => {
           if (m.user_id === curServer?.owner_id) { roleMap.get('__owner')!.members.push(m); return; }
           // Find highest role for this member
-          const memberRoles = (m.role_ids || []).map((rid: string) => roles.find(r => r.id === rid)).filter(Boolean);
+          const roleIds = (m.role_ids || []) as string[];
+          const memberRoles = roleIds.map(rid => roles.find(r => r.id === rid)).filter((r): r is Role => !!r);
           if (memberRoles.length > 0) {
-            const highest = memberRoles.sort((a: any, b: any) => (a.position ?? 99) - (b.position ?? 99))[0];
+            const highest = memberRoles.sort((a, b) => (a.position ?? 99) - (b.position ?? 99))[0];
             if (roleMap.has(highest.id)) roleMap.get(highest.id)!.members.push(m);
             else roleMap.get('__online')!.members.push(m);
           } else {
@@ -3620,13 +3596,13 @@ export default function App() {
         const groups = Array.from(roleMap.values()).filter(g => g.members.length > 0).sort((a, b) => a.position - b.position);
 
         return (
-          <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, overflowY: 'auto', padding: 12 }}>
+          <div className="member-panel" style={{ width: layoutMode.isPower ? memberPanelW : 240, minWidth: 180, background: T.sf, borderInlineStart: `1px solid ${T.bd}`, overflowY: 'auto' }}>
             {groups.map(group => (
               <div key={group.name}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: group.color, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 0 4px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>{group.name}</span><span style={{ color: T.mt }}>{group.members.length}</span>
                 </div>
-                {group.members.map((m: any) => {
+                {group.members.map(m => {
                   const _gbp = localStorage.getItem('d_show_bot_tags') ?? 'true';
                   const _srv = curServer ? (localStorage.getItem('d_server_bot_tags_' + curServer.id) ?? 'true') : 'true';
                   const _pbp = m.is_bot ? (localStorage.getItem('d_bot_tag_' + m.user_id) ?? 'true') : 'true';
@@ -3812,8 +3788,8 @@ export default function App() {
               <div style={{ fontSize: 12, color: T.mt, fontStyle: 'italic', marginBottom: 16 }}>No friends to add yet.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16, maxHeight: 220, overflowY: 'auto' }}>
-                {gdmFriends.map((f: any) => {
-                  const uid = f.friend_id || f.user_id || f.id;
+                {gdmFriends.map(f => {
+                  const uid = (f.friend_id as string | undefined) || f.user_id || (f.id as string | undefined) || '';
                   const name = f.username || f.display_name || 'Unknown User';
                   const checked = gdmSelected.includes(uid);
                   return (
@@ -4320,7 +4296,7 @@ export default function App() {
       {modal === 'server-settings' && curServer && (
         <Suspense fallback={<ModalLoadingFallback />}>
           <ServerSettingsModal
-            server={curServer as any}
+            server={curServer}
             onClose={() => setModal(null)}
             onUpdate={async () => { await loadServers(); await loadChannels(curServer.id); await loadMembers(curServer.id); }}
             showConfirm={showConfirm}
@@ -4495,7 +4471,7 @@ export default function App() {
           messageText={msgInput}
           onScheduled={() => {
             setMsgInput('');
-            api.listScheduledMessages(curChannel.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: any) => m.status === 'pending').length)).catch(() => {});
+            api.listScheduledMessages(curChannel.id).then(d => setScheduledCount((Array.isArray(d) ? d : []).filter((m: {status?: string}) => m.status === 'pending').length)).catch(() => {});
           }}
           onClose={() => setShowScheduleModal(false)}
           onToast={(msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); }}
@@ -4527,7 +4503,7 @@ export default function App() {
             userId={profileCard.userId}
             pos={profileCard.pos}
             onClose={() => setProfileCard(null)}
-            curServer={curServer as any}
+            curServer={curServer}
             isOwner={curServer?.owner_id === api.userId}
             canMod={hasPrivilege(myPrivilege, PRIVILEGE_LEVELS.MODERATOR)}
             allRoles={roles}
@@ -4559,8 +4535,8 @@ export default function App() {
             view={view}
             getName={getName}
             pinnedIds={pinnedIds}
-            onNavigate={(target: any) => {
-              if (target?.channel) selectChannel(target.channel);
+            onNavigate={(target) => {
+              if (target?.channel) selectChannel(target.channel as Channel);
               if (target?.messageId) {
                 // Scroll to and highlight the matched message
                 setHighlightedMsg(target.messageId);
@@ -4621,7 +4597,7 @@ export default function App() {
           { key: 'action_required', label: 'Action Required', icon: '🟡', color: '#faa61a' },
           { key: 'reference', label: 'Reference', icon: '🔵', color: '#3b82f6' },
         ];
-        const grouped: Record<string, any[]> = { important: [], action_required: [], reference: [] };
+        const grouped: Record<string, Msg[]> = { important: [], action_required: [], reference: [] };
         for (const m of pinnedMsgs) grouped[m.category || 'important']?.push(m);
         const total = pinnedMsgs.length;
 
@@ -4649,7 +4625,7 @@ export default function App() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', fontSize: 11, fontWeight: 700, color: cat.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       <span>{cat.icon}</span> {cat.label} <span style={{ fontSize: 10, fontWeight: 600, color: T.mt }}>({msgs.length})</span>
                     </div>
-                    {msgs.map((m: any) => (
+                    {msgs.map(m => (
                       <div key={m.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${ta(T.bd, '20')}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4843,7 +4819,7 @@ export default function App() {
             me={me}
             onClose={() => setModal(null)}
             onLogout={async () => { setModal(null); await api.logout(); setAuthed(false); }}
-            onRefreshMe={() => api.getMe().then((u: any) => setMe(u)).catch(() => {})}
+            onRefreshMe={() => api.getMe().then((u: AppUser | null) => setMe(u)).catch(() => {})}
           />
         </Suspense>
       )}
@@ -4926,7 +4902,7 @@ export default function App() {
       )}
 
       {/* CSS for hover actions */}
-      <style>{`.msg-row:hover .msg-actions, div:hover > .msg-actions { display: flex !important; }`}</style>
+      <style>{`.msg-row:hover .msg-actions, div:hover > .msg-actions { display: flex; }`}</style>
 
       {/* Onboarding wizard overlay (first-run only — renders over app) */}
       {showOnboarding && (
@@ -5040,8 +5016,8 @@ function DeleteServerModal({ serverId, serverName, onTransferInstead, onDeleted,
       await api.verifyPassword(password);
       await api.deleteServer(serverId);
       await onDeleted();
-    } catch (e: any) {
-      setError(e?.message || 'Deletion failed');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Deletion failed');
       setDeleting(false);
     }
   };

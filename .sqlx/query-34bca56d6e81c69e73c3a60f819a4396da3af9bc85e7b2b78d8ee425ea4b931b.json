@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, password_hash, account_tier, is_banned FROM users WHERE username = $1",
+  "query": "SELECT id, password_hash, account_tier, is_banned FROM users WHERE LOWER(username) = LOWER($1)",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "6a5168f3598502497c4a4d59c843fbcc5f9fcbeb40787dc722fc33e625b80df2"
+  "hash": "34bca56d6e81c69e73c3a60f819a4396da3af9bc85e7b2b78d8ee425ea4b931b"
 }

@@ -18,10 +18,74 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use crate::discreet_state::AppState;
+
+// ─── Trusted proxy configuration ─────────────────────────────────────────────
+// Only trust forwarded-IP headers (cf-connecting-ip, x-forwarded-for, x-real-ip)
+// when the connecting socket IP matches a trusted proxy. Without this, any client
+// can spoof their IP by sending a fake cf-connecting-ip header.
+//
+// Set TRUSTED_PROXY_IPS to a comma-separated list of IPs or CIDRs.
+// Leave empty (default) to always use the socket address — safest default.
+// For Cloudflare: set to their published IP ranges (https://www.cloudflare.com/ips/).
+
+fn parse_trusted_proxies() -> Vec<(IpAddr, u8)> {
+    let raw = std::env::var("TRUSTED_PROXY_IPS").unwrap_or_default();
+    if raw.is_empty() { return Vec::new(); }
+    raw.split(',')
+        .filter_map(|entry| {
+            let entry = entry.trim();
+            if entry.is_empty() { return None; }
+            if let Some((ip_str, prefix_str)) = entry.split_once('/') {
+                let ip: IpAddr = ip_str.parse().ok()?;
+                let prefix: u8 = prefix_str.parse().ok()?;
+                Some((ip, prefix))
+            } else {
+                let ip: IpAddr = entry.parse().ok()?;
+                let prefix = if ip.is_ipv4() { 32 } else { 128 };
+                Some((ip, prefix))
+            }
+        })
+        .collect()
+}
+
+fn ip_in_cidr(ip: &IpAddr, network: &IpAddr, prefix: u8) -> bool {
+    match (ip, network) {
+        (IpAddr::V4(ip4), IpAddr::V4(net4)) => {
+            if prefix == 0 { return true; }
+            if prefix > 32 { return false; }
+            let mask = !0u32 << (32 - prefix);
+            (u32::from(*ip4) & mask) == (u32::from(*net4) & mask)
+        }
+        (IpAddr::V6(ip6), IpAddr::V6(net6)) => {
+            if prefix == 0 { return true; }
+            if prefix > 128 { return false; }
+            let ip_bits = u128::from(*ip6);
+            let net_bits = u128::from(*net6);
+            let mask = !0u128 << (128 - prefix);
+            (ip_bits & mask) == (net_bits & mask)
+        }
+        _ => false,
+    }
+}
+
+fn is_trusted_proxy(peer_ip: &IpAddr, trusted: &[(IpAddr, u8)]) -> bool {
+    trusted.iter().any(|(net, prefix)| ip_in_cidr(peer_ip, net, *prefix))
+}
+
+static TRUSTED_PROXIES: std::sync::LazyLock<Vec<(IpAddr, u8)>> =
+    std::sync::LazyLock::new(|| {
+        let proxies = parse_trusted_proxies();
+        if proxies.is_empty() {
+            tracing::info!("TRUSTED_PROXY_IPS not set — using socket address for rate limiting (safe default)");
+        } else {
+            tracing::info!("TRUSTED_PROXY_IPS: {} CIDR entries loaded", proxies.len());
+        }
+        proxies
+    });
 
 // ─── Rate limit rules per path ──────────────────────────────────────────────
 
@@ -89,42 +153,60 @@ pub const USER_RULES: &[UserRule] = &[
 
 // ─── Extract client IP ──────────────────────────────────────────────────────
 
-/// Extract the real client IP. Priority: cf-connecting-ip > x-forwarded-for > x-real-ip > socket.
+/// Extract the real client IP.
+///
+/// Forwarded headers (cf-connecting-ip, x-forwarded-for, x-real-ip) are ONLY
+/// trusted when the connecting socket IP matches TRUSTED_PROXY_IPS. Without
+/// this, any client can spoof their IP by sending a fake header.
 pub fn extract_client_ip(headers: &axum::http::HeaderMap, extensions: &axum::http::Extensions) -> String {
-    // 1. Cloudflare real IP (most trustworthy behind CF proxy)
-    if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
-        return cf_ip.trim().to_string();
-    }
-    // 2. X-Forwarded-For (first hop)
-    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first) = xff.split(',').next() {
-            let ip = first.trim();
-            if !ip.is_empty() {
-                return ip.to_string();
+    let peer_ip = extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip());
+
+    // Only read forwarded headers if the direct peer is a trusted proxy.
+    let trust_headers = peer_ip
+        .as_ref()
+        .map(|ip| is_trusted_proxy(ip, &TRUSTED_PROXIES))
+        .unwrap_or(false);
+
+    if trust_headers {
+        // 1. Cloudflare real IP
+        if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+            let trimmed = cf_ip.trim();
+            if !trimmed.is_empty() { return trimmed.to_string(); }
+        }
+        // 2. X-Forwarded-For (leftmost = original client)
+        if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+            if let Some(first) = xff.split(',').next() {
+                let ip = first.trim();
+                if !ip.is_empty() { return ip.to_string(); }
             }
         }
+        // 3. X-Real-IP
+        if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            let trimmed = real.trim();
+            if !trimmed.is_empty() { return trimmed.to_string(); }
+        }
     }
-    // 3. X-Real-IP
-    if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        return real.trim().to_string();
-    }
-    // 4. Socket address
-    if let Some(ci) = extensions.get::<ConnectInfo<SocketAddr>>() {
-        return ci.0.ip().to_string();
-    }
-    "unknown".to_string()
+
+    // Fallback: direct socket address (unforgeable)
+    peer_ip.map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".to_string())
 }
 
 // ─── Redis rate limit check ─────────────────────────────────────────────────
 
 /// Check rate limit using Redis INCR + EXPIRE. Returns Ok(()) or Err(retry_after_secs).
+///
+/// Uses fixed time buckets — at a bucket boundary a client can send `limit`
+/// requests at the end of one window and `limit` more at the start of the next,
+/// effectively 2x burst over a brief interval. Acceptable for current threat
+/// model; sliding window (sorted sets) tracked for post-launch hardening.
 async fn redis_check(
     redis: &mut redis::aio::ConnectionManager,
     key: &str,
     limit: u32,
     window_secs: u64,
 ) -> Result<(), u64> {
-    // Use the current time bucket for the window
     let bucket = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -373,10 +455,10 @@ pub async fn rate_limit_middleware(
 
     let ip = extract_client_ip(request.headers(), request.extensions());
 
-    // Find matching rule for this path.
+    // Find matching rule for this path (prefix match, not substring).
     let (limit, window_secs) = IP_RULES
         .iter()
-        .find(|r| path.contains(r.prefix))
+        .find(|r| path.starts_with(r.prefix))
         .map(|r| (r.limit, r.window_secs))
         .unwrap_or((DEFAULT_IP_LIMIT, DEFAULT_IP_WINDOW));
 

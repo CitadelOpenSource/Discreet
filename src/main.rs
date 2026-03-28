@@ -31,7 +31,7 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use axum::http::{Method, header};
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
@@ -894,12 +894,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok();
 
     let cors = match cors_env.as_deref() {
-        Some("*") => {
-            tracing::warn!("CORS: allowing all origins (development mode)");
+        Some("*") | Some("") => {
+            tracing::warn!("CORS: wildcard or empty ALLOWED_ORIGINS rejected — using production defaults");
+            let defaults: Vec<_> = [
+                "https://discreetai.net",
+                "https://api.discreetai.net",
+            ].iter().filter_map(|o| o.parse().ok()).collect();
             CorsLayer::new()
-                .allow_origin(Any)
+                .allow_origin(defaults)
                 .allow_methods(cors_methods.clone())
                 .allow_headers(cors_headers.clone())
+                .allow_credentials(true)
                 .max_age(std::time::Duration::from_secs(3600))
         }
         Some(origins) => {

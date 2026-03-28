@@ -17,6 +17,7 @@ sha2 = "0.10"
 rand = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
 ammonia = "4"
+base64 = "0.22"
 once_cell = "1"
 typeshare = "1"
 

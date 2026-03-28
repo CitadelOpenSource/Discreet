@@ -69,10 +69,46 @@ const BANNED_USERNAME_WORDS: &[&str] = &[
     "nazi", "hitler", "kkk", "whitepower", "heil", "siegheil", "1488", "gasjews",
 ];
 
+/// Normalize Unicode confusables to their Latin equivalents.
+/// Covers the most common cross-script homoglyphs used in impersonation.
+fn normalize_confusables(s: &str) -> String {
+    s.chars().map(|c| match c {
+        // Cyrillic → Latin
+        '\u{0430}' => 'a', // а
+        '\u{0435}' => 'e', // е
+        '\u{043E}' => 'o', // о
+        '\u{0440}' => 'p', // р
+        '\u{0441}' => 'c', // с
+        '\u{0443}' => 'y', // у
+        '\u{0445}' => 'x', // х
+        '\u{0456}' => 'i', // і (Ukrainian і)
+        '\u{0458}' => 'j', // ј (Serbian ј)
+        '\u{04BB}' => 'h', // һ
+        '\u{0410}' => 'A', // А
+        '\u{0412}' => 'B', // В
+        '\u{0415}' => 'E', // Е
+        '\u{041A}' => 'K', // К
+        '\u{041C}' => 'M', // М
+        '\u{041D}' => 'H', // Н
+        '\u{041E}' => 'O', // О
+        '\u{0420}' => 'P', // Р
+        '\u{0421}' => 'C', // С
+        '\u{0422}' => 'T', // Т
+        '\u{0425}' => 'X', // Х
+        // Greek → Latin
+        '\u{03B1}' => 'a', // α
+        '\u{03BF}' => 'o', // ο
+        '\u{03B5}' => 'e', // ε
+        _ => c,
+    }).collect()
+}
+
 /// Normalize a string for leetspeak-resistant profanity matching.
-/// Lowercase, strip underscores, replace common substitutions.
+/// Applies confusable normalization, then leetspeak substitutions.
 fn normalize_leetspeak(s: &str) -> String {
-    s.to_lowercase()
+    let confusable_normalized = normalize_confusables(s);
+    confusable_normalized
+        .to_lowercase()
         .replace('_', "")
         .replace('0', "o")
         .replace('1', "i")
@@ -182,6 +218,7 @@ pub fn validate_message(content: &str) -> Result<(), AppError> {
 }
 
 /// Validate a display name: 1-32 chars, no control characters, no hate speech.
+/// Applies confusable normalization to catch cross-script impersonation.
 pub fn validate_display_name(name: &str) -> Result<(), AppError> {
     let trimmed = name.trim();
     let len = trimmed.chars().count();
@@ -194,7 +231,12 @@ pub fn validate_display_name(name: &str) -> Result<(), AppError> {
     if has_control_chars(trimmed) {
         return Err(AppError::BadRequest("Display name contains invalid characters".into()));
     }
+    // Check both the raw name and confusable-normalized form for hate speech.
     validate_display_name_content(trimmed)?;
+    let normalized = normalize_confusables(trimmed);
+    if normalized != trimmed {
+        validate_display_name_content(&normalized)?;
+    }
     Ok(())
 }
 
@@ -297,7 +339,9 @@ pub async fn validate_url_no_ssrf(url_str: &str) -> Result<(), AppError> {
     let host = parsed.host_str()
         .ok_or_else(|| AppError::BadRequest("URL has no host".into()))?;
 
-    let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "[::1]" || host == "0.0.0.0";
+    // 0.0.0.0 intentionally excluded — it resolves to "unspecified" which
+    // is_private_ip() blocks. Including it here would skip the DNS check.
+    let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "[::1]";
 
     // Scheme check
     match parsed.scheme() {

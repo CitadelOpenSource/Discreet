@@ -15,20 +15,19 @@ Do NOT open a public GitHub issue for security vulnerabilities. We follow coordi
 ## Cryptographic Architecture
 
 ### Message Encryption
-- Protocol: MLS RFC 9420 (Messaging Layer Security)
-- Cipher suite: MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
-- Symmetric cipher: AES-256-GCM
-- Key derivation: HKDF-SHA256
-- Salt format: `discreet:{channelId}:{epoch}`
-- Key commitment: 32-byte HKDF tag prepended to every ciphertext
+
+Two layers of encryption protect messages:
+
+1. **MLS group key agreement** (RFC 9420): Cipher suite `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`. This handles group member authentication, key rotation, and forward secrecy via TreeKEM. The symmetric cipher at this layer is AES-128-GCM per the MLS cipher suite specification.
+
+2. **Application-layer message encryption**: AES-256-GCM with HKDF-SHA256 key derivation. Salt format: `discreet:{channelId}:{epoch}`. This layer runs in the WASM security kernel and encrypts the actual message content before it reaches the MLS transport.
 
 ### Post-Quantum Cryptography
-- Key encapsulation: ML-KEM-768 (FIPS 203)
+- Key encapsulation: ML-KEM-768 (FIPS 203), gated behind `pq` feature flag
 - Implementation: libcrux-ml-kem 0.0.8 (Cryspen)
-- Verification: Formally verified for panic freedom, correctness, and secret independence using hax and F*
-- Same team that verified Signal's PQXDH protocol and discovered the KyberSlash timing vulnerability
+- **Note:** libcrux's formal verification claims have been publicly challenged (Symbolic Software, "Verification Theatre", IACR ePrint 2026/192). We are monitoring the situation and will migrate to a stable, independently audited implementation when available.
 - Key validation: FIPS 203 mandatory validation before encapsulation (fail-closed on invalid keys)
-- Hybrid architecture: X25519 (classical) + ML-KEM-768 (post-quantum) — both must be broken to compromise
+- Hybrid architecture: X25519 (classical) + ML-KEM-768 (post-quantum). Classical X25519 via MLS protects all communications regardless of PQ status. The PQ layer is defense-in-depth against future quantum computers.
 
 ### Voice/Video Encryption
 - Protocol: SFrame RFC 9605
@@ -37,13 +36,13 @@ Do NOT open a public GitHub issue for security vulnerabilities. We follow coordi
 
 ### Wire Format
 
-All AES-256-GCM ciphertexts use key-committing AEAD:
+Application-layer ciphertext format (standard AES-256-GCM per NIST SP 800-38D):
 
 ```
-[commitment (32 bytes) | IV (12 bytes) | ciphertext + GCM tag (16 bytes)]
+[nonce (12 bytes) | ciphertext | GCM authentication tag (16 bytes)]
 ```
 
-The commitment tag is derived from the same HKDF instance as the encryption key, using info suffix `:commit`. This prevents key multi-collision attacks where a ciphertext could decrypt under multiple keys.
+Nonces are 96-bit random, generated per encryption operation. Key commitment is not currently implemented (tracked as SKI-008).
 
 ### Authentication
 - Passwords: Argon2id (memory=19456, iterations=2, parallelism=1)
@@ -52,7 +51,7 @@ The commitment tag is derived from the same HKDF instance as the encryption key,
 - SAML: SSO for enterprise
 - TOTP: RFC 6238 with AES-256-GCM encrypted secret storage
 - Anonymous: BIP-39 12-word seed phrase (Argon2id hashed, never stored plaintext)
-- JWT access tokens: 15-minute expiry, RS256
+- JWT access tokens: 15-minute expiry, HS256 (symmetric; appropriate for single-server deployment)
 - Refresh tokens: HttpOnly secure cookies, SHA-256 hashed before storage
 - Account lockout: 5 failed attempts, 15-minute cooldown, fail-closed via Redis
 - Session revocation: immediate on password change (all sessions killed via Redis)
@@ -79,7 +78,7 @@ The commitment tag is derived from the same HKDF instance as the encryption key,
 ## Security Practices
 
 ### What We Do
-- All 692 database queries use compile-time validated sqlx macros (zero string interpolation)
+- All database queries use compile-time validated sqlx macros (zero string interpolation)
 - All user input validated (length, format, allowed characters)
 - All endpoints rate-limited (Redis sliding window, fail-closed)
 - SSRF protection on all URL-accepting endpoints (private IP ranges blocked)
@@ -98,15 +97,17 @@ The commitment tag is derived from the same HKDF instance as the encryption key,
 
 ## Known Limitations
 
-Tracked in `docs/internal/SECURITY_KNOWN_ISSUES.md` (7 entries, reviewed monthly):
+Tracked in `docs/internal/SECURITY_KNOWN_ISSUES.md` (9 entries, reviewed monthly):
 
 1. **CSP unsafe-inline in style-src** — required by React's inline style injection. Standard React limitation.
-2. **Crypto fallback path** — if the WASM kernel fails to load, the app falls back to JavaScript crypto. Must be removed before production deploy.
+2. ~~**Crypto fallback path**~~ — **RESOLVED.** All JavaScript crypto fallbacks removed. Encryption failure = operation failure. No plaintext degradation path exists.
 3. **Redis fail-open on rate limiting** — if Redis is down, rate limits are skipped. Acceptable for alpha; circuit breaker planned.
 4. **JWT in WebSocket query params** — token may appear in server logs. Mitigated: 15-minute expiry, TLS only, server does not log query params.
 5. **Web Worker isolation** — depends on browser implementation of the Web Workers spec.
 6. **WASM memory unencrypted** — WASM linear memory is unencrypted in browser process memory.
 7. **vodozemac unmaintained** — transitive dependency from OpenMLS. No CVE. Monitoring for replacement.
+8. **No key-committing AEAD** — standard AES-256-GCM does not prevent multi-key attacks. Low practical risk. Key commitment planned for v1.0.
+9. **libcrux verification claims challenged** — the PQ implementation's formal verification has been publicly disputed (IACR 2026/192). ML-KEM moved behind feature flag. Classical X25519 protects all communications independently.
 
 ## OWASP Top 10 2025 Compliance
 
@@ -115,8 +116,8 @@ Tracked in `docs/internal/SECURITY_KNOWN_ISSUES.md` (7 entries, reviewed monthly
 | A01 | **Broken Access Control** | Role-based permissions with 22-bit bitfield per server. Channel-level overrides. All admin endpoints require platform_role check. |
 | A02 | **Security Misconfiguration** | Hardened Caddyfile with strict CSP, HSTS preload, X-Frame-Options DENY, COOP same-origin. No default credentials. |
 | A03 | **Software Supply Chain** | `cargo audit` + `npm audit` on every CI run. All exceptions documented. Lock files committed. |
-| A04 | **Cryptographic Failures** | AES-256-GCM with key commitment, HKDF-SHA256, MLS RFC 9420, formally verified ML-KEM-768. No custom crypto. |
-| A05 | **Vulnerable Components** | Automated scanning. OpenMLS 0.8.1 (resolved curve25519-dalek CVEs). ML-KEM replaced with formally verified libcrux. |
+| A04 | **Cryptographic Failures** | AES-256-GCM, HKDF-SHA256, MLS RFC 9420, hybrid PQ (ML-KEM-768, defense-in-depth). No custom crypto. Key commitment planned for v1.0 (SKI-008). |
+| A05 | **Vulnerable Components** | Automated scanning. OpenMLS 0.8.1 (resolved curve25519-dalek CVEs). PQ layer gated behind feature flag pending stable audited implementation. |
 | A06 | **Insecure Design** | Threat model completed. Redis fail-closed rate limiting. Input validation on every field. |
 | A07 | **Authentication Failures** | Argon2id, FIDO2 passkeys, TOTP 2FA, lockout after 5 failures, identical error messages to prevent enumeration. |
 | A08 | **Data Integrity Failures** | SHA-256 hash-chain audit log with tamper detection and monotonic sequence numbers. |
@@ -133,7 +134,7 @@ No independent security audit has been performed yet. We are applying to NLnet N
 |-------|---------|---------|
 | axum | 0.8 | Web framework |
 | sqlx | 0.8 | Compile-time validated SQL |
-| libcrux-ml-kem | 0.0.8 | ML-KEM-768 (formally verified) |
+| libcrux-ml-kem | 0.0.8 | ML-KEM-768 (optional, `pq` feature) |
 | openmls | 0.8.1 | MLS RFC 9420 |
 | aes-gcm | 0.10 | Symmetric encryption |
 | hkdf | 0.12 | Key derivation |
@@ -143,9 +144,8 @@ No independent security audit has been performed yet. We are applying to NLnet N
 
 ## Testing
 
-- 110 backend unit tests
+- Backend and kernel tests run in CI (see CI output for current counts)
 - 156 kernel tests (119 unit + 37 integration)
-- 266 total tests passing
 - Full MLS lifecycle integration test
 - Input validation fuzz tests with `proptest`
 - Key derivation roundtrip tests

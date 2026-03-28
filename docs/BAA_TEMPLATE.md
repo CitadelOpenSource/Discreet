@@ -49,7 +49,7 @@ Business Associate agrees to:
 ### 3.1 Encryption
 
 Use end-to-end encryption for all ePHI at rest and in transit:
-- **At rest:** AES-256-GCM with HKDF-SHA256 key derivation and 32-byte key commitment tags. All message content, file attachments, and AI agent memory are stored as ciphertext that the server cannot decrypt.
+- **At rest:** AES-256-GCM with HKDF-SHA256 key derivation (NIST SP 800-38D, RFC 5869). All message content, file attachments, and AI agent memory are stored as ciphertext that the server cannot decrypt.
 - **In transit:** TLS 1.3 with HSTS preload (max-age=63072000, includeSubDomains). WebSocket connections are encrypted via the same TLS termination.
 
 ### 3.2 Access Controls
@@ -112,7 +112,7 @@ Business Associate implements the following technical safeguards in accordance w
 
 | Safeguard | Implementation |
 |-----------|----------------|
-| Encryption (at rest) | AES-256-GCM with HKDF-SHA256 key derivation (RFC 5869), 32-byte key commitment tags to prevent multi-key attacks |
+| Encryption (at rest) | AES-256-GCM with HKDF-SHA256 key derivation (NIST SP 800-38D, RFC 5869) |
 | Encryption (in transit) | TLS 1.3 with HSTS preload, certificate transparency |
 | Key derivation | HKDF-SHA256 with domain-separated salts (`discreet-mls-v1`, `discreet-agent-v1`) |
 | Password hashing | Argon2id (memory=19456 KiB, iterations=2, parallelism=1), per OWASP recommendation |

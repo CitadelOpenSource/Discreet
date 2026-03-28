@@ -20,6 +20,59 @@ import { T } from '../theme';
 import { api } from '../api/CitadelAPI';
 import { Av } from '../components/Av';
 
+// ── Safe arithmetic evaluator (no eval/Function) ─────────
+// Tokenizes → parses with operator precedence → evaluates.
+function safeCalc(expr: string): number {
+  const tokens: (number | string)[] = [];
+  let i = 0;
+  const s = expr.replace(/\s/g, '');
+  while (i < s.length) {
+    if (/[\d.]/.test(s[i])) {
+      let n = '';
+      while (i < s.length && /[\d.]/.test(s[i])) n += s[i++];
+      tokens.push(parseFloat(n));
+    } else if (s[i] === '-' && (tokens.length === 0 || typeof tokens[tokens.length - 1] === 'string')) {
+      let n = '-';
+      i++;
+      while (i < s.length && /[\d.]/.test(s[i])) n += s[i++];
+      tokens.push(parseFloat(n));
+    } else {
+      if (s[i] === '^') tokens.push('**');
+      else tokens.push(s[i]);
+      i++;
+    }
+  }
+  function parseExpr(t: (number | string)[], minPrec: number): number {
+    let left = parsePrimary(t);
+    const prec: Record<string, number> = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2, '**': 3 };
+    while (t.length > 0 && typeof t[0] === 'string' && prec[t[0] as string] >= minPrec) {
+      const op = t.shift() as string;
+      const right = parseExpr(t, prec[op] + (op === '**' ? 0 : 1));
+      if (op === '+') left += right;
+      else if (op === '-') left -= right;
+      else if (op === '*') left *= right;
+      else if (op === '/') left = right === 0 ? NaN : left / right;
+      else if (op === '%') left %= right;
+      else if (op === '**') left = left ** right;
+    }
+    return left;
+  }
+  function parsePrimary(t: (number | string)[]): number {
+    if (t[0] === '(') {
+      t.shift();
+      const v = parseExpr(t, 1);
+      if (t[0] === ')') t.shift();
+      return v;
+    }
+    const v = t.shift();
+    if (typeof v === 'number') return v;
+    throw new Error('Unexpected token');
+  }
+  const result = parseExpr([...tokens], 1);
+  if (!isFinite(result)) throw new Error('Non-finite result');
+  return Math.round(result * 1e10) / 1e10;
+}
+
 // ─── Types ────────────────────────────────────────────────
 
 export interface SlashMember {
@@ -96,24 +149,19 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
 
   // ── Tool overlays ────────────────────────────────────────
   {
-    name: '/calc', description: 'Open calculator', icon: '🧮', args: '[expression]',
+    name: '/calc', description: 'Basic calculator', icon: '🧮', args: '<expression>',
     visibleToOthers: false, guestAllowed: false,
     handler: async (args, ctx) => {
-      if (args.trim()) {
-        // Inline evaluate
-        if (!/^[\d\s+\-*/%.()^eE,]+$/.test(args)) {
-          ctx.setToast?.('Calc: invalid characters');
-          return { handled: true };
-        }
-        const safeExpr = args.replace(/\^/g, '**');
-        try {
-          // eslint-disable-next-line no-new-func
-          const result = new Function(`"use strict"; return (${safeExpr})`)();
-          ctx.setInput?.(`${args} = ${result}`);
-        } catch { ctx.setToast?.('Calc: could not evaluate'); }
+      const expr = args.trim();
+      if (!expr) { ctx.setToast?.('Usage: /calc 24 * 365'); return { handled: true }; }
+      if (!/^[\d\s+\-*/%.()^]+$/.test(expr)) {
+        ctx.setToast?.('Calc: only numbers and + - * / % ^ ( ) allowed');
         return { handled: true };
       }
-      ctx.setSlashTool?.('calc');
+      try {
+        const result = safeCalc(expr);
+        ctx.setInput?.(`${expr} = ${result}`);
+      } catch { ctx.setToast?.('Calc: could not evaluate'); }
       return { handled: true };
     },
   },

@@ -9,7 +9,7 @@ use discreet_kernel::oracle_guard::OracleGuard;
 use discreet_kernel::sanitize::sanitize_message;
 use discreet_kernel::types::{KernelRequest, KernelResponse};
 use discreet_kernel::validation::validate_field;
-use discreet_kernel::Kernel;
+use discreet_kernel::{Kernel, KernelStatus};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -421,6 +421,11 @@ fn oracle_unlock_resumes_operations() {
         channel_id: "ch-resume".into(),
         ciphertext: ct.clone(),
     });
+
+    // Simulate lock duration elapsing so unlock is accepted
+    if let KernelStatus::Locked { ref mut locked_at_ms, .. } = k.status {
+        *locked_at_ms = 0.0;
+    }
 
     // Unlock
     k.handle(KernelRequest::Unlock {

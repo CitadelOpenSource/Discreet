@@ -46,7 +46,124 @@ export const _storage = {
   },
 };
 
-type WsListener = (data: any) => void;
+// ── API types ────────────────────────────────────────────────────────────────
+
+export interface WsEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+type WsListener = (data: WsEvent) => void;
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  account_tier?: string;
+  about_me?: string;
+  pronouns?: string;
+  is_guest?: boolean;
+  email?: string;
+  email_verified?: boolean;
+  founder?: boolean;
+  created_at?: string;
+}
+
+export interface ServerUpdatePayload {
+  name?: string;
+  icon?: string;
+  icon_url?: string;
+  description?: string;
+  system_channel_id?: string | null;
+  is_discoverable?: boolean;
+  enable_automod?: boolean;
+  member_tab_label?: string;
+  slash_commands_enabled?: boolean;
+  mention_everyone_role?: string;
+  mention_here_role?: string;
+  default_notification_level?: string;
+  ai_disabled?: boolean;
+}
+
+export interface ChannelUpdatePayload {
+  name?: string;
+  topic?: string;
+  position?: number;
+  slowmode_seconds?: number;
+  nsfw?: boolean;
+  is_nsfw?: boolean;
+  is_archived?: boolean;
+  category_id?: string | null;
+  permission_overwrites?: Record<string, unknown>[];
+}
+
+export interface RoleUpdatePayload {
+  name?: string;
+  color?: string;
+  permissions?: number;
+  position?: number;
+  hoist?: boolean;
+  mentionable?: boolean;
+}
+
+export interface ProfileUpdatePayload {
+  display_name?: string;
+  avatar?: string;
+  avatar_url?: string;
+  about_me?: string;
+  pronouns?: string;
+  status_text?: string;
+  status_emoji?: string;
+  custom_status?: string;
+  onboarding_complete?: boolean;
+}
+
+export interface BotPayload {
+  persona?: string;
+  display_name?: string;
+  system_prompt?: string;
+  provider_type?: string;
+  model_id?: string;
+  enabled?: boolean;
+}
+
+export interface EventCreatePayload {
+  title: string;
+  description?: string;
+  channel_id?: string;
+  start_time: string;
+  end_time?: string;
+  location?: string;
+}
+
+export interface AutomodConfig {
+  enabled?: boolean;
+  word_filter?: string[];
+  spam_protection?: boolean;
+  link_filter?: boolean;
+  caps_filter?: boolean;
+  max_mentions?: number;
+  [key: string]: unknown;
+}
+
+export interface UploadedFile {
+  id: string;
+  url?: string;
+  filename?: string;
+  mime_type?: string;
+  size?: number;
+}
+
+export interface VoiceMessageResult {
+  id: string;
+  channel_id: string;
+  audio_url?: string;
+  duration_ms: number;
+}
+
+/** WebAuthn credential from navigator.credentials — serialized for transport. */
+export type WebAuthnCredentialJSON = Record<string, unknown>;
 
 // ── Debug API logger ────────────────────────────────────────────────────────
 export interface DebugApiEvent {
@@ -71,7 +188,7 @@ export class CitadelAPI {
   username: string | null;
   ws: WebSocket | null;
   wsListeners: Set<WsListener>;
-  private _userCache: Record<string, any>;
+  private _userCache: Record<string, UserInfo>;
   private _wsServerId: string | null;
   private _wsReconnectTimer: ReturnType<typeof setTimeout> | null;
   private _wsReconnectAttempt: number;
@@ -123,9 +240,8 @@ export class CitadelAPI {
     this.refreshToken = null;
     this.userId = null;
     this.username = null;
-    this.disconnectWs(); // Close WebSocket on auth clear
-    ['d_tok', 'd_ref', 'd_uid', 'd_uname'].forEach(k => _storage.removeItem(k));
     this.disconnectWs();
+    ['d_tok', 'd_ref', 'd_uid', 'd_uname'].forEach(k => _storage.removeItem(k));
   }
 
   private getCsrfToken(): string | null {
@@ -169,20 +285,30 @@ export class CitadelAPI {
   }
 
   private async tryRefresh(): Promise<boolean> {
-    try {
-      // Refresh token is in HttpOnly cookie — sent automatically with credentials.
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-        credentials: 'same-origin',
-      });
-      if (res.ok) {
-        const d = await res.json();
-        this.token = d.access_token;
-        return true;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+          credentials: 'same-origin',
+        });
+        if (res.ok) {
+          const d = await res.json();
+          this.token = d.access_token;
+          return true;
+        }
+        // Non-OK response (e.g. 401 refresh token expired) — don't retry
+        break;
+      } catch {
+        // Network error — retry once after 2s
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
       }
-    } catch {}
+    }
+    this.wsListeners.forEach(fn => fn({ type: 'auth_expired' }));
     this.clearAuth();
     return false;
   }
@@ -270,12 +396,12 @@ export class CitadelAPI {
 
   // ── Passkeys (WebAuthn) ──
   async passkeyRegisterStart() { return (await this.fetch('/auth/passkey/register/start', { method: 'POST' })).json(); }
-  async passkeyRegisterFinish(credential: any, name?: string) { return (await this.fetch('/auth/passkey/register/finish', { method: 'POST', body: JSON.stringify({ credential, name }) })).json(); }
+  async passkeyRegisterFinish(credential: WebAuthnCredentialJSON, name?: string) { return (await this.fetch('/auth/passkey/register/finish', { method: 'POST', body: JSON.stringify({ credential, name }) })).json(); }
   async passkeyLoginStart(username: string) {
     const r = await fetch(`${API_BASE}/auth/passkey/login/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
     return { ok: r.ok, data: await r.json() };
   }
-  async passkeyLoginFinish(username: string, credential: any) {
+  async passkeyLoginFinish(username: string, credential: WebAuthnCredentialJSON) {
     const r = await fetch(`${API_BASE}/auth/passkey/login/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, credential }), credentials: 'same-origin' });
     const d = await r.json();
     if (r.ok) this.setAuth(d.access_token, d.refresh_token, d.user.id, d.user.username);
@@ -288,8 +414,8 @@ export class CitadelAPI {
   async listServers() { return (await this.fetch('/servers')).json(); }
   async createServer(name: string, opts?: { enable_automod?: boolean }) { return (await this.fetch('/servers', { method: 'POST', body: JSON.stringify({ name, ...opts }) })).json(); }
   async createInvite(sid: string, opts?: { expires_at?: string | null; max_uses?: number | null; temporary?: boolean }) {
-    const body: any = { temporary: opts?.temporary ?? false };
-    if (opts && 'expires_at' in opts) body.expires_at = opts.expires_at;  // send null explicitly for "Never"
+    const body: { temporary: boolean; expires_at?: string | null; max_uses?: number | null } = { temporary: opts?.temporary ?? false };
+    if (opts && 'expires_at' in opts) body.expires_at = opts.expires_at;
     if (opts?.max_uses != null) body.max_uses = opts.max_uses;
     return (await this.fetch(`/servers/${sid}/invites`, { method: 'POST', body: JSON.stringify(body) })).json();
   }
@@ -299,7 +425,7 @@ export class CitadelAPI {
   async resolveInvite(code: string) { const r = await this.fetch(`/invites/${code}`); if (!r.ok) throw new Error('Invalid invite'); return r.json(); }
   async listMembers(sid: string) { return (await this.fetch(`/servers/${sid}/members`)).json(); }
   async setNickname(sid: string, uid: string, nickname: string | null) { return this.fetch(`/servers/${sid}/members/${uid}/nickname`, { method: 'PUT', body: JSON.stringify({ nickname }) }); }
-  async updateServer(sid: string, data: any) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async updateServer(sid: string, data: ServerUpdatePayload) { return this.fetch(`/servers/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async deleteServer(sid: string) { return this.fetch(`/servers/${sid}`, { method: 'DELETE' }); }
   async leaveServer(sid: string) { return this.fetch(`/servers/${sid}/leave`, { method: 'POST' }); }
   async setServerNotificationLevel(sid: string, level: string) { return this.fetch(`/servers/${sid}/notification-level`, { method: 'PATCH', body: JSON.stringify({ notification_level: level }) }); }
@@ -309,7 +435,7 @@ export class CitadelAPI {
   async listChannels(sid: string) { return (await this.fetch(`/servers/${sid}/channels`)).json(); }
   async createChannel(sid: string, name: string, catId?: string | null, chType?: string) { return (await this.fetch(`/servers/${sid}/channels`, { method: 'POST', body: JSON.stringify({ name, channel_type: chType || 'text', category_id: catId || undefined }) })).json(); }
   async listCategories(sid: string) { try { const r = await this.fetch(`/servers/${sid}/categories`); if (!r.ok) return []; return r.json(); } catch { return []; } }
-  async updateChannel(cid: string, data: any) { return this.fetch(`/channels/${cid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async updateChannel(cid: string, data: ChannelUpdatePayload) { return this.fetch(`/channels/${cid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async deleteChannel(cid: string) { return this.fetch(`/channels/${cid}`, { method: 'DELETE' }); }
   async archiveChannel(cid: string) { const r = await this.fetch(`/channels/${cid}/archive`, { method: 'POST' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to archive' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); } }
   async unarchiveChannel(cid: string) { const r = await this.fetch(`/channels/${cid}/unarchive`, { method: 'POST' }); if (!r.ok) { const e = await r.json().catch(() => ({ error: { message: 'Failed to unarchive' } })); throw new Error(e.error?.message || e.error || `HTTP ${r.status}`); } }
@@ -333,7 +459,7 @@ export class CitadelAPI {
   // ── Roles ──
   async listRoles(sid: string) { try { const r = await this.fetch(`/servers/${sid}/roles`); return r.ok ? r.json() : []; } catch { return []; } }
   async createRole(sid: string, name: string, color: string, permissions: number) { return this.fetch(`/servers/${sid}/roles`, { method: 'POST', body: JSON.stringify({ name, color, permissions }) }); }
-  async updateRole(rid: string, data: any) { return this.fetch(`/roles/${rid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async updateRole(rid: string, data: RoleUpdatePayload) { return this.fetch(`/roles/${rid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async deleteRole(sid: string, rid: string) { return this.fetch(`/roles/${rid}`, { method: 'DELETE' }); }
   async assignRole(sid: string, uid: string, rid: string) { return this.fetch(`/servers/${sid}/members/${uid}/roles/${rid}`, { method: 'PUT' }); }
   async unassignRole(sid: string, uid: string, rid: string) { return this.fetch(`/servers/${sid}/members/${uid}/roles/${rid}`, { method: 'DELETE' }); }
@@ -388,7 +514,7 @@ export class CitadelAPI {
   async getPoll(pollId: string) { try { return (await this.fetch(`/polls/${pollId}`)).json(); } catch { return null; } }
   async spawnBot(sid: string, opts: { persona: string; display_name?: string; system_prompt?: string }) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(opts) })).json(); }
   async listBots(sid: string) { try { const r = await this.fetch(`/servers/${sid}/ai-bots`); return r.ok ? r.json() : []; } catch { return []; } }
-  async updateBot(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async updateBot(sid: string, bid: string, data: BotPayload) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async getPinnedMessages(sid: string, cid: string) { try { return (await this.fetch(`/servers/${sid}/channels/${cid}/pins`)).json(); } catch { return []; } }
   async acceptFriend(id: string) { return this.fetch(`/friends/${id}/accept`, { method: 'POST' }); }
   async declineFriend(id: string) { return this.fetch(`/friends/${id}/decline`, { method: 'POST' }); }
@@ -428,7 +554,7 @@ export class CitadelAPI {
   }
 
   // ── Voice Messages ──
-  async sendVoiceMessage(channelId: string, audioBlob: Blob, durationMs: number, contentCiphertext: string, mlsEpoch: number, waveform?: number[]): Promise<any> {
+  async sendVoiceMessage(channelId: string, audioBlob: Blob, durationMs: number, contentCiphertext: string, mlsEpoch: number, waveform?: number[]): Promise<VoiceMessageResult> {
     const form = new FormData();
     form.append('audio', new Blob([audioBlob], { type: 'audio/ogg' }), 'voice.ogg');
     form.append('duration_ms', String(durationMs));
@@ -448,7 +574,7 @@ export class CitadelAPI {
   }
 
   // ── Files ──
-  async uploadFile(channelId: string, file: File): Promise<any> {
+  async uploadFile(channelId: string, file: File): Promise<UploadedFile> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
@@ -467,7 +593,7 @@ export class CitadelAPI {
     });
   }
 
-  async uploadDmFile(dmId: string, file: File): Promise<any> {
+  async uploadDmFile(dmId: string, file: File): Promise<UploadedFile> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
@@ -490,7 +616,7 @@ export class CitadelAPI {
 
   // ── User / Profile ──
   async getUser(id: string) { if (this._userCache[id]) return this._userCache[id]; try { const r = await this.fetch(`/users/${id}`); if (!r.ok) return null; const d = await r.json(); if (d?.error) return null; this._userCache[id] = d; return d; } catch { return null; } }
-  async updateProfile(data: any) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
+  async updateProfile(data: ProfileUpdatePayload) { return this.fetch('/users/@me', { method: 'PATCH', body: JSON.stringify(data) }); }
   async getMe() { try { const r = await this.fetch('/users/@me'); if (!r.ok) return null; const d = await r.json(); return d?.error ? null : d; } catch { return null; } }
   /** Fetch a fresh access token with current claims. Call after upgrade/verify. */
   async refreshClaims() { try { const r = await this.fetch('/auth/me/refresh'); if (r.ok) { const d = await r.json(); if (d.access_token) this.token = d.access_token; return d; } return null; } catch { return null; } }
@@ -499,9 +625,9 @@ export class CitadelAPI {
   async getBillingStatus() { try { const r = await this.fetch('/billing/status'); return r.ok ? r.json() : null; } catch { return null; } }
   async complianceExport(serverId: string, startDate: string, endDate: string, format: string) { const r = await this.fetch('/admin/export', { method: 'POST', body: JSON.stringify({ server_id: serverId, start_date: startDate, end_date: endDate, format }) }); if (!r.ok) { const e = await r.json().catch(() => ({ error: 'Export failed' })); throw new Error(e.error || e.message || `HTTP ${r.status}`); } return r.json(); }
   async getSettings() { try { const r = await this.fetch('/users/@me/settings'); return r.ok ? r.json() : null; } catch { return null; } }
-  async updateSettings(s: any) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
+  async updateSettings(s: Record<string, unknown>) { return this.fetch('/users/@me/settings', { method: 'PUT', body: JSON.stringify(s) }); }
   async getChannelSettings(cid: string) { try { const r = await this.fetch(`/channels/${cid}/notification-settings`); return r.ok ? r.json() : null; } catch { return null; } }
-  async updateChannelSettings(cid: string, s: any) { return this.fetch(`/channels/${cid}/notification-settings`, { method: 'PUT', body: JSON.stringify(s) }); }
+  async updateChannelSettings(cid: string, s: Record<string, unknown>) { return this.fetch(`/channels/${cid}/notification-settings`, { method: 'PUT', body: JSON.stringify(s) }); }
   async saveTimezone(timezone: string) { return this.fetch('/settings/timezone', { method: 'POST', body: JSON.stringify({ timezone }) }); }
   /** Verify password and get a single-use reauth token (5 min TTL). */
   async verifyPassword(password: string): Promise<{ reauth_token: string; expires_in: number }> {
@@ -578,11 +704,11 @@ export class CitadelAPI {
   }
 
   // ── Bots ──
-  async createBot(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
-  async updateBotConfig(sid: string, bid: string, data: any) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async createBot(sid: string, data: BotPayload) { return (await this.fetch(`/servers/${sid}/ai-bots`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async updateBotConfig(sid: string, bid: string, data: BotPayload) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'PATCH', body: JSON.stringify(data) }); }
   async removeBotFromServer(sid: string, bid: string) { return this.fetch(`/servers/${sid}/ai-bots/${bid}`, { method: 'DELETE' }); }
   async getAgentConfig(sid: string, bid: string) { try { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/config`); return r.ok ? r.json() : null; } catch { return null; } }
-  async putAgentConfig(sid: string, bid: string, data: any) { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/config`, { method: 'PUT', body: JSON.stringify(data) }); return r.ok ? r.json() : null; }
+  async putAgentConfig(sid: string, bid: string, data: Record<string, unknown>) { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/config`, { method: 'PUT', body: JSON.stringify(data) }); return r.ok ? r.json() : null; }
   async deleteAgentMemory(sid: string, bid: string) { const r = await this.fetch(`/servers/${sid}/ai-bots/${bid}/memory`, { method: 'DELETE' }); return r.ok ? r.json() : null; }
 
   // ── Reactions ──
@@ -594,7 +720,7 @@ export class CitadelAPI {
 
   // ── Events ──
   async listEvents(sid: string) { try { const r = await this.fetch(`/servers/${sid}/events`); return r.ok ? r.json() : []; } catch { return []; } }
-  async createEvent(sid: string, data: any) { return (await this.fetch(`/servers/${sid}/events`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async createEvent(sid: string, data: EventCreatePayload) { return (await this.fetch(`/servers/${sid}/events`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async rsvpEvent(eid: string, status: string) { return (await this.fetch(`/events/${eid}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) })).json(); }
 
   // ── Notifications ──
@@ -610,7 +736,7 @@ export class CitadelAPI {
 
   // ── AutoMod ──
   async getAutomod(sid: string) { try { const r = await this.fetch(`/servers/${sid}/automod`); return r.ok ? r.json() : null; } catch { return null; } }
-  async updateAutomod(sid: string, config: any) { return this.fetch(`/servers/${sid}/automod`, { method: 'PUT', body: JSON.stringify(config) }); }
+  async updateAutomod(sid: string, config: AutomodConfig) { return this.fetch(`/servers/${sid}/automod`, { method: 'PUT', body: JSON.stringify(config) }); }
 
   // ── Discovery ──
   async discoverServers(query?: string, category?: string) { try { const params = new URLSearchParams(); if (query) params.set('q', query); if (category && category !== 'all') params.set('category', category); const r = await this.fetch(`/discover?${params}`); return r.ok ? r.json() : []; } catch { return []; } }
@@ -659,7 +785,7 @@ export class CitadelAPI {
 
   // ── Scheduled Tasks ──
   async listTasks(sid: string) { try { const r = await this.fetch(`/servers/${sid}/tasks`); return r.ok ? r.json() : []; } catch { return []; } }
-  async createTask(sid: string, data: { channel_id?: string; task_type: string; config?: any; cron_expr: string; enabled?: boolean }) { return (await this.fetch(`/servers/${sid}/tasks`, { method: 'POST', body: JSON.stringify(data) })).json(); }
+  async createTask(sid: string, data: { channel_id?: string; task_type: string; config?: Record<string, unknown>; cron_expr: string; enabled?: boolean }) { return (await this.fetch(`/servers/${sid}/tasks`, { method: 'POST', body: JSON.stringify(data) })).json(); }
   async deleteTask(taskId: string) { return this.fetch(`/tasks/${taskId}`, { method: 'DELETE' }); }
   async toggleTask(taskId: string) { return (await this.fetch(`/tasks/${taskId}/toggle`, { method: 'PATCH' })).json(); }
 

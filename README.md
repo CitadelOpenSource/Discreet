@@ -17,9 +17,9 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Rust-1.80+-orange" alt="Rust 1.80+" />
   &nbsp;
-  <img src="https://img.shields.io/badge/Tests-266_passing-brightgreen" alt="266 tests passing" />
+  <img src="https://img.shields.io/badge/Tests-262_passing-brightgreen" alt="262 tests passing" />
   &nbsp;
-  <img src="https://img.shields.io/badge/Post--Quantum-ML--KEM--768-7C3AED" alt="Post-Quantum ML-KEM-768" />
+  <img src="https://img.shields.io/badge/Post--Quantum-Ready-7C3AED" alt="Post-Quantum Ready" />
   &nbsp;
   <img src="https://img.shields.io/badge/Made_in-USA-red" alt="Made in USA" />
   &nbsp;
@@ -37,13 +37,12 @@ Discreet is for people who refuse to choose between community and privacy.
 |---|:---:|:---:|:---:|:---:|
 | End-to-end encryption | ✅ | ❌ | ✅ | ✅ |
 | MLS RFC 9420 | ❌ | ❌ | ✅ | ✅ |
-| Post-quantum crypto | ✅ (SPQR) | ❌ | ❌ | ✅ (ML-KEM-768) |
-| Formally verified PQ | ✅ | ❌ | ❌ | ✅ (libcrux) |
+| Post-quantum ready | ✅ (SPQR) | ❌ | ❌ | ✅ (hybrid ML-KEM-768) |
 | Community servers | ❌ | ✅ | ❌ | ✅ |
 | Voice/video E2EE | ✅ | ❌ | ✅ | ✅ (SFrame) |
 | No phone number required | ❌ | ✅ | ✅ | ✅ (BIP-39) |
 | AI agents inside E2EE | ❌ | ❌ | ❌ | ✅ (patent pending) |
-| BLE proximity mesh | ❌ | ❌ | ❌ | ✅ (patent pending) |
+| BLE proximity mesh | ❌ | ❌ | ❌ | Planned (patent pending) |
 | WASM security kernel | ❌ | ❌ | ❌ | ✅ |
 | Open source | ✅ | ❌ | ✅ | ✅ (AGPL-3.0) |
 | Self-hostable | ❌ | ❌ | ✅ | ✅ |
@@ -59,7 +58,7 @@ You can sign up three ways: email and password, OAuth (Google, GitHub, Discord, 
 **Cryptography**
 - MLS RFC 9420 for scalable group E2EE (TreeKEM, log(N) operations)
 - Hybrid post-quantum: X25519 + ML-KEM-768 (FIPS 203)
-- ML-KEM implementation: libcrux (Cryspen) — formally verified for panic freedom, correctness, and secret independence
+- Hybrid post-quantum: X25519 (classical) + ML-KEM-768 via libcrux (defense-in-depth, behind `pq` feature flag)
 - AES-256-GCM + HKDF-SHA256 for symmetric encryption
 - SFrame RFC 9605 for voice/video E2EE
 - Argon2id password hashing, FIDO2/WebAuthn passkeys
@@ -73,8 +72,8 @@ You can sign up three ways: email and password, OAuth (Google, GitHub, Discord, 
 - 156 tests (119 unit + 37 integration)
 
 **Stack**
-- Backend: Rust / Axum 0.8 (50+ modules, 110 tests)
-- Frontend: React / TypeScript / Vite (1,384 modules)
+- Backend: Rust / Axum 0.8 (50+ modules, 106 tests)
+- Frontend: React / TypeScript / Vite (1,381 modules)
 - Database: PostgreSQL 16 + Redis 7
 - 108 database migrations
 - 10 themes including structural skins
@@ -113,7 +112,7 @@ Mobile apps (React Native), desktop apps (Tauri), BLE proximity mesh for offline
 
 ## Security
 
-All cryptography uses audited, formally verified libraries — libcrux-ml-kem, OpenMLS, aes-gcm, hkdf, argon2. No hand-rolled crypto. `cargo audit` and `npm audit` both report zero known vulnerabilities. Responsible disclosure: **security@discreetai.net**. Full threat model: **[SECURITY.md](SECURITY.md)**
+All cryptography uses audited libraries — OpenMLS, aes-gcm, hkdf, argon2. Post-quantum (ML-KEM-768 via libcrux) is available as a hybrid defense-in-depth layer. No hand-rolled crypto. `cargo audit` and `npm audit` both report zero known vulnerabilities. Responsible disclosure: **security@discreetai.net**. Full threat model: **[SECURITY.md](SECURITY.md)**
 
 ## Contributing
 

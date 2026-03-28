@@ -41,6 +41,13 @@ use crate::discreet_config::Config;
 use crate::discreet_error::AppError;
 use crate::discreet_state::AppState;
 
+// Pre-computed Argon2id hash for timing equalization on failed login lookups.
+// verify_password against this takes ~300ms (same as a real check) so an
+// attacker cannot distinguish "user not found" from "wrong password" by timing.
+// This is hash("timing-equalization") with our standard params (m=19456, t=2, p=1).
+const TIMING_DUMMY_HASH: &str =
+    "$argon2id$v=19$m=19456,t=2,p=1$dGltaW5nLWVxdWFs$kxHOipL5LKBBNwBc+DNy2rrFbDG6jaNzOZN/c1OMaKc";
+
 // ─── Request Types ──────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -153,14 +160,14 @@ fn build_refresh_cookie(token: &str, max_age_secs: u64) -> String {
     // Secure flag only in release builds — localhost:3000 uses HTTP.
     let secure = if cfg!(debug_assertions) { "" } else { "; Secure" };
     format!(
-        "d_ref={}; HttpOnly; SameSite=Lax; Path=/api/v1/auth; Max-Age={}{}",
+        "d_ref={}; HttpOnly; SameSite=Strict; Path=/api/v1/auth; Max-Age={}{}",
         token, max_age_secs, secure
     )
 }
 
 fn clear_refresh_cookie() -> String {
     let secure = if cfg!(debug_assertions) { "" } else { "; Secure" };
-    format!("d_ref=; HttpOnly; SameSite=Lax; Path=/api/v1/auth; Max-Age=0{}", secure)
+    format!("d_ref=; HttpOnly; SameSite=Strict; Path=/api/v1/auth; Max-Age=0{}", secure)
 }
 
 /// Wrap a JSON auth response with the Set-Cookie header for the refresh token.
@@ -295,7 +302,8 @@ pub async fn register(
         return Err(AppError::Conflict("Username already taken".into()));
     }
 
-    // Check email uniqueness if provided.
+    // Check email uniqueness. Return a generic error that does not reveal
+    // whether the email is already in the system (prevents email enumeration).
     if let Some(ref email) = req.email {
         let email_exists = sqlx::query_scalar!(
             "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)",
@@ -305,7 +313,8 @@ pub async fn register(
         .await?;
 
         if email_exists.unwrap_or(false) {
-            return Err(AppError::Conflict("Email already registered".into()));
+            tracing::info!(email_masked = %mask_email(email), "Registration attempted with existing email");
+            return Err(AppError::Conflict("Username already taken".into()));
         }
     }
 
@@ -908,11 +917,13 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await?;
 
-    // If user not found, still return the same error to prevent enumeration,
-    // but log the attempt.
+    // If user not found, do a dummy Argon2 verify to equalize response time
+    // with the "wrong password" path (~300ms). Without this, an attacker can
+    // distinguish "user not found" (instant) from "wrong password" (slow).
     let user = match user {
         Some(u) => u,
         None => {
+            let _ = verify_password("timing-equalization", TIMING_DUMMY_HASH);
             tracing::warn!(
                 ip = %ip,
                 login = %req.login,
@@ -1338,9 +1349,9 @@ pub async fn recover_account(
 ) -> Result<impl IntoResponse, AppError> {
     validate_password(&req.new_password)?;
 
-    // Look up user by username
+    // Look up user by username (case-insensitive)
     let user = sqlx::query(
-        "SELECT id, recovery_key_hash FROM users WHERE username = $1",
+        "SELECT id, recovery_key_hash FROM users WHERE LOWER(username) = LOWER($1)",
     )
     .bind(&req.username)
     .fetch_optional(&state.db)
@@ -1354,9 +1365,13 @@ pub async fn recover_account(
     let stored_hash = stored_hash
         .ok_or_else(|| AppError::Unauthorized("Invalid username or recovery key".into()))?;
 
-    // Verify recovery key
+    // Verify recovery key (constant-time comparison to prevent timing attacks)
     let provided_hash = hash_recovery_key(&req.recovery_key);
-    if provided_hash != stored_hash {
+    let a = provided_hash.as_bytes();
+    let b = stored_hash.as_bytes();
+    let valid = a.len() == b.len()
+        && a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0;
+    if !valid {
         return Err(AppError::Unauthorized("Invalid username or recovery key".into()));
     }
 
@@ -2061,6 +2076,21 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
         .is_ok())
 }
 
+/// Mask an email for logging: "john@example.com" → "j***@e***.com"
+fn mask_email(email: &str) -> String {
+    match email.split_once('@') {
+        Some((local, domain)) => {
+            let l = if local.len() > 1 { format!("{}***", &local[..1]) } else { "***".into() };
+            let d = if domain.len() > 4 {
+                let dot = domain.rfind('.').unwrap_or(0);
+                format!("{}***{}", &domain[..1], &domain[dot..])
+            } else { "***".into() };
+            format!("{l}@{d}")
+        }
+        None => "***".into(),
+    }
+}
+
 // ─── Validation ─────────────────────────────────────────────────────────
 
 /// Delegates to the centralized input validation module.
@@ -2297,9 +2327,9 @@ pub async fn login_anonymous(
         return Err(AppError::RateLimited("Too many login attempts. Try again in a minute.".into()));
     }
 
-    // Look up the user.
+    // Look up the user (case-insensitive, consistent with regular login).
     let user = sqlx::query!(
-        "SELECT id, password_hash, account_tier, is_banned FROM users WHERE username = $1",
+        "SELECT id, password_hash, account_tier, is_banned FROM users WHERE LOWER(username) = LOWER($1)",
         req.username,
     )
     .fetch_optional(&state.db)

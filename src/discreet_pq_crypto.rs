@@ -1,11 +1,11 @@
-// discreet_pq_crypto.rs — Post-quantum cryptographic operations.
+// discreet_pq_crypto.rs — Post-quantum cryptographic operations (hybrid layer).
 //
-// ML-KEM-768 (FIPS 203): libcrux-ml-kem by Cryspen. Formally verified for
-// panic freedom, correctness, and secret independence using hax and F*.
-// SIMD-optimized (AVX2, AArch64 Neon) with runtime CPU feature detection.
+// ML-KEM-768 (FIPS 203): libcrux-ml-kem by Cryspen.
+// NOTE: Formal verification claims are under review (Symbolic Software,
+// IACR ePrint 2026/192). This module is defense-in-depth — classical X25519
+// via MLS protects all communications regardless of PQ status.
 //
-// ML-DSA-65 (FIPS 204): gated behind `pq-sig` feature until a formally
-// verified implementation (libcrux-ml-dsa) is available on crates.io.
+// ML-DSA-65 (FIPS 204): gated behind `pq-sig` feature.
 //
 // The hybrid architecture layers ML-KEM over MLS group secrets at the
 // application level, since OpenMLS 0.8 does not support PQ cipher suites.
@@ -60,6 +60,9 @@ pub fn pq_encapsulate(
 /// Decapsulate a shared secret from a ciphertext using the private key.
 ///
 /// Returns the same 32-byte shared secret produced by `pq_encapsulate`.
+/// Ciphertext length (1088 bytes for ML-KEM-768) is enforced at the type level
+/// by `MlKem768Ciphertext` — callers cannot construct an incorrectly-sized value.
+/// ML-KEM-768 is IND-CCA2 secure so no additional ciphertext validation is needed.
 pub fn pq_decapsulate(
     private_key: &mlkem768::MlKem768PrivateKey,
     ciphertext: &MlKemCiphertext,

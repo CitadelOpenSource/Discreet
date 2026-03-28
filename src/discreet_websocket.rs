@@ -255,6 +255,26 @@ async fn handle_ws(
 ) {
     tracing::info!(user_id = %user_id, server_id = %server_id, "WebSocket connected");
 
+    // Per-user connection limit (max 5). Reject if exceeded.
+    {
+        let mut conns = state.ws_connections.write().await;
+        let count = conns.entry(user_id).or_insert(0);
+        if *count >= 5 {
+            tracing::warn!(user_id = %user_id, count = *count, "Connection limit reached (max 5)");
+            let _ = socket.send(Message::Text(
+                serde_json::json!({ "type": "error", "message": "Too many connections (max 5)" }).to_string().into()
+            )).await;
+            let _ = socket.send(Message::Close(Some(
+                axum::extract::ws::CloseFrame {
+                    code: 4002,
+                    reason: "Connection limit exceeded".into(),
+                },
+            ))).await;
+            return;
+        }
+        *count += 1;
+    }
+
     // Load persisted status from DB (invisible users reconnect as invisible).
     let status_row = sqlx::query!(
         "SELECT presence_mode, custom_status, status_emoji FROM users WHERE id = $1",
@@ -406,6 +426,14 @@ async fn handle_ws(
                         let _ = socket.send(Message::Pong(data)).await;
                     }
                     Some(Ok(Message::Text(text))) => {
+                        // Reject oversized payloads before parsing.
+                        if text.len() > 16_384 {
+                            tracing::warn!(user_id = %user_id, len = text.len(), "WS payload exceeds 16KB");
+                            let _ = socket.send(Message::Text(
+                                serde_json::json!({ "type": "error", "message": "Payload too large" }).to_string().into()
+                            )).await;
+                            continue;
+                        }
                         // ── Per-connection rate limiting ──────────────
                         if ws_window_start.elapsed() >= WS_RATE_WINDOW {
                             ws_window_start = Instant::now();
@@ -423,15 +451,18 @@ async fn handle_ws(
                                 server_id = %server_id,
                                 messages = ws_msg_count,
                                 bytes = ws_byte_count,
-                                "WebSocket rate limit exceeded — closing connection",
+                                "WebSocket rate limit exceeded — throttling",
                             );
-                            let _ = socket.send(Message::Close(Some(
-                                axum::extract::ws::CloseFrame {
-                                    code: 1008,
-                                    reason: "Rate limit exceeded".into(),
-                                },
-                            ))).await;
-                            break;
+                            let remaining = WS_RATE_WINDOW.as_secs().saturating_sub(
+                                ws_window_start.elapsed().as_secs()
+                            );
+                            let _ = socket.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "rate_limited",
+                                    "retry_after": remaining,
+                                }).to_string().into()
+                            )).await;
+                            continue;
                         }
 
                         if let Ok(msg) = serde_json::from_str::<IncomingMessage>(&text) {
@@ -458,6 +489,15 @@ async fn handle_ws(
                     _ => {}
                 }
             }
+        }
+    }
+
+    // Decrement per-user connection counter.
+    {
+        let mut conns = state.ws_connections.write().await;
+        if let Some(count) = conns.get_mut(&user_id) {
+            *count = count.saturating_sub(1);
+            if *count == 0 { conns.remove(&user_id); }
         }
     }
 
@@ -669,12 +709,17 @@ async fn handle_client_message(
             }
         }
 
-        // Force a user (typically a bot) into a voice channel.
-        // Updates voice state tracking and broadcasts voice_join so all
-        // clients update their presence lists.
+        // Force a user into a voice channel — requires MOVE_MEMBERS permission.
         "force_voice_join" => {
+            let has_perm = crate::discreet_permissions::check_permission(
+                state, server_id, user_id,
+                crate::discreet_permissions::Permission::MOVE_MEMBERS,
+            ).await.unwrap_or(false);
+            if !has_perm {
+                tracing::warn!(user_id = %user_id, "force_voice_join denied — missing MOVE_MEMBERS");
+                return;
+            }
             if let (Some(target_user_id), Some(channel_id)) = (msg.user_id, msg.channel_id) {
-                // Auto-leave any previous voice channel for the target user.
                 {
                     let mut vs = state.voice_state.write().await;
                     if let Some((old_server, old_channel)) = vs.remove(&target_user_id) {
@@ -758,6 +803,11 @@ async fn handle_client_message(
         // the user is a member of so all shared-server clients update.
         "user_profile_update" => {
             if let Some(ref avatar) = msg.avatar_url {
+                // Block SSRF: reject private IPs, cloud metadata, etc.
+                if crate::discreet_input_validation::validate_url_no_ssrf(avatar).await.is_err() {
+                    tracing::warn!(user_id = %user_id, "Avatar URL rejected by SSRF check");
+                    return;
+                }
                 let rows = sqlx::query(
                     "SELECT server_id FROM server_members WHERE user_id = $1",
                 )

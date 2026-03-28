@@ -42,7 +42,8 @@ pub mod discreet_export_handlers;
 pub mod discreet_error;
 pub mod discreet_error_telemetry;
 pub mod discreet_event_handlers;
-pub mod discreet_federation;
+// Federation — placeholder for future AT Protocol / Matrix bridge
+// pub mod discreet_federation;
 pub mod discreet_file_handlers;
 pub mod discreet_forum_handlers;
 pub mod discreet_friend_handlers;
@@ -67,6 +68,7 @@ pub mod discreet_platform_settings;
 pub mod discreet_playbook_handlers;
 pub mod discreet_poll_handlers;
 pub mod discreet_post_quantum;
+#[cfg(feature = "pq")]
 pub mod discreet_pq_crypto;
 pub mod discreet_qr_handlers;
 pub mod discreet_premium;

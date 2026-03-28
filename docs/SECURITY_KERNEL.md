@@ -33,7 +33,7 @@ The kernel is not a library that the UI calls for specific tasks. It is a **mand
 
 ## What the kernel handles
 
-**Cryptography.** AES-256-GCM encryption and decryption with HKDF-SHA256 key derivation. All key material held in zeroize-on-drop wrappers. Nonces are 96-bit random, never reused. Derived keys are zeroized immediately after use.
+**Cryptography.** AES-256-GCM encryption and decryption with HKDF-SHA256 key derivation. Wire format: `nonce (12 bytes) || ciphertext || GCM tag (16 bytes)`. All key material held in zeroize-on-drop wrappers. Nonces are 96-bit random, never reused. Derived keys are zeroized immediately after use.
 
 **Input validation.** 12 field validators matching the server exactly — usernames, emails, passwords, display names, messages, server names, channel names, channel topics, custom status, about me, invite codes, and URLs with SSRF protection. Same reserved name list, same leetspeak normalization, same character rules.
 
@@ -43,7 +43,7 @@ The kernel is not a library that the UI calls for specific tasks. It is a **mand
 
 **Session management.** JWT validation, session state tracking (user ID, tier, admin/founder flags). State encrypted with non-extractable WebCrypto keys via sealed storage.
 
-**Oracle protection.** Rate-limited operation monitoring. The kernel tracks decryption (100/10s), outgoing message (50/10s), and validation (200/10s) rates. Anomalous usage patterns (indicating automated exfiltration) trigger kernel lockout requiring re-authentication. Thresholds are 5-7x above normal human usage.
+**Oracle protection.** Rate-limited operation monitoring. The kernel tracks decryption (100/10s), outgoing message (50/10s), and validation (200/10s) rates. Anomalous usage patterns (indicating automated exfiltration) trigger a time-locked state with escalating duration (30s → 60s → 5min). The kernel cannot process any request during lockout, and the lock cannot be bypassed — the full duration must elapse before operations resume.
 
 ## What the UI handles
 
@@ -63,7 +63,7 @@ The UI **cannot** decrypt messages, validate inputs, evaluate permissions, or ac
 
 **Non-extractable key persistence.** Kernel state is encrypted with a WebCrypto `CryptoKey` generated with `extractable: false`. JavaScript can use this key for encrypt/decrypt operations but cannot export the raw key bytes. The main thread stores the encrypted blob in IndexedDB — it holds ciphertext it cannot decrypt.
 
-**Rate-limited oracle protection.** The kernel monitors operation frequency across three categories (decrypt, sign, validate) using sliding time windows. If usage exceeds thresholds calibrated to 5-7x normal human patterns, the kernel locks itself. All operations return `KERNEL_LOCKED` until the user re-authenticates. This prevents automated bulk exfiltration even if an attacker gains postMessage access.
+**Rate-limited oracle protection.** The kernel monitors operation frequency across three categories (decrypt, sign, validate) using sliding time windows. If usage exceeds thresholds calibrated to 5-7x normal human patterns, the kernel enters a time-locked state. The lock duration escalates with repeated violations: 30 seconds, then 60 seconds, then 5 minutes. The kernel cannot be unlocked until the full duration has elapsed — there is no bypass. All operations return `KERNEL_LOCKED` during the lockout period. This prevents automated bulk exfiltration even if an attacker gains postMessage access.
 
 **Trusted Types enforcement.** DOM injection sinks are locked down via the Trusted Types API. The `discreet-default` policy escapes all HTML and logs a security warning if invoked. Dynamic script creation (`createScript`, `createScriptURL`) throws unconditionally. The CSP header enforces `require-trusted-types-for 'script'`.
 
@@ -86,7 +86,8 @@ The kernel measurably improves the security posture by reducing the trusted Java
 
 ```bash
 cd discreet-kernel
-cargo test                              # 119+ tests
+cargo test                              # 119 unit tests
+cargo test --test '*'                   # 37 integration tests (156 total)
 cargo clippy -- -D warnings             # zero warnings
 wasm-pack build --target web --release  # produces pkg/
 ```
@@ -103,26 +104,26 @@ One audited, tested, fuzzed security core. Three platforms.
 
 ## Post-Quantum Cryptography
 
-Discreet uses a hybrid classical + post-quantum cryptographic architecture. Both classical and post-quantum algorithms must be broken to compromise any communication.
+Post-quantum key encapsulation (ML-KEM-768) is available via the `pq` feature flag as a hybrid layer alongside classical X25519. All communications are protected by classical cryptography regardless of PQ status.
 
 | Layer | Classical | Post-Quantum | Standard | Implementation |
 |-------|-----------|-------------|----------|----------------|
-| Key exchange | X25519 (ECDH) | ML-KEM-768 | NIST FIPS 203 | libcrux-ml-kem (Cryspen) |
-| Signatures | Ed25519 | ML-DSA-65 | NIST FIPS 204 | Pending libcrux-ml-dsa |
+| Key exchange | X25519 (ECDH) | ML-KEM-768 (optional) | NIST FIPS 203 | libcrux-ml-kem (Cryspen) |
+| Signatures | Ed25519 | ML-DSA-65 (optional) | NIST FIPS 204 | Pending stable implementation |
 | Symmetric | AES-256-GCM | — | Quantum-resistant at 128-bit security (Grover) | RustCrypto aes-gcm |
 | Key derivation | HKDF-SHA256 | — | Quantum-resistant | RustCrypto hkdf |
 
 ### ML-KEM-768 implementation
 
-The ML-KEM-768 implementation is **libcrux-ml-kem** by Cryspen:
+The PQ implementation uses **libcrux-ml-kem** by Cryspen:
 
-- Formally verified for panic freedom, correctness, and secret independence using hax and F*
 - FIPS 203 compliant with mandatory key validation before encapsulation
 - SIMD-optimized with runtime CPU feature detection (AVX2 on x86-64, Neon on AArch64)
-- Same team that verified Signal's PQXDH protocol and discovered the KyberSlash timing vulnerability
 - Apache-2.0 licensed (AGPL compatible)
 
-ML-DSA-65 signatures are gated behind a feature flag pending a formally verified implementation (libcrux-ml-dsa) on crates.io. Ed25519 signatures remain active for all credentials.
+**Important:** libcrux's formal verification claims have been publicly challenged (Symbolic Software, "Verification Theatre", IACR ePrint 2026/192). The report identifies 13 vulnerabilities, 4 within the verified boundary, and notes the NEON backend (ARM64) has zero proofs checked. We are monitoring the situation and will migrate to a stable, audited implementation when available. The PQ layer is defense-in-depth and does not affect the security of classical encryption.
+
+ML-DSA-65 signatures are gated behind a separate `pq-sig` feature flag pending a stable implementation. Ed25519 signatures remain active for all credentials.
 
 ### How it works
 

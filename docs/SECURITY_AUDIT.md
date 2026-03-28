@@ -39,7 +39,7 @@ Independent third-party security audit by **Cure53** or **Trail of Bits** is pla
 | Group messaging | MLS | `openmls` | 0.8.1 | RFC 9420 |
 | MLS crypto backend | X25519, Ed25519, AES-128-GCM | `openmls_rust_crypto` | 0.5.1 | — |
 | Channel key derivation | HKDF-SHA256 | `hkdf` | 0.12 | RFC 5869 |
-| Symmetric encryption | AES-256-GCM with key commitment | `aes-gcm` | 0.10 | NIST SP 800-38D |
+| Symmetric encryption | AES-256-GCM | `aes-gcm` | 0.10 | NIST SP 800-38D |
 | Password hashing | Argon2id | `argon2` | 0.5 | OWASP recommendation |
 | TOTP 2FA | HMAC-SHA1, 6-digit, 30-second | `totp-rs` | 5.x | RFC 6238 |
 | JWT signing | HMAC-SHA256 (HS256) | `jsonwebtoken` | 9.x | RFC 7519 |
@@ -81,7 +81,7 @@ All exceptions are recorded in `.cargo/audit.toml` with written justification:
 | A01 | Broken Access Control (incl. SSRF) | 10/10 | JWT auth on all protected endpoints. RBAC with 22 permission bitflags + channel-level overrides. No server-side URL fetching (zero SSRF surface). All admin endpoints require `platform_role` check. Guest privilege restrictions enforced. |
 | A02 | Security Misconfiguration | 9/10 | Strict CSP (`script-src 'self'`, no `unsafe-inline`). HSTS preload (2-year, includeSubDomains). X-Frame-Options DENY. COOP same-origin. No default credentials. `.env` secrets never committed. |
 | A03 | Software Supply Chain | 8/10 | `cargo audit` and `npm audit` on every CI run. Dependabot weekly PRs. All audit exceptions documented with justification. Lock files committed for reproducible builds. SBOM generation planned. |
-| A04 | Cryptographic Failures | 10/10 | AES-256-GCM with HKDF-SHA256 and key commitment tags. MLS RFC 9420 for group messaging. SFrame RFC 9605 for voice/video. Post-quantum readiness (ML-KEM, ML-DSA) behind feature flags. No custom crypto. |
+| A04 | Cryptographic Failures | 9/10 | AES-256-GCM with HKDF-SHA256. MLS RFC 9420 for group messaging. SFrame RFC 9605 for voice/video. Post-quantum readiness (ML-KEM, ML-DSA) behind feature flags. No custom crypto. Key commitment planned for v1.0 (SKI-008). |
 | A05 | Vulnerable Components | 8/10 | Automated scanning via Dependabot, `cargo audit`, `npm audit`. All transitive CVEs tracked. OpenMLS upgraded from 0.5 to 0.8.1 to resolve curve25519-dalek and ed25519-dalek CVEs. |
 | A06 | Insecure Design | 10/10 | Zero-knowledge architecture — server stores only ciphertext. E2EE is default, not opt-in. Redis rate limiting is fail-closed (503 if Redis down). Input validation on every user-facing field. |
 | A07 | Authentication Failures | 10/10 | Argon2id password hashing. FIDO2 passkeys. TOTP 2FA with encrypted secret storage. Account lockout after 5 failures. Identical error messages for "user not found" and "wrong password". OAuth 2.0 with PKCE. |
@@ -117,7 +117,7 @@ For healthcare deployments, see [BAA_TEMPLATE.md](BAA_TEMPLATE.md) for a Busines
 | CC6.1 Logical Access Controls | 9/10 | RBAC, JWT, MFA (TOTP + passkeys), lockout, session revocation. SAML SSO implemented. |
 | CC6.2 System Operations | 8/10 | Rate limiting (Redis, fail-closed), security headers, CSRF, input validation, file upload validation. `cargo audit` + `npm audit` in CI. |
 | CC6.3 Change Management | 7/10 | Git version control, CI via GitHub Actions. Formal code review process via PR requirements. Staging environment planned. |
-| CC6.6 Encryption | 10/10 | MLS E2EE, SFrame voice, AES-256-GCM with key commitment, TLS 1.3, TOTP encrypted at rest, refresh tokens hashed. |
+| CC6.6 Encryption | 9/10 | MLS E2EE, SFrame voice, AES-256-GCM, TLS 1.3, TOTP encrypted at rest, refresh tokens hashed. Key commitment planned (SKI-008). |
 | CC6.7 Vulnerability Management | 7/10 | `cargo audit` + `npm audit` in CI. Dependabot enabled. Penetration testing and bug bounty planned for post-alpha. |
 | CC7.2 Monitoring | 8/10 | Hash-chain audit log, health endpoint, admin email alerts, auto-lockdown on brute-force. Centralized log aggregation planned. |
 
@@ -133,7 +133,7 @@ Security reviewers should note the following design decisions:
 
 3. **Hash-chain audit log** — Each entry contains SHA-256 of the previous entry with monotonic sequence numbers. Tampering with any record breaks the chain. Verification endpoint recomputes and validates the entire chain.
 
-4. **Key-committing AEAD** — All AES-256-GCM ciphertexts include a 32-byte HKDF-derived commitment tag, preventing multi-key attacks where a ciphertext could decrypt under multiple keys.
+4. **Standard AES-256-GCM** — Symmetric encryption per NIST SP 800-38D with 96-bit random nonces and HKDF-SHA256 key derivation. Key commitment (UtC construction) planned for v1.0 to prevent multi-key attacks (SKI-008).
 
 5. **Fail-closed rate limiting** — If Redis is unavailable, requests are rejected with 503, not allowed through. Security controls never silently degrade.
 

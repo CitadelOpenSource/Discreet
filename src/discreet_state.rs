@@ -74,6 +74,8 @@ pub struct AppState {
     pub request_duration_us_total: Arc<AtomicU64>,
     /// Server start time (for uptime calculation).
     pub started_at: std::time::Instant,
+    /// Per-user WebSocket connection count (max 5 per user).
+    pub ws_connections: Arc<RwLock<HashMap<Uuid, u32>>>,
 }
 
 impl AppState {
@@ -99,6 +101,7 @@ impl AppState {
             ws_messages_total: Arc::new(AtomicU64::new(0)),
             request_duration_us_total: Arc::new(AtomicU64::new(0)),
             started_at: std::time::Instant::now(),
+            ws_connections: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 

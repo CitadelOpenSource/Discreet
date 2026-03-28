@@ -14,8 +14,8 @@ setupGlobalErrorHandlers();
 
 initCrypto().then(() => {
   console.log('[main] Crypto initialized');
-}).catch(() => {
-  console.warn('[main] WASM crypto unavailable, using legacy path');
+}).catch((e) => {
+  console.warn('[main] WASM crypto module failed to load — encryption requires kernel or MLS', e);
 });
 
 // Detect /meet/:code URL (e.g. /meet/ABC123)

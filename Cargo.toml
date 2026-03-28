@@ -16,6 +16,8 @@ default = []
 mls = ["dep:openmls", "dep:openmls_rust_crypto"]
 # Enable when PQ key exchange endpoints are wired:
 post-quantum = ["dep:ed25519-dalek", "dep:x25519-dalek"]
+# ML-KEM-768 hybrid PQ layer (defense-in-depth, classical X25519 protects regardless):
+pq = ["dep:libcrux-ml-kem"]
 # ML-DSA-65 signatures — enable when libcrux-ml-dsa is available:
 pq-sig = ["dep:ml-dsa"]
 
@@ -69,12 +71,12 @@ ed25519-dalek = { version = "2", features = ["serde", "rand_core"], optional = t
 x25519-dalek = { version = "2", features = ["serde", "static_secrets"], optional = true }
 aes-gcm = "0.10"
 
-# ── Crypto — post-quantum ────────────────────────────────
-# ML-KEM-768 (FIPS 203) — Cryspen's formally verified implementation.
-# Verified for panic freedom, correctness, and secret independence using hax/F*.
-libcrux-ml-kem = { version = "0.0.8", features = ["mlkem768"] }
+# ── Crypto — post-quantum (hybrid, defense-in-depth) ─────
+# ML-KEM-768 (FIPS 203) — gated behind `pq` feature.
+# Verification claims under review (Symbolic Software, IACR 2026/192).
+# Classical X25519 via MLS protects all communications regardless.
+libcrux-ml-kem = { version = "0.0.8", features = ["mlkem768"], optional = true }
 # ML-DSA-65 (FIPS 204) — gated until libcrux-ml-dsa is available on crates.io.
-# The ml-dsa crate has pre-release trait conflicts with sha3 0.11.0-rc.8.
 ml-dsa = { version = "0.1.0-rc.7", optional = true }
 
 # ── Crypto — future: MLS (behind feature flag) ───────────

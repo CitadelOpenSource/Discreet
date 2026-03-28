@@ -4,6 +4,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
+use zeroize::Zeroizing;
 
 use crate::error::KernelError;
 
@@ -41,8 +42,19 @@ impl<'a> KeyContext<'a> {
     }
 }
 
-/// HKDF-SHA256 → 256-bit key. Salt from context.
-pub fn derive_key(master: &[u8], ctx: &KeyContext<'_>) -> Result<Vec<u8>, KernelError> {
+/// HKDF-SHA256 key derivation (RFC 5869).
+///
+/// Parameters:
+///   IKM  = master key material
+///   salt = context string from KeyContext (e.g. "discreet:{cid}:{epoch}")
+///   info = fixed application label "discreet-key-v1"
+///
+/// RFC 5869 §3.1 notes that salt and info are both optional and serve
+/// different purposes: salt adds entropy to the extract step, info
+/// differentiates derived keys in the expand step. We use the channel-
+/// specific context as salt so each channel/epoch produces a distinct
+/// PRK, and a fixed info string since only one key is derived per PRK.
+pub fn derive_key(master: &[u8], ctx: &KeyContext<'_>) -> Result<Zeroizing<Vec<u8>>, KernelError> {
     if master.is_empty() {
         return Err(KernelError::EncryptionFailed(
             "Master key is empty".to_string(),
@@ -52,7 +64,7 @@ pub fn derive_key(master: &[u8], ctx: &KeyContext<'_>) -> Result<Vec<u8>, Kernel
     let salt = ctx.salt_string();
     let hk = Hkdf::<Sha256>::new(Some(salt.as_bytes()), master);
 
-    let mut okm = vec![0u8; KEY_SIZE];
+    let mut okm = Zeroizing::new(vec![0u8; KEY_SIZE]);
     hk.expand(b"discreet-key-v1", &mut okm).map_err(|e| {
         KernelError::EncryptionFailed(format!("HKDF expand failed: {}", e))
     })?;
@@ -65,7 +77,7 @@ pub fn derive_channel_key(
     channel_id: &str,
     epoch: u64,
     master: &[u8],
-) -> Result<Vec<u8>, KernelError> {
+) -> Result<Zeroizing<Vec<u8>>, KernelError> {
     derive_key(master, &KeyContext::Channel { channel_id, epoch })
 }
 
@@ -151,61 +163,18 @@ pub fn is_epoch_retained(current_epoch: u64, key_epoch: u64) -> bool {
     current_epoch - key_epoch < MAX_RETAINED_EPOCHS
 }
 
-// ─── Base64 helpers (no external dependency) ─────────────────────────────────
+// ─── Base64 helpers ──────────────────────────────────────────────────────────
 
-const B64_CHARS: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+use base64::Engine as _;
 
 pub fn base64_encode(data: &[u8]) -> String {
-    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        result.push(B64_CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(B64_CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(B64_CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(B64_CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-    result
+    base64::engine::general_purpose::STANDARD.encode(data)
 }
 
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    let input = input.trim_end_matches('=');
-    let mut result = Vec::with_capacity(input.len() * 3 / 4);
-
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for c in input.chars() {
-        let val = match c {
-            'A'..='Z' => c as u32 - 'A' as u32,
-            'a'..='z' => c as u32 - 'a' as u32 + 26,
-            '0'..='9' => c as u32 - '0' as u32 + 52,
-            '+' => 62,
-            '/' => 63,
-            _ => return Err(format!("Invalid base64 character: {}", c)),
-        };
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            result.push((buf >> bits) as u8);
-            buf &= (1 << bits) - 1;
-        }
-    }
-
-    Ok(result)
+    base64::engine::general_purpose::STANDARD
+        .decode(input)
+        .map_err(|e| format!("Base64 decode failed: {}", e))
 }
 
 // ─── Unit Tests ──────────────────────────────────────────────────────────────

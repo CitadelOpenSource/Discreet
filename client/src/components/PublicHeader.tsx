@@ -54,7 +54,7 @@ export function PublicHeader({ onSignIn }: { onSignIn?: () => void }) {
         </a>
 
         {/* Desktop nav */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="public-nav-desktop">
+        <nav style={{ alignItems: 'center', gap: 6 }} className="public-nav-desktop">
           {NAV_LINKS.map(link => (
             <a key={link.href} href={link.href} style={{
               padding: '6px 12px', fontSize: 13, fontWeight: 500, color: C.mt,
@@ -129,7 +129,7 @@ export function PublicHeader({ onSignIn }: { onSignIn?: () => void }) {
             aria-label="Menu"
             className="public-nav-hamburger"
             style={{
-              display: 'none', background: 'none', border: 'none',
+              background: 'none', border: 'none',
               cursor: 'pointer', padding: 4, color: C.mt,
             }}
           >
@@ -160,14 +160,12 @@ export function PublicHeader({ onSignIn }: { onSignIn?: () => void }) {
       )}
 
       <style>{`
-        @media (min-width: 641px) {
-          .public-nav-desktop { display: flex !important; }
-          .public-nav-hamburger { display: none !important; }
-          .public-nav-mobile { display: none !important; }
-        }
+        .public-nav-desktop { display: flex; }
+        .public-nav-hamburger { display: none; }
+        .public-nav-mobile { display: none; }
         @media (max-width: 640px) {
-          .public-nav-desktop { display: none !important; }
-          .public-nav-hamburger { display: flex !important; }
+          .public-nav-desktop { display: none; }
+          .public-nav-hamburger { display: flex; }
         }
       `}</style>
     </header>

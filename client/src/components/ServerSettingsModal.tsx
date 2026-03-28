@@ -1853,7 +1853,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
             <div onClick={async () => {
               const next = !slashCmdsEnabled;
               setSlashCmdsEnabled(next);
-              await api.updateServer(server.id, { slash_commands_enabled: next } as any);
+              await api.updateServer(server.id, { slash_commands_enabled: next });
               setSaved('Saved!'); setTimeout(() => setSaved(''), 1500);
               if (onUpdate) onUpdate();
             }} style={{ width: 40, height: 22, borderRadius: 11, background: slashCmdsEnabled ? T.ac : T.bd, cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0, marginInlineStart: 12}}>
@@ -1865,7 +1865,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
             <div>
               <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Who can @everyone</label>
-              <select value={(server as any).mention_everyone_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_everyone_role: e.target.value } as any); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
+              <select value={(server as any).mention_everyone_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_everyone_role: e.target.value }); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
                 <option value="admin">Admins only</option>
                 <option value="moderator">Moderators & Admins</option>
                 <option value="everyone">Everyone</option>
@@ -1873,7 +1873,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
             </div>
             <div>
               <label style={{ fontSize: 11, color: T.mt, display: 'block', marginBottom: 3 }}>Who can @here</label>
-              <select value={(server as any).mention_here_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_here_role: e.target.value } as any); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
+              <select value={(server as any).mention_here_role || 'admin'} onChange={async (e) => { await api.updateServer(server.id, { mention_here_role: e.target.value }); setSaved('Saved!'); setTimeout(() => setSaved(''), 1500); if (onUpdate) onUpdate(); }} style={{ ...getInp(), fontSize: 12 }}>
                 <option value="admin">Admins only</option>
                 <option value="moderator">Moderators & Admins</option>
                 <option value="everyone">Everyone</option>
@@ -1987,7 +1987,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>System Messages Channel</label>
           <select style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 'var(--radius-md)', color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
             value={localStorage.getItem(`d_sysmsg_ch_${server.id}`) || ''}
-            onChange={e => { localStorage.setItem(`d_sysmsg_ch_${server.id}`, e.target.value); api.updateServer(server.id, { system_channel_id: e.target.value || null } as any).catch(() => {}); }}
+            onChange={e => { localStorage.setItem(`d_sysmsg_ch_${server.id}`, e.target.value); api.updateServer(server.id, { system_channel_id: e.target.value || null }).catch(() => {}); }}
           >
             <option value="">Default (first text channel)</option>
             {channels.filter(c => c.channel_type !== 'voice').map(ch => (
@@ -2018,7 +2018,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
           <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: T.mt, marginBottom: 6, textTransform: 'uppercase' }}>Default Notification Level</label>
           <select style={{ width: '100%', padding: '8px 12px', background: T.bg, border: `1px solid ${T.bd}`, borderRadius: 'var(--radius-md)', color: T.tx, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
             value={localStorage.getItem(`d_default_notif_${server.id}`) || 'mentions'}
-            onChange={e => { localStorage.setItem(`d_default_notif_${server.id}`, e.target.value); api.updateServer(server.id, { default_notification_level: e.target.value } as any).catch(() => {}); }}
+            onChange={e => { localStorage.setItem(`d_default_notif_${server.id}`, e.target.value); api.updateServer(server.id, { default_notification_level: e.target.value }).catch(() => {}); }}
           >
             <option value="all">All Messages</option>
             <option value="mentions">Mentions Only</option>
@@ -2037,7 +2037,7 @@ export function ServerSettingsModal({ server, onClose, onUpdate, showConfirm, ge
             <div onClick={async () => {
               const next = !(server as any).ai_disabled;
               try {
-                await api.updateServer(server.id, { ai_disabled: next } as any);
+                await api.updateServer(server.id, { ai_disabled: next });
                 if (onUpdate) onUpdate();
               } catch {}
             }}

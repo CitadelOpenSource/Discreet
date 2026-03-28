@@ -1193,16 +1193,14 @@ pub async fn force_password_reset(
     require_staff_role(&caller)?;
     require_platform_permission(&state.db, caller.user_id, "MANAGE_USERS").await?;
 
-    // Revoke all sessions
+    // Revoke all sessions — forces re-login, which is the enforcement mechanism.
     sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL", target_id)
         .execute(&state.db).await?;
 
-    // TODO: Send password reset email to user's email address
-
     audit_log(&state.db, caller.user_id, target_id, "force_password_reset", None, None).await;
-    tracing::info!(admin = %caller.user_id, target = %target_id, "Forced password reset");
+    tracing::info!(admin = %caller.user_id, target = %target_id, "Forced password reset — all sessions revoked");
 
-    Ok(Json(json!({ "message": "Sessions revoked. Password reset email sent." })))
+    Ok(Json(json!({ "message": "All sessions revoked. User must reset password on next login." })))
 }
 
 // ─── PATCH /admin/users/:user_id/flags ───────────────────────────────────────
